@@ -205,18 +205,39 @@ impl SendInfo {
                 Some(send_info)
             }
 
-            // ACK or FIN-ACK with an unacceptable sequence number (regardless of whether it carries
-            // data) -> per RFC 9293, Section 3.10.7.4, "First, check sequence number," reply with
+            // Out-of-order ACK/FIN-ACK whose ACK field would otherwise be a valid handshake
+            // completion, still within the receive window -> buffer any payload (and remember the
+            // FIN's position for a FIN-ACK) for later reassembly instead of discarding it, without
+            // completing the handshake yet. Reply with a duplicate ACK reflecting current state.
+            (TcpFlags::Ack | TcpFlags::FinAck, maybe_payload)
+                if conn.snd_una.precedes(seg.ack_num)
+                    && seg.ack_num.precedes_or_eq(conn.snd_nxt)
+                    && seg.seq_num != conn.rcv_nxt
+                    && seg
+                        .seq_num
+                        .in_window(conn.rcv_nxt, TcpSegment::<Local>::RCV_WND.into()) =>
+            {
+                if let Some(payload) = maybe_payload {
+                    conn.reassembly.insert(seg.seq_num, payload.clone());
+                }
+                if seg.flags == TcpFlags::FinAck {
+                    conn.reassembly
+                        .mark_fin(seg.seq_num + maybe_payload.len_or_default());
+                }
+                Some(Self::pure_ack(conn))
+            }
+
+            // ACK or FIN-ACK otherwise unacceptable (invalid ACK field, or SEG.SEQ past the receive
+            // window) -> per RFC 9293, Section 3.10.7.4, "First, check sequence number," reply with
             // an ACK reflecting current state and drop the segment.
-            //
-            // Due to the current simplification of not using a reassembly buffer, any SEG.SEQ other
-            // than exactly RCV.NXT gets a current state ACK and is not held for later.
             (TcpFlags::Ack | TcpFlags::FinAck, _) if seg.seq_num != conn.rcv_nxt => {
                 Some(Self::pure_ack(conn))
             }
 
-            // Acceptable handshake-completing ACK (step 3) -> transition to ESTABLISHED. If it also
-            // carries data, echo it, otherwise no reply is needed.
+            // Acceptable handshake-completing ACK (step 3) -> transition to ESTABLISHED, echoing
+            // any payload and/or previously buffered out-of-order data that is now contiguous with
+            // the just-arrived payload if the peer's window allows. If the peer's previously
+            // buffered FIN has now been reached, enter LAST-ACK instead of continuing normally.
             (TcpFlags::Ack, maybe_payload)
                 if seg.seq_num == conn.rcv_nxt
                     && conn.snd_una.precedes(seg.ack_num)
@@ -224,20 +245,29 @@ impl SendInfo {
             {
                 let established = Self::complete_handshake(seg, conn, syn_received);
 
-                maybe_payload
-                    .as_ref()
-                    .map(|payload| {
-                        conn.rcv_nxt += payload.len().into();
-                        conn.send_buffer.extend(payload.as_bytes());
+                if let Some(payload) = maybe_payload {
+                    conn.rcv_nxt += payload.len().into();
+                    conn.send_buffer.extend(payload.as_bytes());
+                }
 
-                        established.drain_transmittable(conn).map(|maybe_to_send| {
-                            match maybe_to_send {
-                                Some(to_send) => Self::data_payload(conn, to_send),
-                                None => Self::pure_ack(conn),
-                            }
-                        })
+                let mut reassembled = Vec::new();
+                conn.rcv_nxt = conn
+                    .reassembly
+                    .drain_contiguous(conn.rcv_nxt, &mut reassembled);
+                let anything_to_send = maybe_payload.is_some() || !reassembled.is_empty();
+                conn.send_buffer.extend(reassembled);
+
+                if conn.reassembly.fin_reached(conn.rcv_nxt) {
+                    conn.rcv_nxt += REMOTE_FIN_BYTE; // Peer's FIN consumes one sequence number
+                    Some(Self::enter_last_ack(conn, established)?)
+                } else if anything_to_send {
+                    Some(match established.drain_transmittable(conn)? {
+                        Some(to_send) => Self::data_payload(conn, to_send),
+                        None => Self::pure_ack(conn),
                     })
-                    .transpose()?
+                } else {
+                    None
+                }
             }
 
             // Handshake-completing FIN-ACK (step 3 combined with the peer's own close) -> as per

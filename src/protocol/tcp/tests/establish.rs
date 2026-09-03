@@ -166,22 +166,23 @@ fn fin_ack_in_syn_rcv_with_wrong_seq_gets_current_state_ack() -> Result {
     // RFC 9293, Section 3.10.7.4, "First, check sequence number" applies regardless of which
     // control bits are set. (For example, "Eighth, check the FIN bit" is never reached if the
     // sequence number is not acceptable.) A FIN-ACK with an unacceptable SEG.SEQ during
-    // SYN-RECEIVED must get a challenge ACK reflecting current state.
+    // SYN-RECEIVED must get a challenge ACK reflecting current state, not complete the handshake.
+    // However, its FIN position is remembered for later, the same as an out-of-order FIN-ACK
+    // arriving after the handshake has already completed.
 
     let mut connections = TcpConnections::default().with_syn_rcv();
-    let initial_state = connections.try_get()?.clone();
+    let mut cloned_state = connections.try_get()?.clone();
 
     // Correct ack_num, but seq_num doesn't match RCV.NXT = CLIENT_ISN + SYN_BYTE
-    let reply = TcpSegment {
+    let wrong_seq_fin_ack = TcpSegment {
         seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
         ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
         flags: TcpFlags::FinAck,
         ..CLIENT_PKT
-    }
-    .create_reply(&mut connections)?;
+    };
 
     assert_eq!(
-        reply,
+        wrong_seq_fin_ack.create_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -190,7 +191,13 @@ fn fin_ack_in_syn_rcv_with_wrong_seq_gets_current_state_ack() -> Result {
         "FIN-ACK in SYN-RECEIVED with wrong SEG.SEQ must get current state ACK"
     );
 
-    assert_eq!(connections.try_get()?, &initial_state, "Connection must remain SYN-RECEIVED");
+    cloned_state.reassembly.mark_fin(wrong_seq_fin_ack.seq_num);
+
+    assert_eq!(
+        connections.try_get()?,
+        &cloned_state,
+        "Connection must remain SYN-RECEIVED, with the FIN's position remembered"
+    );
 
     Ok(())
 }
@@ -199,22 +206,22 @@ fn fin_ack_in_syn_rcv_with_wrong_seq_gets_current_state_ack() -> Result {
 fn handshake_ack_with_with_wrong_seq_and_data_gets_current_state_ack() -> Result {
     // A data-carrying segment arriving during SYN-RECEIVED with an unacceptable SEG.SEQ must still
     // just get a plain ACK reflecting current state (RFC 9293, Section 3.10.7.4, "First, check
-    // sequence number"), not a RST, the same as it would with no payload.
+    // sequence number"), not a RST, the same as it would with no payload. However, its data is
+    // buffered for later reassembly.
 
     let mut connections = TcpConnections::default().with_syn_rcv();
-    let initial_state = connections.try_get()?.clone();
+    let mut cloned_state = connections.try_get()?.clone();
 
     // Correct ack_num, but seq_num doesn't match RCV.NXT = CLIENT_ISN + SYN_BYTE
-    let reply = TcpSegment {
+    let wrong_seq_with_data = TcpSegment {
         seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
         ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
-    }
-    .create_reply(&mut connections)?;
+    };
 
     assert_eq!(
-        reply,
+        wrong_seq_with_data.create_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -224,10 +231,19 @@ fn handshake_ack_with_with_wrong_seq_and_data_gets_current_state_ack() -> Result
          get a RST"
     );
 
+    cloned_state.reassembly.insert(
+        wrong_seq_with_data.seq_num,
+        wrong_seq_with_data
+            .payload
+            .clone()
+            .ok_or("expected wrong_seq_with_data to carry a payload")?,
+    );
+
     assert_eq!(
         connections.try_get()?,
-        &initial_state,
-        "Connection must remain SYN-RECEIVED, not be established or reset"
+        &cloned_state,
+        "Connection must remain SYN-RECEIVED, not be established or reset, with the data buffered \
+         for later reassembly"
     );
 
     Ok(())
