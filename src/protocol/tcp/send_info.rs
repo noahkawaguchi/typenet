@@ -303,9 +303,10 @@ impl SendInfo {
                     .map(|to_send| Self::data_payload(conn, to_send))
             }
 
-            // In-order data packet -> ACK receipt of data, advancing RCV.NXT, and echo as much of
-            // the queued data as SND.WND currently allows. Buffer anything that doesn't fit to go
-            // out later as the window opens.
+            // In-order data packet -> ACK receipt of data, advancing RCV.NXT and draining any
+            // previously-buffered out-of-order data that is now contiguous with it, then echo as
+            // much of the queued data as SND.WND currently allows. Buffer anything that doesn't fit
+            // to go out later as the window opens.
             (TcpFlags::Ack, Some(payload)) if seg.seq_num == conn.rcv_nxt => {
                 let new_established = established.incoming_ack_update(conn, seg);
 
@@ -313,15 +314,35 @@ impl SendInfo {
                 conn.rcv_nxt += payload.len().into();
                 conn.send_buffer.extend(payload.as_bytes());
 
+                let mut reassembled = Vec::new();
+                conn.rcv_nxt = conn
+                    .reassembly
+                    .drain_contiguous(conn.rcv_nxt, &mut reassembled);
+                conn.send_buffer.extend(reassembled);
+
                 Some(match new_established.drain_transmittable(conn)? {
                     Some(to_send) => Self::data_payload(conn, to_send),
                     None => Self::pure_ack(conn),
                 })
             }
 
-            // Out-of-order/duplicate data or out-of-order FIN-ACK -> duplicate ACK. ACK RCV.NXT so
-            // the client knows what the server expects next, but don't echo data, start closing, or
-            // advance SND.NXT/RCV.NXT.
+            // Out-of-order data still within the receive window -> buffer it for later reassembly
+            // instead of discarding it, replying with a duplicate ACK so the peer knows what's
+            // still missing.
+            (TcpFlags::Ack, Some(payload))
+                if seg
+                    .seq_num
+                    .in_window(conn.rcv_nxt, TcpSegment::<Local>::RCV_WND.into()) =>
+            {
+                conn.tcp_state = TcpState::Established(established.incoming_ack_update(conn, seg));
+                conn.reassembly.insert(seg.seq_num, payload.clone());
+                Some(Self::pure_ack(conn))
+            }
+
+            // Out-of-window duplicate data, or an out-of-order FIN-ACK (reassembly ahead of a FIN
+            // not yet implemented) -> duplicate ACK. ACK RCV.NXT so the client knows what the
+            // server expects next, but don't echo data, buffer it, start closing, or advance
+            // SND.NXT/RCV.NXT.
             (TcpFlags::Ack | TcpFlags::FinAck, _) if seg.seq_num != conn.rcv_nxt => {
                 conn.tcp_state = TcpState::Established(established.incoming_ack_update(conn, seg));
                 Some(Self::pure_ack(conn))
