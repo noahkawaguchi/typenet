@@ -10,10 +10,25 @@ pub(super) struct TcpReassembly {
     // points don't have a total order (so `Ord` cannot be correctly implemented).
     /// Out-of-order segments kept to be reassembled later.
     segments: Vec<(SeqPoint<Remote>, TcpPayload)>,
+
+    /// The sequence position one past the last byte covered by the peer's FIN, if a FIN has been
+    /// seen but not yet reached by contiguous data.
+    fin_seq: Option<SeqPoint<Remote>>,
 }
 
 impl TcpReassembly {
-    pub(super) const fn new() -> Self { Self { segments: Vec::new() } }
+    pub(super) const fn new() -> Self { Self { segments: Vec::new(), fin_seq: None } }
+
+    /// Records the sequence position of the peer's FIN, i.e. one past the last byte covered by the
+    /// FIN-carrying segment. If a FIN position has already been recorded, the existing one is kept.
+    pub(super) fn mark_fin(&mut self, seq: SeqPoint<Remote>) { self.fin_seq.get_or_insert(seq); }
+
+    /// Returns whether a FIN has been recorded via `mark_fin` and `rcv_nxt` has caught up to its
+    /// sequence position.
+    pub(super) fn fin_reached(&self, rcv_nxt: SeqPoint<Remote>) -> bool {
+        self.fin_seq
+            .is_some_and(|fin_seq| fin_seq.precedes_or_eq(rcv_nxt))
+    }
 
     /// Buffers `payload` starting at `seq` for later reassembly. If a segment starting at `seq` is
     /// already buffered (e.g. the original if `payload` is a retransmission), the existing one is
@@ -140,6 +155,48 @@ mod tests {
         reassembly.drain_contiguous(seq, &mut out);
 
         assert_eq!(out, b"first");
+
+        Ok(())
+    }
+
+    #[test]
+    fn fin_not_reached_when_no_fin_marked() {
+        let reassembly = TcpReassembly::new();
+        assert!(!reassembly.fin_reached(SeqPoint::<Remote>::new(100)));
+    }
+
+    #[test]
+    fn fin_not_reached_before_rcv_nxt_catches_up() {
+        let mut reassembly = TcpReassembly::new();
+        reassembly.mark_fin(SeqPoint::<Remote>::new(107));
+        assert!(!reassembly.fin_reached(SeqPoint::new(100)));
+    }
+
+    #[test]
+    fn fin_reached_once_rcv_nxt_catches_up() {
+        let mut reassembly = TcpReassembly::new();
+        reassembly.mark_fin(SeqPoint::<Remote>::new(107));
+        assert!(reassembly.fin_reached(SeqPoint::new(107)));
+    }
+
+    #[test]
+    fn fin_reached_after_draining_buffered_data_up_to_fin_seq() -> Result<(), &'static str> {
+        let mut reassembly = TcpReassembly::new();
+        let rcv_nxt = SeqPoint::<Remote>::new(100);
+
+        // FIN-carrying segment arrives first, out of order, its FIN sitting past its own payload
+        reassembly.insert(rcv_nxt + SeqOffset::new(3), test_payload("load")?);
+        reassembly.mark_fin(rcv_nxt + SeqOffset::new(7));
+        assert!(!reassembly.fin_reached(rcv_nxt));
+
+        // "pay" fills the gap before the FIN-carrying segment
+        reassembly.insert(rcv_nxt, test_payload("pay")?);
+
+        let mut out = Vec::new();
+        let new_rcv_nxt = reassembly.drain_contiguous(rcv_nxt, &mut out);
+
+        assert_eq!(out, b"payload");
+        assert!(reassembly.fin_reached(new_rcv_nxt));
 
         Ok(())
     }
