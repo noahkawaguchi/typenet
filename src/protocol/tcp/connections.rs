@@ -224,6 +224,7 @@ impl TcpConnections {
         use {
             crate::protocol::tcp::{
                 LOCAL_SYN_BYTE, REMOTE_SYN_BYTE,
+                reassembly::TcpReassembly,
                 state::SynReceived,
                 tests::{CLIENT_ISN, KEY, SERVER_ISN},
             },
@@ -247,6 +248,7 @@ impl TcpConnections {
                     sent_at,
                 )],
                 send_buffer: VecDeque::new(),
+                reassembly: TcpReassembly::new(),
             },
         );
 

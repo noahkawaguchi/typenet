@@ -7,6 +7,7 @@ use {
             flags::TcpFlags,
             payload::TcpPayload,
             pending_segment::PendingSegment,
+            reassembly::TcpReassembly,
             send_info::SendInfo,
             seq_space::{SeqOffset, SeqPoint},
         },
@@ -34,6 +35,9 @@ pub(super) struct ConnState {
 
     /// Bytes received from the peer that are queued to be echoed once SND.WND has room for them.
     pub(super) send_buffer: VecDeque<u8>,
+
+    /// Segments received ahead of RCV.NXT, held until the gap before them closes.
+    pub(super) reassembly: TcpReassembly,
 }
 
 impl ConnState {
@@ -55,6 +59,7 @@ impl ConnState {
                 snd_una: send_info.seq_num,
                 pending: vec![PendingSegment::new(send_info, Instant::now())],
                 send_buffer: VecDeque::new(),
+                reassembly: TcpReassembly::new(),
             })
             .ok_or(
                 "Attempted to create a new `ConnState` when sending something other than SYN-ACK",
@@ -87,6 +92,7 @@ impl PartialEq for ConnState {
             snd_una,
             pending: _,
             ref send_buffer,
+            ref reassembly,
         }: &Self,
     ) -> bool {
         self.tcp_state == tcp_state
@@ -94,6 +100,7 @@ impl PartialEq for ConnState {
             && self.rcv_nxt == rcv_nxt
             && self.snd_una == snd_una
             && &self.send_buffer == send_buffer
+            && &self.reassembly == reassembly
     }
 }
 

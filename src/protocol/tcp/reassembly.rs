@@ -5,6 +5,7 @@ use crate::{
 
 /// Buffers segments that arrived ahead of RCV.NXT, releasing their bytes once the gap before them
 /// closes.
+#[cfg_attr(test, derive(Debug, Clone, PartialEq))]
 pub(super) struct TcpReassembly {
     // NOTE: `Vec` used here rather than a `BTreeMap` because TCP sequence space is circular, so
     // points don't have a total order (so `Ord` cannot be correctly implemented).

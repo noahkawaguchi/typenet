@@ -305,6 +305,7 @@ mod tests {
             protocol::{
                 tcp::{
                     connections::ConnKey,
+                    reassembly::TcpReassembly,
                     state::{ConnState, SynReceived, SyncedState, TcpState, WindowState},
                 },
                 test_consts::{LOCAL_TO_REMOTE_IP_PAIR, REMOTE_TO_LOCAL_IP_PAIR},

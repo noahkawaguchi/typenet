@@ -49,6 +49,7 @@ pub const AFTER_HANDSHAKE: ConnState = ConnState {
     snd_una: SERVER_ISN.const_add(LOCAL_SYN_BYTE),
     pending: Vec::new(),
     send_buffer: VecDeque::new(),
+    reassembly: TcpReassembly::new(),
 };
 
 /// An incoming pure ACK packet from the client (port 1234) to the server (port 80).
