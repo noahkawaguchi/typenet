@@ -163,7 +163,8 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> Result {
     // A FIN-ACK arriving before data preceding it (seq_num != rcv_nxt, e.g. an earlier data segment
     // was lost) must not be processed yet. Doing so would signal "no more data" before the missing
     // data has been delivered. Until the gap is filled, treat it like out-of-order data by sending
-    // a duplicate ACK reflecting the current rcv_nxt with no change to local state.
+    // a duplicate ACK reflecting the current RCV.NXT without starting to close, but remember its
+    // FIN position for later.
 
     let mut connections = TcpConnections::default().after_handshake(); // rcv_nxt = CLIENT_ISN+1
     let mut cloned_state = connections.try_get()?.clone();
@@ -192,12 +193,113 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> Result {
         client_fin_ack.seq_num,
         client_fin_ack.ack_num,
     )));
+    cloned_state.reassembly.mark_fin(client_fin_ack.seq_num);
 
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Connection must remain established, out-of-order FIN-ACK must not start closing"
+        "Connection must remain established, out-of-order FIN-ACK must not start closing, but its \
+         FIN position should now be remembered"
     );
+
+    Ok(())
+}
+
+#[test]
+fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Result {
+    // A FIN-ACK carrying trailing data arrives in window but SEG.SEQ != RCV.NXT (an earlier data
+    // segment hasn't arrived yet), so it must be buffered rather than acted on immediately. Once
+    // the missing segment fills the gap, the connection should discover the peer's FIN has now been
+    // reached and send our FIN in that same reply, echoing both segments' data together.
+
+    let mut connections = TcpConnections::default().after_handshake(); // rcv_nxt=CLIENT_ISN+1
+    let mut cloned_state = connections.try_get()?.clone();
+
+    // FIN-ACK carrying "Hi" arrives at seq=CLIENT_ISN+6, but rcv_nxt is still CLIENT_ISN+1
+    let fin_ack_with_data = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        flags: TcpFlags::FinAck,
+        payload: TcpPayload::from_test_str("Hi")?,
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        fin_ack_with_data.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ..SERVER_REPLY
+        }),
+        "Out-of-order FIN-ACK should get a duplicate ACK, not start closing yet"
+    );
+
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
+        fin_ack_with_data.window,
+        fin_ack_with_data.seq_num,
+        fin_ack_with_data.ack_num,
+    )));
+    cloned_state.reassembly.insert(
+        fin_ack_with_data.seq_num,
+        fin_ack_with_data
+            .payload
+            .clone()
+            .ok_or("expected fin_ack_with_data to carry a payload")?,
+    );
+    cloned_state
+        .reassembly
+        .mark_fin(fin_ack_with_data.seq_num + REMOTE_HI_LEN);
+
+    assert_eq!(
+        connections.try_get()?,
+        &cloned_state,
+        "Connection must remain ESTABLISHED, with the FIN-ACK's data buffered and its FIN \
+         position remembered"
+    );
+
+    // "Hello" fills the gap
+    let hello = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str("Hello")?,
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        hello.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN
+                + REMOTE_SYN_BYTE
+                + REMOTE_HELLO_LEN
+                + REMOTE_HI_LEN
+                + REMOTE_FIN_BYTE,
+            flags: TcpFlags::FinAck,
+            payload: TcpPayload::from_test_str("HelloHi")?,
+            ..SERVER_REPLY
+        }),
+        "Filling the gap should reveal the peer's previously buffered FIN, echoing both segments' \
+         data together and replying with our FIN"
+    );
+
+    // Mirror what the implementation should do internally by advancing past "Hello", then draining
+    // "Hi" now that it's contiguous, leaving the buffer empty but the FIN position still
+    // remembered.
+    cloned_state
+        .reassembly
+        .drain_contiguous(hello.seq_num + REMOTE_HELLO_LEN, &mut Vec::new());
+
+    // The window state stays pinned to the FIN-ACK's values (not changing those of the "Hello") due
+    // to the window update rules, even though "Hello" fills a gap in the data
+    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
+        fin_ack_with_data.window,
+        fin_ack_with_data.seq_num,
+        fin_ack_with_data.ack_num,
+    )));
+    cloned_state.snd_nxt += LOCAL_HELLO_LEN + LOCAL_HI_LEN + LOCAL_FIN_BYTE;
+    cloned_state.rcv_nxt += REMOTE_HELLO_LEN + REMOTE_HI_LEN + REMOTE_FIN_BYTE;
+
+    assert_eq!(connections.try_get()?, &cloned_state);
 
     Ok(())
 }
@@ -205,7 +307,7 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> Result {
 #[test]
 fn partial_ack_in_last_ack_does_not_close_connection() -> Result {
     // A LAST-ACK connection that echoed data alongside its own FIN can be ACKed in stages (e.g.
-    // the peer ACKs previously-buffered chunks separately from the byte that covers the FIN). An
+    // the peer ACKs previously buffered chunks separately from the byte that covers the FIN). An
     // ACK that doesn't yet reach SND.NXT (i.e., doesn't yet cover the FIN) must not be
     // treated as the final ACK completing the close.
 
