@@ -4,6 +4,7 @@ mod connections;
 mod flags;
 mod payload;
 mod pending_segment;
+mod reassembly;
 mod send_info;
 mod seq_space;
 mod state;
