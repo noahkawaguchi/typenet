@@ -119,6 +119,13 @@ impl<S> SeqPoint<S> {
         rhs.precedes_or_eq(self)
             .then(|| SeqOffset { wrapping: self.wrapping - rhs.wrapping, phantom: PhantomData })
     }
+
+    /// Returns whether `self` falls within the window starting at `wnd_start` (inclusive) and
+    /// ending `wnd_len` sequence numbers later (exclusive), accounting for wraparound (RFC 9293,
+    /// Section 3.4).
+    pub(super) fn in_window(self, wnd_start: Self, wnd_len: SeqOffset<u32, S>) -> bool {
+        wnd_start.precedes_or_eq(self) && self.precedes(wnd_start + wnd_len)
+    }
 }
 
 impl<S> Add<SeqOffset<u32, S>> for SeqPoint<S> {
@@ -270,5 +277,38 @@ mod tests {
     #[test]
     fn offset_past_returns_none_when_rhs_does_not_precede_or_equal_self() {
         assert_eq!(SeqPoint::<Local>::new(100).offset_past(SeqPoint::new(140)), None);
+    }
+
+    #[test]
+    fn in_window_true_at_window_start() {
+        assert!(SeqPoint::<Local>::new(100).in_window(SeqPoint::new(100), SeqOffset::new(10)));
+    }
+
+    #[test]
+    fn in_window_true_in_middle() {
+        assert!(SeqPoint::<Local>::new(105).in_window(SeqPoint::new(100), SeqOffset::new(10)));
+    }
+
+    #[test]
+    fn in_window_true_at_last_included_point() {
+        assert!(SeqPoint::<Local>::new(109).in_window(SeqPoint::new(100), SeqOffset::new(10)));
+    }
+
+    #[test]
+    fn in_window_false_at_window_end_exclusive() {
+        assert!(!SeqPoint::<Local>::new(110).in_window(SeqPoint::new(100), SeqOffset::new(10)));
+    }
+
+    #[test]
+    fn in_window_false_before_window_start() {
+        assert!(!SeqPoint::<Local>::new(99).in_window(SeqPoint::new(100), SeqOffset::new(10)));
+    }
+
+    #[test]
+    fn in_window_handles_wraparound() {
+        let start = SeqPoint::<Local>::new(u32::MAX - 4);
+        let len = SeqOffset::new(10);
+        assert!(SeqPoint::new(2).in_window(start, len));
+        assert!(!SeqPoint::new(6).in_window(start, len));
     }
 }
