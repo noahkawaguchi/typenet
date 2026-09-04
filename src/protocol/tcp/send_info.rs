@@ -205,39 +205,11 @@ impl SendInfo {
                 Some(send_info)
             }
 
-            // Out-of-order ACK/FIN-ACK whose ACK field would otherwise be a valid handshake
-            // completion, still within the receive window -> buffer any payload (and remember the
-            // FIN's position for a FIN-ACK) for later reassembly instead of discarding it, without
-            // completing the handshake yet. Reply with a duplicate ACK reflecting current state.
-            (TcpFlags::Ack | TcpFlags::FinAck, maybe_payload)
-                if conn.snd_una.precedes(seg.ack_num)
-                    && seg.ack_num.precedes_or_eq(conn.snd_nxt)
-                    && seg.seq_num != conn.rcv_nxt
-                    && seg
-                        .seq_num
-                        .in_window(conn.rcv_nxt, TcpSegment::<Local>::RCV_WND.into()) =>
-            {
-                if let Some(payload) = maybe_payload {
-                    conn.reassembly.insert(seg.seq_num, payload.clone());
-                }
-                if seg.flags == TcpFlags::FinAck {
-                    conn.reassembly
-                        .mark_fin(seg.seq_num + maybe_payload.len_or_default());
-                }
-                Some(Self::pure_ack(conn))
-            }
-
-            // ACK or FIN-ACK otherwise unacceptable (invalid ACK field, or SEG.SEQ past the receive
-            // window) -> per RFC 9293, Section 3.10.7.4, "First, check sequence number," reply with
-            // an ACK reflecting current state and drop the segment.
-            (TcpFlags::Ack | TcpFlags::FinAck, _) if seg.seq_num != conn.rcv_nxt => {
-                Some(Self::pure_ack(conn))
-            }
-
-            // Acceptable handshake-completing ACK (step 3) -> transition to ESTABLISHED, echoing
-            // any payload and/or previously buffered out-of-order data that is now contiguous with
-            // the just-arrived payload if the peer's window allows. If the peer's previously
-            // buffered FIN has now been reached, enter LAST-ACK instead of continuing normally.
+            // Acceptable handshake-completing ACK (step 3), arriving in order -> transition to
+            // ESTABLISHED, echoing any payload and/or previously buffered out-of-order data that is
+            // now contiguous with the just-arrived payload if the peer's window allows. If the
+            // peer's previously buffered FIN has now been reached, enter LAST-ACK instead of
+            // continuing normally.
             (TcpFlags::Ack, maybe_payload)
                 if seg.seq_num == conn.rcv_nxt
                     && conn.snd_una.precedes(seg.ack_num)
@@ -270,28 +242,63 @@ impl SendInfo {
                 }
             }
 
-            // Handshake-completing FIN-ACK (step 3 combined with the peer's own close) -> as per
-            // RFC 9293, Section 3.10.7.4, complete the handshake, transitioning to ESTABLISHED
-            // ("Fifth, check the ACK field"), then immediately start closing ("Eighth, check the
-            // FIN bit"), skipping CLOSE-WAIT under the current simplification, the same as a
-            // FIN-ACK arriving on an ESTABLISHED connection. Also echo as much trailing data as
-            // possible, if any.
+            // Acceptable handshake-completing FIN-ACK (step 3 combined with the peer's own close),
+            // arriving in order -> complete the handshake, transitioning to ESTABLISHED (RFC 9293,
+            // Section 3.10.7.4, "Fifth, check the ACK field"), then immediately start closing
+            // ("Eighth, check the FIN bit"), skipping CLOSE-WAIT under the current simplification,
+            // the same as a FIN-ACK arriving on an ESTABLISHED connection. Also echo as much
+            // trailing data as possible, if any.
             (TcpFlags::FinAck, maybe_payload)
                 if seg.seq_num == conn.rcv_nxt
                     && conn.snd_una.precedes(seg.ack_num)
                     && seg.ack_num.precedes_or_eq(conn.snd_nxt) =>
             {
                 let established = Self::complete_handshake(seg, conn, syn_received);
-
                 Some(Self::close_on_in_order_fin(seg, conn, maybe_payload.as_ref(), established)?)
             }
 
+            // Acceptable handshake-completing ACK or FIN-ACK, arriving out of order but still
+            // within the receive window, with valid SEG.ACK -> complete the handshake. Any payload
+            // can't be delivered yet, since data before it is still missing, so buffer it for later
+            // reassembly. Any FIN also can't be processed yet, so buffer its position.
+            (TcpFlags::Ack | TcpFlags::FinAck, maybe_payload)
+                if conn.snd_una.precedes(seg.ack_num)
+                    && seg.ack_num.precedes_or_eq(conn.snd_nxt)
+                    && seg
+                        .seq_num
+                        .in_window(conn.rcv_nxt, TcpSegment::<Local>::RCV_WND.into()) =>
+            {
+                Self::complete_handshake(seg, conn, syn_received);
+                if let Some(payload) = maybe_payload {
+                    conn.reassembly.insert(seg.seq_num, payload.clone());
+                }
+                if seg.flags == TcpFlags::FinAck {
+                    conn.reassembly
+                        .mark_fin(seg.seq_num + maybe_payload.len_or_default());
+                }
+                Some(Self::pure_ack(conn))
+            }
+
+            // Out-of-window ACK or FIN-ACK -> not acceptable at all, regardless of SEG.ACK. Reply
+            // with an ACK reflecting current state and drop the segment (RFC 9293, Section
+            // 3.10.7.4, "First, check sequence number").
+            (TcpFlags::Ack | TcpFlags::FinAck, _)
+                if !seg
+                    .seq_num
+                    .in_window(conn.rcv_nxt, TcpSegment::<Local>::RCV_WND.into()) =>
+            {
+                Some(Self::pure_ack(conn))
+            }
+
+            // This includes the RST for an in-window segment with an unacceptable SEG.ACK (RFC
+            // 9293, Section 3.10.7.4, "Fifth, check the ACK field").
             _ => Some(Self::rst(seg)),
         })
     }
 
-    /// Completes the initial three-way handshake, updating `conn` and returning a copy of the inner
-    /// struct that was placed inside `conn.tcp_state`.
+    /// Completes the initial three-way handshake, updating the state of `conn` (except RCV.NXT,
+    /// since SEG.SEQ could be out of order) and returning a copy of the inner struct that was
+    /// placed inside `conn.tcp_state`.
     fn complete_handshake(
         seg: &TcpSegment<Remote>,
         conn: &mut ConnState,
@@ -300,7 +307,6 @@ impl SendInfo {
         let established = syn_received.establish(seg);
 
         conn.tcp_state = TcpState::Established(established);
-        conn.rcv_nxt = seg.seq_num;
         conn.snd_una = seg.ack_num;
         conn.pending.clear(); // Only the SYN-ACK just acknowledged could have been pending
 
