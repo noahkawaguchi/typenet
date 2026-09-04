@@ -124,7 +124,7 @@ fn handshake_ack_with_data_establishes_and_echoes() -> Result {
 }
 
 #[test]
-fn handshake_ack_with_wrong_seq_and_no_data_still_completes_handshake() -> Result {
+fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -> Result {
     // RFC 9293, Section 3.10.7.4, "First, check sequence number," only rejects a segment that
     // falls entirely outside the receive window. An in-window but out-of-order SEG.SEQ is still
     // acceptable, so "Fifth, check the ACK field" still applies and completes the handshake here,
@@ -135,14 +135,14 @@ fn handshake_ack_with_wrong_seq_and_no_data_still_completes_handshake() -> Resul
     let mut cloned_state = connections.try_get()?.clone();
 
     // Correct ack_num, but seq_num doesn't match RCV.NXT = CLIENT_ISN + SYN_BYTE
-    let wrong_seq_ack = TcpSegment {
+    let out_of_order = TcpSegment {
         seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
         ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
         ..CLIENT_PKT
     };
 
     assert_eq!(
-        wrong_seq_ack.create_reply(&mut connections)?,
+        out_of_order.create_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -152,9 +152,9 @@ fn handshake_ack_with_wrong_seq_and_no_data_still_completes_handshake() -> Resul
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        wrong_seq_ack.window,
-        wrong_seq_ack.seq_num,
-        wrong_seq_ack.ack_num,
+        out_of_order.window,
+        out_of_order.seq_num,
+        out_of_order.ack_num,
     )));
     cloned_state.snd_una += LOCAL_SYN_BYTE;
 
@@ -169,7 +169,7 @@ fn handshake_ack_with_wrong_seq_and_no_data_still_completes_handshake() -> Resul
 }
 
 #[test]
-fn wrong_seq_and_invalid_ack_gets_rst() -> Result {
+fn out_of_order_seq_and_invalid_ack_gets_rst() -> Result {
     // An in-window but out-of-order segment is still acceptable (RFC 9293, Section 3.10.7.4,
     // "First, check sequence number"), so the ACK field check still applies to it ("Fifth, check
     // the ACK field"). If SEG.ACK is invalid, that means a RST, not a mere current state ACK.
@@ -198,7 +198,7 @@ fn wrong_seq_and_invalid_ack_gets_rst() -> Result {
 }
 
 #[test]
-fn fin_ack_in_syn_rcv_with_wrong_seq_still_completes_handshake_and_remembers_fin() -> Result {
+fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -> Result {
     // Same reasoning as the plain ACK case. An in-window but out-of-order FIN-ACK still has a
     // valid ACK field, so RFC 9293 still completes the handshake here. The FIN itself can't be
     // processed yet, so its position is remembered for later instead, the same as an out-of-order
@@ -208,7 +208,7 @@ fn fin_ack_in_syn_rcv_with_wrong_seq_still_completes_handshake_and_remembers_fin
     let mut cloned_state = connections.try_get()?.clone();
 
     // Correct ack_num, but seq_num doesn't match RCV.NXT = CLIENT_ISN + SYN_BYTE
-    let wrong_seq_fin_ack = TcpSegment {
+    let out_of_order = TcpSegment {
         seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
         ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
         flags: TcpFlags::FinAck,
@@ -216,7 +216,7 @@ fn fin_ack_in_syn_rcv_with_wrong_seq_still_completes_handshake_and_remembers_fin
     };
 
     assert_eq!(
-        wrong_seq_fin_ack.create_reply(&mut connections)?,
+        out_of_order.create_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -226,12 +226,12 @@ fn fin_ack_in_syn_rcv_with_wrong_seq_still_completes_handshake_and_remembers_fin
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        wrong_seq_fin_ack.window,
-        wrong_seq_fin_ack.seq_num,
-        wrong_seq_fin_ack.ack_num,
+        out_of_order.window,
+        out_of_order.seq_num,
+        out_of_order.ack_num,
     )));
     cloned_state.snd_una += LOCAL_SYN_BYTE;
-    cloned_state.reassembly.mark_fin(wrong_seq_fin_ack.seq_num);
+    cloned_state.reassembly.mark_fin(out_of_order.seq_num);
 
     assert_eq!(
         connections.try_get()?,
@@ -244,7 +244,7 @@ fn fin_ack_in_syn_rcv_with_wrong_seq_still_completes_handshake_and_remembers_fin
 }
 
 #[test]
-fn handshake_ack_with_wrong_seq_and_data_still_completes_handshake_and_buffers_data() -> Result {
+fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_data() -> Result {
     // Same reasoning as the plain ACK case. An in-window but out-of-order handshake-completing ACK
     // still has a valid ACK field, so the handshake completes. The payload can't be delivered
     // yet, so it's buffered for later reassembly instead.
@@ -253,7 +253,7 @@ fn handshake_ack_with_wrong_seq_and_data_still_completes_handshake_and_buffers_d
     let mut cloned_state = connections.try_get()?.clone();
 
     // Correct ack_num, but seq_num doesn't match RCV.NXT = CLIENT_ISN + SYN_BYTE
-    let wrong_seq_with_data = TcpSegment {
+    let out_of_order = TcpSegment {
         seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
         ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
         payload: TcpPayload::from_test_str("Hello")?,
@@ -261,7 +261,7 @@ fn handshake_ack_with_wrong_seq_and_data_still_completes_handshake_and_buffers_d
     };
 
     assert_eq!(
-        wrong_seq_with_data.create_reply(&mut connections)?,
+        out_of_order.create_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -271,17 +271,17 @@ fn handshake_ack_with_wrong_seq_and_data_still_completes_handshake_and_buffers_d
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        wrong_seq_with_data.window,
-        wrong_seq_with_data.seq_num,
-        wrong_seq_with_data.ack_num,
+        out_of_order.window,
+        out_of_order.seq_num,
+        out_of_order.ack_num,
     )));
     cloned_state.snd_una += LOCAL_SYN_BYTE;
     cloned_state.reassembly.insert(
-        wrong_seq_with_data.seq_num,
-        wrong_seq_with_data
+        out_of_order.seq_num,
+        out_of_order
             .payload
             .clone()
-            .ok_or("Expected wrong_seq_with_data to carry a payload")?,
+            .ok_or("Expected segment to carry a payload")?,
     );
 
     assert_eq!(
