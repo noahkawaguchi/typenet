@@ -244,7 +244,7 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Result {
         fin_ack_with_data
             .payload
             .clone()
-            .ok_or("expected fin_ack_with_data to carry a payload")?,
+            .ok_or("Expected fin_ack_with_data to carry a payload")?,
     );
     cloned_state
         .reassembly

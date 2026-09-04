@@ -74,7 +74,7 @@ mod tests {
     use {super::*, crate::protocol::tcp::seq_space::SeqOffset};
 
     fn test_payload(s: &str) -> Result<TcpPayload, &'static str> {
-        TcpPayload::from_test_str(s)?.ok_or("test payload must not be empty")
+        TcpPayload::from_test_str(s)?.ok_or("Test payload must not be empty")
     }
 
     #[test]
