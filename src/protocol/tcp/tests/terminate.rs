@@ -892,3 +892,48 @@ fn fin_ack_with_data_in_established_buffers_the_untransmittable_remainder() -> R
 
     Ok(())
 }
+
+#[test]
+fn stale_retransmission_in_a_terminating_state_gets_duplicate_ack_not_rst() -> Result {
+    // A retransmission of data the server already fully processed can arrive after the connection
+    // has moved past ESTABLISHED into any of the terminating states. Regardless of which of those
+    // states the connection is in, this should get a duplicate ACK reflecting the current state,
+    // with the connection otherwise left untouched, just like in ESTABLISHED.
+
+    for tcp_state in [
+        TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+        TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+        TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+        TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    ] {
+        let mut connections = TcpConnections::default();
+        let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
+        connections.insert(initial_state.clone());
+
+        // Carries a sequence number from before RCV.NXT, i.e. data already fully processed
+        let stale_retransmission = TcpSegment {
+            seq_num: CLIENT_ISN,
+            ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            payload: TcpPayload::from_test_str("stale")?,
+            ..CLIENT_PKT
+        };
+
+        assert_eq!(
+            stale_retransmission.create_reply(&mut connections)?,
+            Some(TcpSegment {
+                seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+                ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+                ..SERVER_REPLY
+            }),
+            "A stale retransmission should get a duplicate ACK, not a RST (in state {tcp_state:?})"
+        );
+
+        assert_eq!(
+            connections.try_get()?,
+            &initial_state,
+            "The connection should be untouched, not reset (in state {tcp_state:?})"
+        );
+    }
+
+    Ok(())
+}

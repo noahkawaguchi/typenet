@@ -539,6 +539,14 @@ impl SendInfo {
                 (Some(send_info), false)
             }
 
+            // Out-of-window duplicate data, or an out-of-order FIN-ACK past the receive window ->
+            // duplicate ACK reflecting current state, same as ESTABLISHED gives an out-of-window
+            // segment. Don't touch RCV.NXT or close progress.
+            (TcpFlags::Ack, Some(_), SeqCheck::Unacceptable, _)
+            | (TcpFlags::FinAck, _, SeqCheck::Unacceptable, _) => {
+                (Some(Self::pure_ack(conn)), false)
+            }
+
             _ => (Some(Self::rst(seg)), false),
         }
     }
@@ -570,6 +578,12 @@ impl SendInfo {
                 (Self::pure_ack(conn), true)
             }
 
+            // Out-of-window duplicate data, or an out-of-order FIN-ACK past the receive window ->
+            // duplicate ACK reflecting current state, same as ESTABLISHED gives an out-of-window
+            // segment. Don't touch RCV.NXT or close progress.
+            (TcpFlags::Ack, Some(_), SeqCheck::Unacceptable)
+            | (TcpFlags::FinAck, _, SeqCheck::Unacceptable) => (Self::pure_ack(conn), false),
+
             _ => (Self::rst(seg), false),
         }
     }
@@ -583,9 +597,17 @@ impl SendInfo {
     ) -> (Option<Self>, bool) {
         let our_fin_acked = seg.ack_num == conn.snd_nxt;
 
-        match (seg.flags, &seg.payload, our_fin_acked) {
+        match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
             // Simultaneous close, peer's ACK of our FIN arrives -> remove connection, no reply.
-            (TcpFlags::Ack, None, true) => (None, true),
+            (TcpFlags::Ack, None, _, true) => (None, true),
+
+            // Out-of-window duplicate data, or an out-of-order FIN-ACK past the receive window ->
+            // duplicate ACK reflecting current state, same as ESTABLISHED gives an out-of-window
+            // segment. Don't touch close progress.
+            (TcpFlags::Ack, Some(_), SeqCheck::Unacceptable, _)
+            | (TcpFlags::FinAck, _, SeqCheck::Unacceptable, _) => {
+                (Some(Self::pure_ack(conn)), false)
+            }
 
             _ => (Some(Self::rst(seg)), false),
         }
@@ -600,17 +622,25 @@ impl SendInfo {
     ) -> (Option<Self>, bool) {
         let our_fin_acked = seg.ack_num == conn.snd_nxt;
 
-        match (seg.flags, &seg.payload, our_fin_acked) {
+        match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
             // Partial ACK not yet covering our FIN -> update send-side state like a plain ACK, keep
             // waiting in LAST-ACK for the real final ACK.
-            (TcpFlags::Ack, None, false) => {
+            (TcpFlags::Ack, None, _, false) => {
                 conn.tcp_state = TcpState::LastAck(last_ack.incoming_ack_update(conn, seg));
                 (None, false)
             }
 
             // Final ACK completing passive close, fully acknowledging our FIN -> remove connection,
             // no reply.
-            (TcpFlags::Ack, None, true) => (None, true),
+            (TcpFlags::Ack, None, _, true) => (None, true),
+
+            // Out-of-window duplicate data, or an out-of-order FIN-ACK past the receive window ->
+            // duplicate ACK reflecting current state, same as ESTABLISHED gives an out-of-window
+            // segment. Don't touch close progress.
+            (TcpFlags::Ack, Some(_), SeqCheck::Unacceptable, _)
+            | (TcpFlags::FinAck, _, SeqCheck::Unacceptable, _) => {
+                (Some(Self::pure_ack(conn)), false)
+            }
 
             _ => (Some(Self::rst(seg)), false),
         }
