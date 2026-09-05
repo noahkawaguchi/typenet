@@ -312,6 +312,43 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> Result {
 }
 
 #[test]
+fn stale_pure_ack_gets_duplicate_ack_without_updating_state() -> Result {
+    // Per RFC 9293, Section 3.10.7.4, "First, check sequence number" applies to every segment,
+    // including a payload-less ACK, and takes priority over "Fifth, check the ACK field." A pure
+    // ACK whose SEG.SEQ fails that check must be dropped and get a current state reply.
+
+    let mut connections = TcpConnections::default().after_handshake();
+    let initial_state = connections.try_get()?.clone();
+
+    // Carries a sequence number from before RCV.NXT, and a distinctive window that must not get
+    // adopted
+    let stale_pure_ack = TcpSegment {
+        seq_num: CLIENT_ISN,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        window: SeqOffset::new(1234),
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        stale_pure_ack.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ..SERVER_REPLY
+        }),
+        "A stale pure ACK should get a duplicate ACK reflecting current state"
+    );
+
+    assert_eq!(
+        connections.try_get()?,
+        &initial_state,
+        "The connection should be untouched, its window not adopted"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn ack_for_unsent_data_is_dropped_and_gets_current_state_reply() -> Result {
     // Per RFC 9293 Section 3.10.7.4, an ACK acknowledging data the server hasn't sent yet (ack_num
     // past SND.NXT) must be dropped, and the reply should be a bare ACK reflecting the current
