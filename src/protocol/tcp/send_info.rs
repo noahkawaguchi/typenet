@@ -256,7 +256,7 @@ impl SendInfo {
                 conn.send_buffer.extend(reassembled);
 
                 if conn.reassembly.fin_reached(conn.rcv_nxt) {
-                    conn.rcv_nxt += REMOTE_FIN_BYTE; // Peer's FIN consumes one sequence number
+                    conn.rcv_nxt += REMOTE_FIN_BYTE;
                     Some(Self::enter_last_ack(conn, established)?)
                 } else if anything_to_send {
                     Some(match established.drain_transmittable(conn)? {
@@ -308,9 +308,8 @@ impl SendInfo {
         })
     }
 
-    /// Completes the initial three-way handshake, updating the state of `conn` (except RCV.NXT,
-    /// since SEG.SEQ could be out of order) and returning a copy of the inner struct that was
-    /// placed inside `conn.tcp_state`.
+    /// Completes the initial three-way handshake, updating the state of `conn` and returning a copy
+    /// of the inner struct that was placed inside `conn.tcp_state`.
     fn complete_handshake(
         seg: &TcpSegment<Remote>,
         conn: &mut ConnState,
@@ -368,7 +367,7 @@ impl SendInfo {
                 conn.send_buffer.extend(reassembled);
 
                 Some(if conn.reassembly.fin_reached(conn.rcv_nxt) {
-                    conn.rcv_nxt += REMOTE_FIN_BYTE; // Peer's FIN consumes one sequence number
+                    conn.rcv_nxt += REMOTE_FIN_BYTE;
                     Self::enter_last_ack(conn, new_established)?
                 } else {
                     match new_established.drain_transmittable(conn)? {
@@ -450,7 +449,7 @@ impl SendInfo {
             conn.send_buffer.extend(payload.as_bytes());
         }
 
-        conn.rcv_nxt += REMOTE_FIN_BYTE; // Peer's FIN consumes one sequence number
+        conn.rcv_nxt += REMOTE_FIN_BYTE;
 
         let new_established = old_established.incoming_ack_update(conn, seg);
         Self::enter_last_ack(conn, new_established)
@@ -474,7 +473,7 @@ impl SendInfo {
         };
 
         conn.snd_nxt += send_len;
-        conn.snd_nxt += LOCAL_FIN_BYTE; // Our FIN consumes one sequence number
+        conn.snd_nxt += LOCAL_FIN_BYTE;
 
         conn.pending
             .push(PendingSegment::new(send_info.clone(), Instant::now()));
@@ -517,7 +516,6 @@ impl SendInfo {
             // plain data arriving in FIN-WAIT-1), but RCV.NXT must still advance past it.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder, true) => {
                 conn.rcv_nxt += maybe_payload.len_or_default();
-                // Consume one sequence number in RCV.NXT for the peer's FIN
                 conn.rcv_nxt += REMOTE_FIN_BYTE;
                 (Some(Self::pure_ack(conn)), true)
             }
@@ -529,7 +527,6 @@ impl SendInfo {
             // plain data arriving in FIN-WAIT-1), but RCV.NXT must still advance past it.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder, false) => {
                 conn.rcv_nxt += maybe_payload.len_or_default();
-                // Consume one sequence number in RCV.NXT for the peer's FIN
                 conn.rcv_nxt += REMOTE_FIN_BYTE;
                 let send_info = Self::pure_ack(conn);
 

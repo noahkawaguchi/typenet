@@ -110,12 +110,10 @@ impl TcpSegment<Local> {
     /// receive... segments overlapping the range RCV.NXT to RCV.NXT + RCV.WND - 1 carry acceptable
     /// data or control" (RFC 9293, Section 4).
     ///
-    /// Currently left at max because as an echo server, there's no receive-side buffer accumulating
-    /// data for an application.
-    ///
-    /// However, a dynamic RCV.WND could be used in the future to bound the send buffer's growth,
-    /// throttling the peer's sending rate if they keep sending more data than they are willing to
-    /// receive.
+    /// Currently left at max for simplicity because as an echo server, there's no application to
+    /// wait for. However, RCV.WND could be used in the future to bound the growth of the reassembly
+    /// and send buffers, for example throttling the peer's sending rate if they keep sending more
+    /// data than they are willing to receive.
     const RCV_WND: SeqOffset<u16, Remote> = SeqOffset::new(u16::MAX);
 
     fn from_pairs_and_info(

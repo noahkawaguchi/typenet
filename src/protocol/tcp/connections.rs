@@ -179,10 +179,7 @@ impl TcpConnections {
                 };
 
                 conn.tcp_state = TcpState::FinWait1(established.close());
-
-                // Consume one sequence number in SND.NXT for the FIN about to be sent
                 conn.snd_nxt += LOCAL_FIN_BYTE;
-
                 conn.pending
                     .push(PendingSegment::new(send_info.clone(), now));
 
