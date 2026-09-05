@@ -301,6 +301,7 @@ mod tests {
         super::*,
         crate::{
             ETHERNET_MTU,
+            ipv4_header::Ipv4Header,
             protocol::{
                 tcp::{
                     connections::ConnKey,

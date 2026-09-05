@@ -1,9 +1,10 @@
 use {
     crate::{
-        Result,
+        ETHERNET_MTU, Result,
         endpoint::{Local, Remote},
+        ipv4_header::Ipv4Header,
         protocol::tcp::{
-            LOCAL_SYN_BYTE, TcpSegment,
+            LOCAL_SYN_BYTE, TCP_HDR_MIN_LEN, TcpSegment,
             flags::TcpFlags,
             payload::TcpPayload,
             pending_segment::PendingSegment,
@@ -300,10 +301,15 @@ impl SendSideOpen for Established {}
 
 #[expect(private_bounds, reason = "Ensure only states allowed in this module can send data")]
 impl<T: SendSideOpen> SyncedState<T> {
-    /// Removes and returns as many bytes as the peer's currently advertised window allows from the
-    /// front of the send buffer, or returns `Ok(None)` if nothing can be sent right now because the
-    /// buffer is empty or the window is full. Does not mutate any other state.
+    /// Removes and returns as many bytes as possible from the front of the send buffer, bounded by
+    /// the peer's currently advertised window and the maximum length of a segment, or returns
+    /// `Ok(None)` if nothing can be sent. Does not mutate any other state.
     pub(super) fn drain_transmittable(&self, conn: &mut ConnState) -> Result<Option<TcpPayload>> {
+        /// The maximum number of bytes that a single TCP payload can have. Constant because the
+        /// current implementation never sends options in IP or TCP headers.
+        const MAX_PAYLOAD_LEN: usize =
+            ETHERNET_MTU - Ipv4Header::REPLY_HDR_LEN - TCP_HDR_MIN_LEN as usize;
+
         let sent_but_not_acked = conn
             .snd_nxt
             .offset_past(conn.snd_una)
@@ -312,7 +318,9 @@ impl<T: SendSideOpen> SyncedState<T> {
         let space_in_window = SeqOffset::<u32, Local>::from(self.window_state.snd_wnd)
             .saturating_sub(sent_but_not_acked);
 
-        let bytes_to_send = usize::try_from(space_in_window)?.min(conn.send_buffer.len());
+        let bytes_to_send = usize::try_from(space_in_window)?
+            .min(conn.send_buffer.len())
+            .min(MAX_PAYLOAD_LEN);
 
         TcpPayload::try_from_iter(conn.send_buffer.drain(..bytes_to_send)).map_err(Into::into)
     }

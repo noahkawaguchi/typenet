@@ -227,3 +227,77 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> Result {
 
     Ok(())
 }
+
+#[test]
+fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Result {
+    // Data queued while the peer's window was closed or small can grow larger than the size of one
+    // segment. Once the window reopens wide enough to take all of it, the amount handed back in a
+    // single reply must still be capped to what fits in the size of one segment, with the rest kept
+    // queued for a later reply.
+
+    const MAX_PAYLOAD_LEN: usize =
+        ETHERNET_MTU - Ipv4Header::REPLY_HDR_LEN - TCP_HDR_MIN_LEN as usize;
+
+    /// Ensures that this test is reexamined if the relevant consts change.
+    const _: () = assert!(MAX_PAYLOAD_LEN == 1500 - 20 - 20);
+
+    const ZERO_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(0);
+    const WIDE_OPEN_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(u16::MAX);
+
+    let mut connections = TcpConnections::default();
+    let mut expected_state = after_handshake_with_snd_wnd(ZERO_WINDOW);
+    connections.insert(expected_state.clone());
+
+    let big_payload = "a".repeat(MAX_PAYLOAD_LEN + 100);
+    let big_payload_len = SeqOffset::new(u32::try_from(big_payload.len())?);
+
+    // Buffer the whole oversized payload behind a zero window, so the amount queued for later
+    // sending isn't itself limited by window size
+    TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        window: ZERO_WINDOW,
+        payload: TcpPayload::from_test_str(&big_payload)?,
+        ..CLIENT_PKT
+    }
+    .create_reply(&mut connections)?;
+
+    expected_state.rcv_nxt += big_payload_len;
+    expected_state.send_buffer.extend(big_payload.as_bytes());
+    assert_eq!(connections.try_get()?, &expected_state, "State confirmation before window opens");
+
+    // Client reopens the window wide enough to take everything at once
+    let window_update = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + big_payload_len,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        window: WIDE_OPEN_WINDOW,
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        window_update.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + big_payload_len,
+            payload: TcpPayload::from_test_str(&"a".repeat(MAX_PAYLOAD_LEN))?,
+            ..SERVER_REPLY
+        }),
+        "Only the first {MAX_PAYLOAD_LEN} bytes should fit in one segment"
+    );
+
+    expected_state.snd_nxt += SeqOffset::<u32, Local>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
+    expected_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
+        window_update.window,
+        window_update.seq_num,
+        window_update.ack_num,
+    )));
+    expected_state.send_buffer.drain(..MAX_PAYLOAD_LEN);
+
+    assert_eq!(
+        connections.try_get()?,
+        &expected_state,
+        "SND.NXT should advance only by what was sent, and the rest should remain buffered"
+    );
+
+    Ok(())
+}
