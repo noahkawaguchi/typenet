@@ -169,30 +169,30 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
 }
 
 #[test]
-fn out_of_order_seq_and_invalid_ack_gets_rst() -> Result {
-    // An in-window but out-of-order segment is still acceptable (RFC 9293, Section 3.10.7.4,
-    // "First, check sequence number"), so the ACK field check still applies to it ("Fifth, check
-    // the ACK field"). If SEG.ACK is invalid, that means a RST, not a mere current state ACK.
+fn acceptable_seq_but_unacceptable_ack_in_syn_rcv_gets_rst() -> Result {
+    // Per RFC 9293, Section 3.10.7.4, SEG.SEQ is checked at "First, check sequence number," earlier
+    // than SEG.ACK at "Fifth, check the ACK field." If SEG.SEQ is acceptable, but SEG.ACK is
+    // unacceptable, that means a RST, not a mere current state ACK.
 
-    let mut connections = TcpConnections::default().with_syn_rcv();
-    let initial_state = connections.try_get()?.clone();
+    for client_seq in [
+        CLIENT_ISN + REMOTE_SYN_BYTE, // Exact RCV.NXT in order
+        CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1), // Doesn't match RCV.NXT but in window
+    ] {
+        let mut connections = TcpConnections::default().with_syn_rcv();
+        let initial_state = connections.try_get()?.clone();
 
-    // seq_num doesn't match RCV.NXT, and ack_num doesn't acknowledge our SYN-ACK either
-    let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
-        ack_num: SERVER_ISN,
-        ..CLIENT_PKT
+        // SEG.ACK doesn't acknowledge our SYN-ACK
+        let reply = TcpSegment { seq_num: client_seq, ack_num: SERVER_ISN, ..CLIENT_PKT }
+            .create_reply(&mut connections)?;
+
+        assert_eq!(
+            reply,
+            Some(TcpSegment { seq_num: SERVER_ISN, flags: TcpFlags::Rst, ..SERVER_REPLY }),
+            "Acceptable SEG.SEQ with unacceptable SEG.ACK should get RST, not current state ACK"
+        );
+
+        assert_eq!(connections.try_get()?, &initial_state, "Connection must remain SYN-RECEIVED");
     }
-    .create_reply(&mut connections)?;
-
-    assert_eq!(
-        reply,
-        Some(TcpSegment { seq_num: SERVER_ISN, flags: TcpFlags::Rst, ..SERVER_REPLY }),
-        "In-window, out-of-order SEG.SEQ with invalid SEG.ACK should get a RST, not a current \
-         state ACK"
-    );
-
-    assert_eq!(connections.try_get()?, &initial_state, "Connection must remain SYN-RECEIVED");
 
     Ok(())
 }
