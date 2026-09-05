@@ -409,9 +409,8 @@ impl SendInfo {
             // Out-of-window duplicate data, or an out-of-order FIN-ACK past the receive window ->
             // duplicate ACK. ACK RCV.NXT so the client knows what the server expects next, but
             // don't echo data, buffer it, start closing, or advance SND.NXT/RCV.NXT.
-            (TcpFlags::Ack | TcpFlags::FinAck, _, SeqCheck::Unacceptable) => {
-                Some(Self::pure_ack(conn))
-            }
+            (TcpFlags::Ack, Some(_), SeqCheck::Unacceptable)
+            | (TcpFlags::FinAck, _, SeqCheck::Unacceptable) => Some(Self::pure_ack(conn)),
 
             _ => Some(Self::rst(seg)),
         })
