@@ -1,5 +1,15 @@
 use super::*;
 
+/// Four of the states that are in the process of terminating after we've sent our FIN: FIN-WAIT-1,
+/// FIN-WAIT-2, CLOSING, and LAST-ACK. All have the window state right after the initial three-way
+/// handshake.
+const TERMINATING_STATES: [TcpState; 4] = [
+    TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+];
+
 #[test]
 fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> Result {
     // A FIN-ACK arriving in SYN-RECEIVED can legitimately complete the handshake and initiate
@@ -312,12 +322,7 @@ fn partial_ack_in_a_terminating_state_does_not_close_or_reset() -> Result {
     // SND.NXT (i.e., doesn't yet cover the FIN) must not be treated as the final ACK completing the
     // close or get a RST.
 
-    for tcp_state in [
-        TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-    ] {
+    for tcp_state in TERMINATING_STATES {
         let mut connections = TcpConnections::default();
 
         // SND.NXT includes our own already-sent FIN, one past SND.UNA
@@ -888,12 +893,7 @@ fn stale_retransmission_in_a_terminating_state_gets_duplicate_ack_not_rst() -> R
     // states the connection is in, this should get a duplicate ACK reflecting the current state,
     // with the connection otherwise left untouched, just like in ESTABLISHED.
 
-    for tcp_state in [
-        TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-    ] {
+    for tcp_state in TERMINATING_STATES {
         let mut connections = TcpConnections::default();
         let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
         connections.insert(initial_state.clone());
@@ -932,12 +932,7 @@ fn stale_pure_ack_in_a_terminating_state_gets_duplicate_ack() -> Result {
     // connection has moved past ESTABLISHED into any of the terminating states. It must be dropped
     // and get a current state reply, not get a RST or advance the connection's close progress.
 
-    for tcp_state in [
-        TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-    ] {
+    for tcp_state in TERMINATING_STATES {
         let mut connections = TcpConnections::default();
         let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
         connections.insert(initial_state.clone());
