@@ -148,12 +148,12 @@ impl SendInfo {
                         }
 
                         TcpState::FinWait2(fin_wait_2) => {
-                            let (send_info, remove_conn) =
+                            let (maybe_send_info, remove_conn) =
                                 Self::handle_fin_wait_2(seg, conn, fin_wait_2);
                             if remove_conn {
                                 connections.remove(&key);
                             }
-                            Some(send_info)
+                            maybe_send_info
                         }
 
                         TcpState::Closing(closing) => {
@@ -507,6 +507,13 @@ impl SendInfo {
                 (None, false)
             }
 
+            // Partial ACK not yet covering our FIN -> update send-side state like a plain ACK, keep
+            // waiting in FIN-WAIT-1 for the ACK that covers it.
+            (TcpFlags::Ack, None, _, false) => {
+                conn.tcp_state = TcpState::FinWait1(fin_wait_1.incoming_ack_update(conn, seg));
+                (None, false)
+            }
+
             // Peer's FIN arrives before ours is acknowledged (simultaneous close), and it also
             // acknowledges our FIN -> ACK it and remove the connection (skipping
             // FIN-WAIT-2/TIME-WAIT).
@@ -556,7 +563,7 @@ impl SendInfo {
         seg: &TcpSegment<Remote>,
         conn: &mut ConnState,
         fin_wait_2: SyncedState<FinWait2>,
-    ) -> (Self, bool) {
+    ) -> (Option<Self>, bool) {
         match (seg.flags, &seg.payload, SeqCheck::check(seg, conn)) {
             // In-order data arriving after we've sent our own FIN but before the peer's FIN has
             // arrived (half closed) -> ACK it, don't echo because we have no send side left, and
@@ -565,7 +572,14 @@ impl SendInfo {
                 conn.rcv_nxt += payload.len().into();
                 let send_info = Self::pure_ack(conn);
                 conn.tcp_state = TcpState::FinWait2(fin_wait_2.incoming_ack_update(conn, seg));
-                (send_info, false)
+                (Some(send_info), false)
+            }
+
+            // Plain ACK with nothing new (e.g. a window update) while waiting for the peer's FIN ->
+            // update send-side state like a plain ACK, no reply.
+            (TcpFlags::Ack, None, _) => {
+                conn.tcp_state = TcpState::FinWait2(fin_wait_2.incoming_ack_update(conn, seg));
+                (None, false)
             }
 
             // Peer's FIN arrives in order -> ACK it and finish closing (no TIME-WAIT). Our own FIN
@@ -574,16 +588,16 @@ impl SendInfo {
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder) => {
                 conn.rcv_nxt += maybe_payload.len_or_default();
                 conn.rcv_nxt += REMOTE_FIN_BYTE;
-                (Self::pure_ack(conn), true)
+                (Some(Self::pure_ack(conn)), true)
             }
 
             // Out-of-window duplicate data, or an out-of-order FIN-ACK past the receive window ->
             // duplicate ACK reflecting current state, same as ESTABLISHED gives an out-of-window
             // segment. Don't touch RCV.NXT or close progress.
             (TcpFlags::Ack, Some(_), SeqCheck::Unacceptable)
-            | (TcpFlags::FinAck, _, SeqCheck::Unacceptable) => (Self::pure_ack(conn), false),
+            | (TcpFlags::FinAck, _, SeqCheck::Unacceptable) => (Some(Self::pure_ack(conn)), false),
 
-            _ => (Self::rst(seg), false),
+            _ => (Some(Self::rst(seg)), false),
         }
     }
 
@@ -591,14 +605,21 @@ impl SendInfo {
     /// necessary and a `bool` representing whether the connection should be removed.
     fn handle_closing(
         seg: &TcpSegment<Remote>,
-        conn: &ConnState,
-        _closing: SyncedState<Closing>,
+        conn: &mut ConnState,
+        closing: SyncedState<Closing>,
     ) -> (Option<Self>, bool) {
         let our_fin_acked = seg.ack_num == conn.snd_nxt;
 
         match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
             // Simultaneous close, peer's ACK of our FIN arrives -> remove connection, no reply.
             (TcpFlags::Ack, None, _, true) => (None, true),
+
+            // Partial ACK not yet covering our FIN -> update send-side state like a plain ACK, keep
+            // waiting in CLOSING for the ACK that covers it.
+            (TcpFlags::Ack, None, _, false) => {
+                conn.tcp_state = TcpState::Closing(closing.incoming_ack_update(conn, seg));
+                (None, false)
+            }
 
             // Out-of-window duplicate data, or an out-of-order FIN-ACK past the receive window ->
             // duplicate ACK reflecting current state, same as ESTABLISHED gives an out-of-window

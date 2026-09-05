@@ -305,62 +305,50 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Result {
 }
 
 #[test]
-fn partial_ack_in_last_ack_does_not_close_connection() -> Result {
-    // A LAST-ACK connection that echoed data alongside its own FIN can be ACKed in stages (e.g.
-    // the peer ACKs previously buffered chunks separately from the byte that covers the FIN). An
-    // ACK that doesn't yet reach SND.NXT (i.e., doesn't yet cover the FIN) must not be
-    // treated as the final ACK completing the close.
+fn partial_ack_in_a_terminating_state_does_not_close_or_reset() -> Result {
+    // In any terminating state, our own FIN can be acked separately from data sent alongside it
+    // (e.g. the peer acks previously buffered chunks before finally acking the byte that covers the
+    // FIN). Regardless of which of those states the connection is in, an ACK that doesn't yet reach
+    // SND.NXT (i.e., doesn't yet cover the FIN) must not be treated as the final ACK completing the
+    // close or get a RST.
 
-    let mut connections = TcpConnections::default().after_handshake(); // rcv_nxt=CLIENT_ISN+1
-    let mut cloned_state = connections.try_get()?.clone();
+    for tcp_state in [
+        TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+        TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+        TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+        TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    ] {
+        let mut connections = TcpConnections::default();
 
-    // Client's FIN-ACK arrives with trailing data, echoed alongside our own FIN -> LAST-ACK
-    let client_fin_ack = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
-        flags: TcpFlags::FinAck,
-        payload: TcpPayload::from_test_str("Hello")?,
-        ..CLIENT_PKT
-    };
+        // SND.NXT includes our own already-sent FIN, one past SND.UNA
+        let initial_state = ConnState {
+            tcp_state,
+            snd_nxt: AFTER_HANDSHAKE.snd_nxt + LOCAL_FIN_BYTE,
+            ..AFTER_HANDSHAKE
+        };
 
-    client_fin_ack.create_reply(&mut connections)?;
+        connections.insert(initial_state.clone());
 
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        client_fin_ack.window,
-        client_fin_ack.seq_num,
-        client_fin_ack.ack_num,
-    )));
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN + LOCAL_FIN_BYTE;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN + REMOTE_FIN_BYTE;
+        // SEG.ACK == SND.UNA, not yet SND.NXT, so this doesn't cover our FIN
+        let partial_ack = TcpSegment {
+            seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ..CLIENT_PKT
+        };
 
-    assert_eq!(connections.try_get()?, &cloned_state);
+        assert_eq!(
+            partial_ack.create_reply(&mut connections)?,
+            None,
+            "A partial ACK not yet covering our FIN should get no reply (in state {tcp_state:?})"
+        );
 
-    // Client ACKs only the echoed "Hello" (SEG.ACK=SERVER_ISN+1+5), not the FIN yet
-    // (SND.NXT=SERVER_ISN+1+5+1)
-    let partial_ack = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
-        ..CLIENT_PKT
-    };
-
-    assert_eq!(
-        partial_ack.create_reply(&mut connections)?,
-        None,
-        "A partial ACK not yet covering the FIN should not get a reply"
-    );
-
-    cloned_state.snd_una += LOCAL_HELLO_LEN;
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        partial_ack.window,
-        partial_ack.seq_num,
-        partial_ack.ack_num,
-    )));
-
-    assert_eq!(
-        connections.try_get()?,
-        &cloned_state,
-        "Connection should remain in LAST-ACK, not be removed, since the FIN is still unacked"
-    );
+        assert_eq!(
+            connections.try_get()?,
+            &initial_state,
+            "The connection should remain in the same state, not be closed or reset (in state \
+             {tcp_state:?})"
+        );
+    }
 
     Ok(())
 }
