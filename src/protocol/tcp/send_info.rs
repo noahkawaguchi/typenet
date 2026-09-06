@@ -89,62 +89,41 @@ impl SendInfo {
             server_port: seg.ports.dst,
         };
 
+        // Closure to deduplicate processing of state-specific helpers' return values
+        let known_conn_case = |(maybe_send_info, remove_conn), conns: &mut TcpConnections| {
+            if remove_conn {
+                conns.remove(&key);
+            }
+            maybe_send_info
+        };
+
         Ok(match connections.get_mut(&key) {
             None => Self::handle_unknown_conn(seg, connections, key)?,
 
-            Some(conn) => match conn.tcp_state {
-                TcpState::SynReceived(syn_received) => {
-                    let (maybe_send_info, remove_conn) =
-                        Self::handle_syn_rcv(seg, conn, syn_received)?;
-                    if remove_conn {
-                        connections.remove(&key);
+            Some(conn) => known_conn_case(
+                match conn.tcp_state {
+                    TcpState::SynReceived(syn_received) => {
+                        Self::handle_syn_rcv(seg, conn, syn_received)?
                     }
-                    maybe_send_info
-                }
 
-                TcpState::Established(established) => {
-                    let (maybe_send_info, remove_conn) =
-                        Self::handle_established(seg, conn, established)?;
-                    if remove_conn {
-                        connections.remove(&key);
+                    TcpState::Established(established) => {
+                        Self::handle_established(seg, conn, established)?
                     }
-                    maybe_send_info
-                }
 
-                TcpState::FinWait1(fin_wait_1) => {
-                    let (maybe_send_info, remove_conn) =
-                        Self::handle_fin_wait_1(seg, conn, fin_wait_1);
-                    if remove_conn {
-                        connections.remove(&key);
+                    TcpState::FinWait1(fin_wait_1) => {
+                        Self::handle_fin_wait_1(seg, conn, fin_wait_1)
                     }
-                    maybe_send_info
-                }
 
-                TcpState::FinWait2(fin_wait_2) => {
-                    let (maybe_send_info, remove_conn) =
-                        Self::handle_fin_wait_2(seg, conn, fin_wait_2);
-                    if remove_conn {
-                        connections.remove(&key);
+                    TcpState::FinWait2(fin_wait_2) => {
+                        Self::handle_fin_wait_2(seg, conn, fin_wait_2)
                     }
-                    maybe_send_info
-                }
 
-                TcpState::Closing(closing) => {
-                    let (maybe_send_info, remove_conn) = Self::handle_closing(seg, conn, closing);
-                    if remove_conn {
-                        connections.remove(&key);
-                    }
-                    maybe_send_info
-                }
+                    TcpState::Closing(closing) => Self::handle_closing(seg, conn, closing),
 
-                TcpState::LastAck(last_ack) => {
-                    let (maybe_send_info, remove_conn) = Self::handle_last_ack(seg, conn, last_ack);
-                    if remove_conn {
-                        connections.remove(&key);
-                    }
-                    maybe_send_info
-                }
-            },
+                    TcpState::LastAck(last_ack) => Self::handle_last_ack(seg, conn, last_ack),
+                },
+                connections,
+            ),
         })
     }
 
