@@ -95,15 +95,13 @@ impl TcpConnections {
     /// Returns whether any connection is currently mid-close (FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT,
     /// CLOSING, or LAST-ACK), i.e. has sent or received a FIN but not yet completed teardown.
     pub fn closing_in_progress(&self) -> bool {
-        self.table.values().any(|conn| {
-            matches!(
-                conn.tcp_state,
-                TcpState::FinWait1(_)
-                    | TcpState::FinWait2(_)
-                    | TcpState::CloseWait(_)
-                    | TcpState::Closing(_)
-                    | TcpState::LastAck(_),
-            )
+        self.table.values().any(|conn| match conn.tcp_state {
+            TcpState::SynReceived(_) | TcpState::Established(_) => false,
+            TcpState::FinWait1(_)
+            | TcpState::FinWait2(_)
+            | TcpState::CloseWait(_)
+            | TcpState::Closing(_)
+            | TcpState::LastAck(_) => true,
         })
     }
 
