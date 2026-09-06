@@ -3,7 +3,7 @@ use super::*;
 /// Four of the states that are in the process of terminating after we've sent our FIN: FIN-WAIT-1,
 /// FIN-WAIT-2, CLOSING, and LAST-ACK. All have the window state right after the initial three-way
 /// handshake.
-const TERMINATING_STATES: [TcpState; 4] = [
+const STATES_AFTER_SENDING_FIN: [TcpState; 4] = [
     TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
     TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
     TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
@@ -315,14 +315,14 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Result {
 }
 
 #[test]
-fn partial_ack_in_a_terminating_state_does_not_close_or_reset() -> Result {
-    // In any terminating state, our own FIN can be acked separately from data sent alongside it
-    // (e.g. the peer acks previously buffered chunks before finally acking the byte that covers the
-    // FIN). Regardless of which of those states the connection is in, an ACK that doesn't yet reach
-    // SND.NXT (i.e., doesn't yet cover the FIN) must not be treated as the final ACK completing the
-    // close or get a RST.
+fn partial_ack_after_sending_our_fin_does_not_close_or_reset() -> Result {
+    // In any of the states after sending our FIN, our own FIN can be acked separately from data
+    // sent alongside it (e.g. the peer acks previously buffered chunks before finally acking the
+    // byte that covers the FIN). Regardless of which of those states the connection is in, an ACK
+    // that doesn't yet reach SND.NXT (i.e., doesn't yet cover the FIN) must not be treated as the
+    // final ACK completing the close or get a RST.
 
-    for tcp_state in TERMINATING_STATES {
+    for tcp_state in STATES_AFTER_SENDING_FIN {
         let mut connections = TcpConnections::default();
 
         // SND.NXT includes our own already-sent FIN, one past SND.UNA
@@ -1060,13 +1060,13 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Res
 }
 
 #[test]
-fn stale_retransmission_in_a_terminating_state_gets_duplicate_ack_not_rst() -> Result {
-    // A retransmission of data the server already fully processed can arrive after the connection
-    // has moved past ESTABLISHED into any of the terminating states. Regardless of which of those
-    // states the connection is in, this should get a duplicate ACK reflecting the current state,
-    // with the connection otherwise left untouched, just like in ESTABLISHED.
+fn stale_retransmission_after_sending_our_fin_gets_duplicate_ack_not_rst() -> Result {
+    // A retransmission of data the server already fully processed can arrive in any of the states
+    // after we've sent our FIN. Regardless of which of those states the connection is in, this
+    // should get a duplicate ACK reflecting the current state, with the connection otherwise left
+    // untouched, just like in ESTABLISHED.
 
-    for tcp_state in TERMINATING_STATES {
+    for tcp_state in STATES_AFTER_SENDING_FIN {
         let mut connections = TcpConnections::default();
         let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
         connections.insert(initial_state.clone());
@@ -1137,12 +1137,12 @@ fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> Result {
 }
 
 #[test]
-fn stale_pure_ack_in_a_terminating_state_gets_duplicate_ack() -> Result {
-    // A pure ACK whose SEG.SEQ fails the sequence acceptability check can arrive after the
-    // connection has moved past ESTABLISHED into any of the terminating states. It must be dropped
-    // and get a current state reply, not get a RST or advance the connection's close progress.
+fn stale_pure_ack_after_sending_our_fin_gets_duplicate_ack() -> Result {
+    // A pure ACK whose SEG.SEQ fails the sequence acceptability check can arrive in any of the
+    // states after we've sent our FIN. It must be dropped and get a current state reply, not get a
+    // RST or advance the connection's close progress.
 
-    for tcp_state in TERMINATING_STATES {
+    for tcp_state in STATES_AFTER_SENDING_FIN {
         let mut connections = TcpConnections::default();
         let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
         connections.insert(initial_state.clone());
