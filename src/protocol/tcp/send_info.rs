@@ -12,8 +12,8 @@ use {
                 pending_segment::PendingSegment,
                 seq_space::SeqPoint,
                 state::{
-                    Closing, ConnState, Established, FinWait1, FinWait2, LastAck, SynReceived,
-                    SyncedState, TcpState,
+                    CloseWait, Closing, ConnState, Established, FinWait1, FinWait2, LastAck,
+                    SynReceived, SyncedState, TcpState,
                 },
             },
         },
@@ -116,6 +116,10 @@ impl SendInfo {
 
                     TcpState::FinWait2(fin_wait_2) => {
                         Self::handle_fin_wait_2(seg, conn, fin_wait_2)
+                    }
+
+                    TcpState::CloseWait(close_wait) => {
+                        Self::handle_close_wait(seg, conn, close_wait)?
                     }
 
                     TcpState::Closing(closing) => Self::handle_closing(seg, conn, closing),
@@ -250,7 +254,7 @@ impl SendInfo {
                 (
                     if conn.reassembly.fin_reached(conn.rcv_nxt) {
                         conn.rcv_nxt += REMOTE_FIN_BYTE;
-                        Some(Self::enter_last_ack(conn, established)?)
+                        Some(Self::close_wait_or_last_ack(conn, established.rcv_fin())?)
                     } else if anything_to_send {
                         Some(match established.drain_transmittable(conn)? {
                             Some(to_send) => Self::data_payload(conn, to_send),
@@ -368,7 +372,7 @@ impl SendInfo {
                 (
                     Some(if conn.reassembly.fin_reached(conn.rcv_nxt) {
                         conn.rcv_nxt += REMOTE_FIN_BYTE;
-                        Self::enter_last_ack(conn, new_established)?
+                        Self::close_wait_or_last_ack(conn, new_established.rcv_fin())?
                     } else {
                         match new_established.drain_transmittable(conn)? {
                             Some(to_send) => Self::data_payload(conn, to_send),
@@ -433,7 +437,8 @@ impl SendInfo {
     }
 
     /// Handles a FIN arriving in order in `seg`, advancing RCV.NXT past any trailing payload and
-    /// the FIN itself, updating send-side state, and then handing off to `enter_last_ack`.
+    /// the FIN itself, updating send-side state, and then proceeding to CLOSE-WAIT or LAST-ACK
+    /// depending on whether all buffered data can be sent.
     fn close_on_in_order_fin(
         seg: &TcpSegment<Remote>,
         conn: &mut ConnState,
@@ -448,33 +453,46 @@ impl SendInfo {
         conn.rcv_nxt += REMOTE_FIN_BYTE;
 
         let new_established = old_established.incoming_ack_update(conn, seg);
-        Self::enter_last_ack(conn, new_established)
+        Self::close_wait_or_last_ack(conn, new_established.rcv_fin())
     }
 
-    /// Given that RCV.NXT has already been advanced past the peer's FIN (whether in order or
-    /// reassembled), transitions `conn` from ESTABLISHED straight to LAST-ACK, skipping over
-    /// CLOSE-WAIT (TODO: implement CLOSE-WAIT), and returns a FIN-ACK `Self` with as much queued
-    /// data as the window allows if there is anything to send.
-    fn enter_last_ack(conn: &mut ConnState, established: SyncedState<Established>) -> Result<Self> {
-        let to_send = established.drain_transmittable(conn)?;
-        let send_len = to_send.len_or_default();
+    /// Drains as much of `send_buffer` as the peer's window currently allows. If that empties the
+    /// buffer, our own FIN is sent (piggybacked on any final chunk of data) and `conn` moves to
+    /// LAST-ACK. Otherwise, the drained chunk is sent as a plain data ACK, and `conn` remains in
+    /// CLOSE-WAIT, to be drained further once the peer sends more ACKs.
+    fn close_wait_or_last_ack(
+        conn: &mut ConnState,
+        close_wait: SyncedState<CloseWait>,
+    ) -> Result<Self> {
+        let to_send = close_wait.drain_transmittable(conn)?;
 
-        conn.tcp_state = TcpState::LastAck(established.skip_close_wait());
+        Ok(if conn.send_buffer.is_empty() {
+            let send_len = to_send.len_or_default();
 
-        let send_info = Self {
-            seq_num: conn.snd_nxt,
-            ack_num: conn.rcv_nxt,
-            flags: TcpFlags::FinAck,
-            payload: to_send,
-        };
+            conn.tcp_state = TcpState::LastAck(close_wait.send_fin());
 
-        conn.snd_nxt += send_len;
-        conn.snd_nxt += LOCAL_FIN_BYTE;
+            let send_info = Self {
+                seq_num: conn.snd_nxt,
+                ack_num: conn.rcv_nxt,
+                flags: TcpFlags::FinAck,
+                payload: to_send,
+            };
 
-        conn.pending
-            .push(PendingSegment::new(send_info.clone(), Instant::now()));
+            conn.snd_nxt += send_len;
+            conn.snd_nxt += LOCAL_FIN_BYTE;
 
-        Ok(send_info)
+            conn.pending
+                .push(PendingSegment::new(send_info.clone(), Instant::now()));
+
+            send_info
+        } else {
+            conn.tcp_state = TcpState::CloseWait(close_wait);
+
+            match to_send {
+                Some(payload) => Self::data_payload(conn, payload),
+                None => Self::pure_ack(conn),
+            }
+        })
     }
 
     /// Handles the reply decision and state updates for a FIN-WAIT-1 connection, returning a reply
@@ -582,6 +600,25 @@ impl SendInfo {
 
             _ => Self::known_conn_common_fallback(seg, conn),
         }
+    }
+
+    /// Handles the reply decision and state updates for a CLOSE-WAIT connection, returning a reply
+    /// if necessary and a `bool` representing whether the connection should be removed.
+    fn handle_close_wait(
+        seg: &TcpSegment<Remote>,
+        conn: &mut ConnState,
+        close_wait: SyncedState<CloseWait>,
+    ) -> Result<(Option<Self>, bool)> {
+        Ok(match (seg.flags, &seg.payload, SeqCheck::check(seg, conn)) {
+            // ACK of previously sent data (or a window update) while still draining the send buffer
+            // -> update send-side state, then try to send more and/or proceed to LAST-ACK.
+            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder) => {
+                let new_close_wait = close_wait.incoming_ack_update(conn, seg);
+                (Some(Self::close_wait_or_last_ack(conn, new_close_wait)?), false)
+            }
+
+            _ => Self::known_conn_common_fallback(seg, conn),
+        })
     }
 
     /// Handles the reply decision and state updates for a CLOSING connection, returning a reply if

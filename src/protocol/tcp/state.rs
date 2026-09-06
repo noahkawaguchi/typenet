@@ -74,6 +74,7 @@ impl ConnState {
             TcpState::Established(established) => Some(established.window_state.snd_wnd),
             TcpState::FinWait1(fin_wait_1) => Some(fin_wait_1.window_state.snd_wnd),
             TcpState::FinWait2(fin_wait_2) => Some(fin_wait_2.window_state.snd_wnd),
+            TcpState::CloseWait(close_wait) => Some(close_wait.window_state.snd_wnd),
             TcpState::Closing(closing) => Some(closing.window_state.snd_wnd),
             TcpState::LastAck(last_ack) => Some(last_ack.window_state.snd_wnd),
         }
@@ -167,6 +168,13 @@ pub(super) enum TcpState {
     /// Reached from `FinWait1` once our FIN has been acknowledged.
     FinWait2(SyncedState<FinWait2>),
 
+    /// "CLOSE-WAIT - represents waiting for a connection termination request from the local user."
+    ///
+    /// Reached via passive close, once the remote peer's FIN has been received. Any data still
+    /// queued in `send_buffer` continues draining here and our own FIN is only sent (moving to
+    /// LAST-ACK) once the buffer is fully drained.
+    CloseWait(SyncedState<CloseWait>),
+
     /// "CLOSING - represents waiting for a connection termination request acknowledgment from the
     /// remote TCP peer."
     ///
@@ -195,7 +203,7 @@ macro_rules! tcp_state_inner_structs {
     };
 }
 
-tcp_state_inner_structs!(SynReceived, Established, FinWait1, FinWait2, Closing, LastAck);
+tcp_state_inner_structs!(SynReceived, Established, FinWait1, FinWait2, CloseWait, Closing, LastAck);
 
 impl SynReceived {
     /// Enters ESTABLISHED, setting SND.WND, SND.WL1, and SND.WL2 (RFC 9293, Section 3.10.7.4,
@@ -233,7 +241,8 @@ macro_rules! synced_state_transition {
     };
 }
 
-synced_state_transition!(Established => skip_close_wait => LastAck);
+synced_state_transition!(Established => rcv_fin => CloseWait);
+synced_state_transition!(CloseWait => send_fin => LastAck);
 synced_state_transition!(Established => close => FinWait1);
 synced_state_transition!(FinWait1 => rcv_ack_of_fin => FinWait2);
 synced_state_transition!(FinWait1 => rcv_fin_before_fin_is_acked => Closing);
@@ -294,10 +303,10 @@ impl<T> SyncedState<T> {
 
 /// Represents being in a state where data is allowed to go out on the wire because our send side is
 /// open, i.e. a synchronized state before our FIN has been sent. Private to this module to uphold
-/// the invariant that this is only allowed in ESTABLISHED (and eventually CLOSE-WAIT).
+/// the invariant that this is only allowed in ESTABLISHED and CLOSE-WAIT.
 trait SendSideOpen {}
 impl SendSideOpen for Established {}
-// TODO: Once CLOSE-WAIT is implemented, `impl SendSideOpen for CloseWait {}`
+impl SendSideOpen for CloseWait {}
 
 #[expect(private_bounds, reason = "Ensure only states allowed in this module can send data")]
 impl<T: SendSideOpen> SyncedState<T> {
