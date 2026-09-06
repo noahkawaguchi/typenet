@@ -330,10 +330,12 @@ impl SendInfo {
         established: SyncedState<Established>,
     ) -> Result<(Option<Self>, bool)> {
         Ok(match (seg.flags, &seg.payload, SeqCheck::check(seg, conn)) {
-            // ACK acknowledging data the server has not yet sent (ack_num is past snd_nxt) ->
-            // per RFC 9293, Section 3.10.7.4, drop the segment and reply with an ACK reflecting
-            // current state.
-            (TcpFlags::Ack, _, _) if conn.snd_nxt.precedes(seg.ack_num) => {
+            // ACK acknowledging data the server has not yet sent (SEG.ACK > SND.NXT) -> drop the
+            // segment and reply with an ACK reflecting current state (RFC 9293, Section 3.10.7.4,
+            // "Fifth, check the ACK field").
+            (TcpFlags::Ack, _, SeqCheck::InOrder | SeqCheck::OutOfOrder)
+                if conn.snd_nxt.precedes(seg.ack_num) =>
+            {
                 (Some(Self::pure_ack(conn)), false)
             }
 
