@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt, panic::Location};
+use std::{fmt, io, num, panic::Location};
 
 pub type Result<T = (), E = Error> = std::result::Result<T, E>;
 
@@ -7,23 +7,6 @@ pub type Result<T = (), E = Error> = std::result::Result<T, E>;
 pub struct Error {
     error: ErrorKind,
     location: &'static Location<'static>,
-}
-
-impl Error {
-    /// Creates a `Self` from `message`. Prefer creating the type this way over the `Box`-based
-    /// method where possible to avoid unnecessary allocations.
-    #[track_caller]
-    pub(crate) fn msg(message: impl Into<Cow<'static, str>>) -> Self {
-        Self::new(ErrorKind::Message(message.into()))
-    }
-
-    #[track_caller]
-    const fn new(error: ErrorKind) -> Self { Self { error, location: Location::caller() } }
-}
-
-impl<E: Into<Box<dyn std::error::Error>>> From<E> for Error {
-    #[track_caller]
-    fn from(value: E) -> Self { Self::new(ErrorKind::Foreign(value.into())) }
 }
 
 impl fmt::Debug for Error {
@@ -38,19 +21,42 @@ impl fmt::Display for Error {
     }
 }
 
-enum ErrorKind {
-    /// An original error message.
-    Message(Cow<'static, str>),
+/// Generates `impl From<E> for Error` blocks for the passed set of error types, accepting the same
+/// syntax as the enum definition for `ErrorKind`.
+macro_rules! impl_from_error_types {
+    {$($variant:ident($err_type:ty)),+ $(,)?} => {
+        $(
+            impl From<$err_type> for Error {
+                #[track_caller]
+                fn from(value: $err_type) -> Self {
+                    Self { error: ErrorKind::$variant(value), location: Location::caller() }
+                }
+            }
+        )+
+    };
+}
 
-    /// An error from another error.
-    Foreign(Box<dyn std::error::Error + 'static>),
+impl_from_error_types! {
+    Static(&'static str),
+    Dynamic(String),
+    Io(io::Error),
+    TryFromInt(num::TryFromIntError),
+}
+
+enum ErrorKind {
+    Static(&'static str),
+    Dynamic(String),
+    Io(io::Error),
+    TryFromInt(num::TryFromIntError),
 }
 
 impl fmt::Debug for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Message(m) => m.fmt(f),
-            Self::Foreign(e) => e.fmt(f),
+            Self::Static(s) => s.fmt(f),
+            Self::Dynamic(s) => s.fmt(f),
+            Self::Io(e) => write!(f, "I/O error: {e:?}"),
+            Self::TryFromInt(e) => write!(f, "Integer conversion error: {e:?}"),
         }
     }
 }
@@ -58,8 +64,10 @@ impl fmt::Debug for ErrorKind {
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Message(m) => m.fmt(f),
-            Self::Foreign(e) => e.fmt(f),
+            Self::Static(s) => s.fmt(f),
+            Self::Dynamic(s) => s.fmt(f),
+            Self::Io(e) => write!(f, "I/O error: {e}"),
+            Self::TryFromInt(e) => write!(f, "Integer conversion error: {e}"),
         }
     }
 }
