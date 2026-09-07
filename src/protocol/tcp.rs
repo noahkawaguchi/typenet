@@ -289,7 +289,6 @@ mod tests {
     mod establish;
     mod flow_control;
     mod parse;
-    mod reassembly;
     mod retransmit;
     mod stray_syn;
     mod terminate;
