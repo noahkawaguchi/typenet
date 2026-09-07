@@ -41,6 +41,7 @@ Although the TCP implementation is not complete, it covers a significant portion
 - 4-tuple-keyed state machine
 - Three-way handshake (passive open)
 - Data receipt and transmission (currently echo only)
+- Reassembly of out-of-order segments
 - Retransmissions with binary exponential backoff
 - Flow control (respects peer's window and buffers remaining bytes to send when the window opens)
 - Active close, passive close, and simultaneous close
