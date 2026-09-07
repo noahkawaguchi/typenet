@@ -49,17 +49,16 @@ impl TcpReassembly {
         out: &mut Vec<u8>,
     ) -> SeqPoint<Remote> {
         loop {
-            self.segments.retain(|&(start, _)| !start.precedes(rcv_nxt));
-
-            let Some(index) = self
+            let Some((_, payload)) = self
                 .segments
-                .iter()
-                .position(|&(start, _)| start == rcv_nxt)
+                // Prune stale or exactly contiguous segments
+                .extract_if(.., |&mut (start, _)| start.precedes_or_eq(rcv_nxt))
+                // Pick out the exactly contiguous one if it exists
+                .find(|&(start, _)| start == rcv_nxt)
             else {
-                break rcv_nxt;
+                break rcv_nxt; // Stale segments pruned, nothing exactly contiguous found
             };
 
-            let (_, payload) = self.segments.swap_remove(index);
             rcv_nxt += payload.len().into();
             out.extend_from_slice(payload.as_bytes());
         }
