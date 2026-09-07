@@ -244,18 +244,15 @@ impl SendInfo {
                     conn.send_buffer.extend(payload.as_bytes());
                 }
 
-                let mut reassembled = Vec::new();
                 conn.rcv_nxt = conn
                     .reassembly
-                    .drain_contiguous(conn.rcv_nxt, &mut reassembled);
-                let anything_to_send = maybe_payload.is_some() || !reassembled.is_empty();
-                conn.send_buffer.extend(reassembled);
+                    .drain_contiguous(conn.rcv_nxt, &mut conn.send_buffer);
 
                 (
                     if conn.reassembly.fin_reached(conn.rcv_nxt) {
                         conn.rcv_nxt += REMOTE_FIN_BYTE;
                         Some(Self::close_wait_or_last_ack(conn, established.rcv_fin())?)
-                    } else if anything_to_send {
+                    } else if !conn.send_buffer.is_empty() {
                         Some(match established.drain_transmittable(conn)? {
                             Some(to_send) => Self::data_payload(conn, to_send),
                             None => Self::pure_ack(conn),
@@ -365,11 +362,9 @@ impl SendInfo {
                 conn.rcv_nxt += payload.len().into();
                 conn.send_buffer.extend(payload.as_bytes());
 
-                let mut reassembled = Vec::new();
                 conn.rcv_nxt = conn
                     .reassembly
-                    .drain_contiguous(conn.rcv_nxt, &mut reassembled);
-                conn.send_buffer.extend(reassembled);
+                    .drain_contiguous(conn.rcv_nxt, &mut conn.send_buffer);
 
                 (
                     Some(if conn.reassembly.fin_reached(conn.rcv_nxt) {

@@ -46,7 +46,7 @@ impl TcpReassembly {
     pub(super) fn drain_contiguous(
         &mut self,
         mut rcv_nxt: SeqPoint<Remote>,
-        out: &mut Vec<u8>,
+        out: &mut impl Extend<u8>,
     ) -> SeqPoint<Remote> {
         loop {
             let Some((_, payload)) = self
@@ -60,7 +60,7 @@ impl TcpReassembly {
             };
 
             rcv_nxt += payload.len().into();
-            out.extend_from_slice(payload.as_bytes());
+            out.extend(payload.as_bytes().iter().copied());
         }
     }
 
