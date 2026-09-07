@@ -1,5 +1,15 @@
 use super::*;
 
+/// Four of the states that are in the process of terminating after we've sent our FIN: FIN-WAIT-1,
+/// FIN-WAIT-2, CLOSING, and LAST-ACK. All have the window state right after the initial three-way
+/// handshake.
+const STATES_AFTER_SENDING_FIN: [TcpState; 4] = [
+    TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+];
+
 #[test]
 fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> Result {
     // A FIN-ACK arriving in SYN-RECEIVED can legitimately complete the handshake and initiate
@@ -163,7 +173,8 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> Result {
     // A FIN-ACK arriving before data preceding it (seq_num != rcv_nxt, e.g. an earlier data segment
     // was lost) must not be processed yet. Doing so would signal "no more data" before the missing
     // data has been delivered. Until the gap is filled, treat it like out-of-order data by sending
-    // a duplicate ACK reflecting the current rcv_nxt with no change to local state.
+    // a duplicate ACK reflecting the current RCV.NXT without starting to close, but remember its
+    // FIN position for later.
 
     let mut connections = TcpConnections::default().after_handshake(); // rcv_nxt = CLIENT_ISN+1
     let mut cloned_state = connections.try_get()?.clone();
@@ -192,73 +203,157 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> Result {
         client_fin_ack.seq_num,
         client_fin_ack.ack_num,
     )));
+    cloned_state.reassembly.mark_fin(client_fin_ack.seq_num);
 
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Connection must remain established, out-of-order FIN-ACK must not start closing"
+        "Connection must remain established, out-of-order FIN-ACK must not start closing, but its \
+         FIN position should now be remembered"
     );
 
     Ok(())
 }
 
 #[test]
-fn partial_ack_in_last_ack_does_not_close_connection() -> Result {
-    // A LAST-ACK connection that echoed data alongside its own FIN can be ACKed in stages (e.g.
-    // the peer ACKs previously-buffered chunks separately from the byte that covers the FIN). An
-    // ACK that doesn't yet reach SND.NXT (i.e., doesn't yet cover the FIN) must not be
-    // treated as the final ACK completing the close.
+fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Result {
+    // A FIN-ACK carrying trailing data arrives in window but SEG.SEQ != RCV.NXT (an earlier data
+    // segment hasn't arrived yet), so it must be buffered rather than acted on immediately. Once
+    // the missing segment fills the gap, the connection should discover the peer's FIN has now been
+    // reached and send our FIN in that same reply, echoing both segments' data together.
 
     let mut connections = TcpConnections::default().after_handshake(); // rcv_nxt=CLIENT_ISN+1
     let mut cloned_state = connections.try_get()?.clone();
 
-    // Client's FIN-ACK arrives with trailing data, echoed alongside our own FIN -> LAST-ACK
-    let client_fin_ack = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+    // FIN-ACK carrying "Hi" arrives at seq=CLIENT_ISN+6, but rcv_nxt is still CLIENT_ISN+1
+    let fin_ack_with_data = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
         ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
         flags: TcpFlags::FinAck,
-        payload: TcpPayload::from_test_str("Hello")?,
-        ..CLIENT_PKT
-    };
-
-    client_fin_ack.create_reply(&mut connections)?;
-
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        client_fin_ack.window,
-        client_fin_ack.seq_num,
-        client_fin_ack.ack_num,
-    )));
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN + LOCAL_FIN_BYTE;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN + REMOTE_FIN_BYTE;
-
-    assert_eq!(connections.try_get()?, &cloned_state);
-
-    // Client ACKs only the echoed "Hello" (SEG.ACK=SERVER_ISN+1+5), not the FIN yet
-    // (SND.NXT=SERVER_ISN+1+5+1)
-    let partial_ack = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
+        payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     };
 
     assert_eq!(
-        partial_ack.create_reply(&mut connections)?,
-        None,
-        "A partial ACK not yet covering the FIN should not get a reply"
+        fin_ack_with_data.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ..SERVER_REPLY
+        }),
+        "Out-of-order FIN-ACK should get a duplicate ACK, not start closing yet"
     );
 
-    cloned_state.snd_una += LOCAL_HELLO_LEN;
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        partial_ack.window,
-        partial_ack.seq_num,
-        partial_ack.ack_num,
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
+        fin_ack_with_data.window,
+        fin_ack_with_data.seq_num,
+        fin_ack_with_data.ack_num,
     )));
+    cloned_state.reassembly.insert(
+        fin_ack_with_data.seq_num,
+        fin_ack_with_data
+            .payload
+            .clone()
+            .ok_or("Expected fin_ack_with_data to carry a payload")?,
+    );
+    cloned_state
+        .reassembly
+        .mark_fin(fin_ack_with_data.seq_num + REMOTE_HI_LEN);
 
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Connection should remain in LAST-ACK, not be removed, since the FIN is still unacked"
+        "Connection must remain ESTABLISHED, with the FIN-ACK's data buffered and its FIN \
+         position remembered"
     );
+
+    // "Hello" fills the gap
+    let hello = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str("Hello")?,
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        hello.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN
+                + REMOTE_SYN_BYTE
+                + REMOTE_HELLO_LEN
+                + REMOTE_HI_LEN
+                + REMOTE_FIN_BYTE,
+            flags: TcpFlags::FinAck,
+            payload: TcpPayload::from_test_str("HelloHi")?,
+            ..SERVER_REPLY
+        }),
+        "Filling the gap should reveal the peer's previously buffered FIN, echoing both segments' \
+         data together and replying with our FIN"
+    );
+
+    // Mirror what the implementation should do internally by advancing past "Hello", then draining
+    // "Hi" now that it's contiguous, leaving the buffer empty but the FIN position still
+    // remembered.
+    cloned_state
+        .reassembly
+        .drain_contiguous(hello.seq_num + REMOTE_HELLO_LEN, &mut Vec::new());
+
+    // The window state stays pinned to the FIN-ACK's values (not changing those of the "Hello") due
+    // to the window update rules, even though "Hello" fills a gap in the data
+    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
+        fin_ack_with_data.window,
+        fin_ack_with_data.seq_num,
+        fin_ack_with_data.ack_num,
+    )));
+    cloned_state.snd_nxt += LOCAL_HELLO_LEN + LOCAL_HI_LEN + LOCAL_FIN_BYTE;
+    cloned_state.rcv_nxt += REMOTE_HELLO_LEN + REMOTE_HI_LEN + REMOTE_FIN_BYTE;
+
+    assert_eq!(connections.try_get()?, &cloned_state);
+
+    Ok(())
+}
+
+#[test]
+fn partial_ack_after_sending_our_fin_does_not_close_or_reset() -> Result {
+    // In any of the states after sending our FIN, our own FIN can be acked separately from data
+    // sent alongside it (e.g. the peer acks previously buffered chunks before finally acking the
+    // byte that covers the FIN). Regardless of which of those states the connection is in, an ACK
+    // that doesn't yet reach SND.NXT (i.e., doesn't yet cover the FIN) must not be treated as the
+    // final ACK completing the close or get a RST.
+
+    for tcp_state in STATES_AFTER_SENDING_FIN {
+        let mut connections = TcpConnections::default();
+
+        // SND.NXT includes our own already-sent FIN, one past SND.UNA
+        let initial_state = ConnState {
+            tcp_state,
+            snd_nxt: AFTER_HANDSHAKE.snd_nxt + LOCAL_FIN_BYTE,
+            ..AFTER_HANDSHAKE
+        };
+
+        connections.insert(initial_state.clone());
+
+        // SEG.ACK == SND.UNA, not yet SND.NXT, so this doesn't cover our FIN
+        let partial_ack = TcpSegment {
+            seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ..CLIENT_PKT
+        };
+
+        assert_eq!(
+            partial_ack.create_reply(&mut connections)?,
+            None,
+            "A partial ACK not yet covering our FIN should get no reply (in state {tcp_state:?})"
+        );
+
+        assert_eq!(
+            connections.try_get()?,
+            &initial_state,
+            "The connection should remain in the same state, not be closed or reset (in state \
+             {tcp_state:?})"
+        );
+    }
 
     Ok(())
 }
@@ -731,15 +826,16 @@ fn fin_ack_with_data_in_established_echoes_data_and_starts_closing() -> Result {
 }
 
 #[test]
-fn fin_ack_with_data_in_established_buffers_the_untransmittable_remainder() -> Result {
+fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Result {
     // If the peer's advertised window can't fit all the trailing data right now, only what fits
-    // gets echoed alongside the FIN, with the rest buffered in the send buffer.
-    //
-    // However, due to the current simplification lacking a proper half-closed state, the remaining
-    // data can never actually be sent afterward, since our own FIN in this same reply ends our byte
-    // stream.
+    // gets echoed as a plain ACK, with the rest buffered in the send buffer. Since not everything
+    // has been sent yet, our own FIN must not go out yet either. The connection enters CLOSE-WAIT,
+    // and once the peer acks and opens the window enough to drain the rest, the remainder is sent
+    // with our FIN finally piggybacked on it, completing the move to LAST-ACK.
 
     const SMALL_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(3);
+    const LARGER_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(10);
+    const LO_LEN: SeqOffset<u32, Local> = SeqOffset::new(2);
 
     let mut connections = TcpConnections::default();
     let mut expected_state = ConnState {
@@ -766,27 +862,355 @@ fn fin_ack_with_data_in_established_buffers_the_untransmittable_remainder() -> R
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
-            flags: TcpFlags::FinAck,
             payload: TcpPayload::from_test_str("Hel")?,
             ..SERVER_REPLY
         }),
-        "Only the first 3 bytes fit in the advertised window of 3, piggybacked on the FIN-ACK"
+        "Only the first 3 out of 5 bytes fit in the advertised window of 3, so our own FIN must \
+         not be sent yet "
     );
 
-    expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
+    expected_state.tcp_state = TcpState::CloseWait(SyncedState::test_new(WindowState::test_new(
         fin_ack_with_data.window,
         fin_ack_with_data.seq_num,
         fin_ack_with_data.ack_num,
     )));
-    expected_state.snd_nxt += SeqOffset::<u32, Local>::from(SMALL_WINDOW) + LOCAL_FIN_BYTE;
+    expected_state.snd_nxt += SeqOffset::<u32, Local>::from(SMALL_WINDOW);
     expected_state.rcv_nxt += REMOTE_HELLO_LEN + REMOTE_FIN_BYTE;
     expected_state.send_buffer.extend(b"lo");
 
     assert_eq!(
         connections.try_get()?,
         &expected_state,
-        "The untransmittable remainder \"lo\" should be queued in the send buffer"
+        "The untransmittable remainder \"lo\" should be queued in the send buffer, with the \
+         connection held in CLOSE-WAIT"
     );
+
+    // Peer acks the 3 sent bytes and opens the window enough to take the rest
+    let window_update = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + SMALL_WINDOW.into(),
+        window: LARGER_WINDOW,
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        window_update.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + SMALL_WINDOW.into(),
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
+            flags: TcpFlags::FinAck,
+            payload: TcpPayload::from_test_str("lo")?,
+            ..SERVER_REPLY
+        }),
+        "Once the buffer fully drains, our FIN should finally go out, piggybacked on the last \
+         chunk"
+    );
+
+    expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
+        window_update.window,
+        window_update.seq_num,
+        window_update.ack_num,
+    )));
+    expected_state.snd_una += SMALL_WINDOW.into();
+    expected_state.snd_nxt += LO_LEN + LOCAL_FIN_BYTE;
+    expected_state.send_buffer.clear();
+
+    assert_eq!(
+        connections.try_get()?,
+        &expected_state,
+        "The connection should now be fully drained and in LAST-ACK, awaiting the final ACK"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Result {
+    // Filling a gap left by packet loss can reveal more previously-buffered data than fits in a
+    // single segment's payload, with the peer's FIN sitting right after all of it. Every byte of
+    // that backlog must still reach the peer, so only as much as fits in one segment goes out right
+    // away. The rest stays queued, and our own FIN is only sent once the whole backlog has gone
+    // out.
+
+    const MAX_PAYLOAD_LEN: usize =
+        ETHERNET_MTU - Ipv4Header::REPLY_HDR_LEN - TCP_HDR_MIN_LEN as usize;
+
+    /// Ensures that this test is reexamined if the relevant consts change.
+    const _: () = assert!(MAX_PAYLOAD_LEN == 1500 - 20 - 20);
+
+    let mut connections = TcpConnections::default().after_handshake();
+    let mut expected_state = connections.try_get()?.clone();
+
+    // The gap-filling chunk is itself already bigger than one segment
+    let gap_payload = "a".repeat(MAX_PAYLOAD_LEN + 50);
+    let gap_len = SeqOffset::<u32, Remote>::new(u32::try_from(gap_payload.len())?);
+
+    let tail_payload = "b".repeat(100);
+    let tail_len = SeqOffset::<u32, Remote>::new(u32::try_from(tail_payload.len())?);
+
+    // FIN-ACK carrying the trailing chunk arrives first, out of order
+    let fin_ack_tail = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + gap_len,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        flags: TcpFlags::FinAck,
+        payload: TcpPayload::from_test_str(&tail_payload)?,
+        ..CLIENT_PKT
+    };
+
+    fin_ack_tail.create_reply(&mut connections)?;
+
+    expected_state.reassembly.insert(
+        fin_ack_tail.seq_num,
+        fin_ack_tail
+            .payload
+            .clone()
+            .ok_or("Expected fin_ack_tail to carry a payload")?,
+    );
+    expected_state
+        .reassembly
+        .mark_fin(fin_ack_tail.seq_num + tail_len);
+
+    // Gap-filling segment reveals the whole backlog and the FIN at once
+    let gap_filler = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str(&gap_payload)?,
+        ..CLIENT_PKT
+    };
+
+    let capped_payload = "a".repeat(MAX_PAYLOAD_LEN);
+    let max_len = SeqOffset::<u32, Local>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
+
+    assert_eq!(
+        gap_filler.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + gap_len + tail_len + REMOTE_FIN_BYTE,
+            payload: TcpPayload::from_test_str(&capped_payload)?,
+            ..SERVER_REPLY
+        }),
+        "Filling the gap reveals more data than fits in one segment, but only {MAX_PAYLOAD_LEN} \
+         bytes should go out, and our own FIN must not be sent yet"
+    );
+
+    let leftover = "a".repeat(50) + &tail_payload;
+
+    // Mirror what the implementation does internally by advancing past the gap-filling chunk, then
+    // draining the now-contiguous trailing chunk out of reassembly, leaving its FIN position
+    // remembered
+    expected_state
+        .reassembly
+        .drain_contiguous(gap_filler.seq_num + gap_len, &mut Vec::new());
+
+    // The window state stays pinned to the out-of-order FIN-ACK's values (not the gap-filling
+    // chunk's, which arrives with an earlier sequence number) due to the window update rules
+    expected_state.tcp_state = TcpState::CloseWait(SyncedState::test_new(WindowState::test_new(
+        fin_ack_tail.window,
+        fin_ack_tail.seq_num,
+        fin_ack_tail.ack_num,
+    )));
+    expected_state.snd_nxt += max_len;
+    expected_state.rcv_nxt += gap_len + tail_len + REMOTE_FIN_BYTE;
+    expected_state.send_buffer.extend(leftover.as_bytes());
+
+    assert_eq!(
+        connections.try_get()?,
+        &expected_state,
+        "The 150-byte remainder must stay queued rather than being lost, with the connection held \
+         in CLOSE-WAIT"
+    );
+
+    // Peer acks the first `MAX_PAYLOAD_LEN` bytes. The window is already wide open, so the rest can
+    // go out immediately along with our FIN.
+    let window_update = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + gap_len + tail_len + REMOTE_FIN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + max_len,
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        window_update.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + max_len,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + gap_len + tail_len + REMOTE_FIN_BYTE,
+            flags: TcpFlags::FinAck,
+            payload: TcpPayload::from_test_str(&leftover)?,
+            ..SERVER_REPLY
+        }),
+        "Once fully drained, the leftover 150 bytes should go out with our FIN finally attached"
+    );
+
+    expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
+        window_update.window,
+        window_update.seq_num,
+        window_update.ack_num,
+    )));
+    expected_state.snd_una += max_len;
+    expected_state.snd_nxt +=
+        SeqOffset::<u32, Local>::new(u32::try_from(leftover.len())?) + LOCAL_FIN_BYTE;
+    expected_state.send_buffer.clear();
+
+    assert_eq!(
+        connections.try_get()?,
+        &expected_state,
+        "The connection should now be fully drained and in LAST-ACK, awaiting the final ACK"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn stale_retransmission_after_sending_our_fin_gets_duplicate_ack_not_rst() -> Result {
+    // A retransmission of data the server already fully processed can arrive in any of the states
+    // after we've sent our FIN. Regardless of which of those states the connection is in, this
+    // should get a duplicate ACK reflecting the current state, with the connection otherwise left
+    // untouched, just like in ESTABLISHED.
+
+    for tcp_state in STATES_AFTER_SENDING_FIN {
+        let mut connections = TcpConnections::default();
+        let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
+        connections.insert(initial_state.clone());
+
+        // Carries a sequence number from before RCV.NXT, i.e. data already fully processed
+        let stale_retransmission = TcpSegment {
+            seq_num: CLIENT_ISN,
+            ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            payload: TcpPayload::from_test_str("stale")?,
+            ..CLIENT_PKT
+        };
+
+        assert_eq!(
+            stale_retransmission.create_reply(&mut connections)?,
+            Some(TcpSegment {
+                seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+                ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+                ..SERVER_REPLY
+            }),
+            "A stale retransmission should get a duplicate ACK, not a RST (in state {tcp_state:?})"
+        );
+
+        assert_eq!(
+            connections.try_get()?,
+            &initial_state,
+            "The connection should be untouched, not reset (in state {tcp_state:?})"
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> Result {
+    // A retransmission of data already fully processed can still arrive while a connection is in
+    // CLOSE-WAIT, waiting to drain the rest of its queued data before it can send its own FIN.
+    // This should get a duplicate ACK reflecting the current state, leaving the connection and its
+    // queued data untouched, not a RST.
+
+    let mut connections = TcpConnections::default();
+    let initial_state = ConnState {
+        tcp_state: TcpState::CloseWait(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+        send_buffer: VecDeque::from(b"leftover".to_vec()),
+        ..AFTER_HANDSHAKE
+    };
+    connections.insert(initial_state.clone());
+
+    let stale_retransmission = TcpSegment {
+        seq_num: CLIENT_ISN,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str("stale")?,
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        stale_retransmission.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ..SERVER_REPLY
+        }),
+        "A stale retransmission should get a duplicate ACK, not a RST"
+    );
+
+    assert_eq!(connections.try_get()?, &initial_state, "The connection should be untouched");
+
+    Ok(())
+}
+
+#[test]
+fn stale_pure_ack_after_sending_our_fin_gets_duplicate_ack() -> Result {
+    // A pure ACK whose SEG.SEQ fails the sequence acceptability check can arrive in any of the
+    // states after we've sent our FIN. It must be dropped and get a current state reply, not get a
+    // RST or advance the connection's close progress.
+
+    for tcp_state in STATES_AFTER_SENDING_FIN {
+        let mut connections = TcpConnections::default();
+        let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
+        connections.insert(initial_state.clone());
+
+        // Carries a sequence number from before RCV.NXT, and a distinctive window that must not get
+        // adopted
+        let stale_pure_ack = TcpSegment {
+            seq_num: CLIENT_ISN,
+            ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            window: SeqOffset::new(1234),
+            ..CLIENT_PKT
+        };
+
+        assert_eq!(
+            stale_pure_ack.create_reply(&mut connections)?,
+            Some(TcpSegment {
+                seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+                ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+                ..SERVER_REPLY
+            }),
+            "A stale pure ACK should get a duplicate ACK, not a RST (in state {tcp_state:?})"
+        );
+
+        assert_eq!(
+            connections.try_get()?,
+            &initial_state,
+            "The connection should be untouched, not reset (in state {tcp_state:?})"
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn stale_pure_ack_in_close_wait_gets_duplicate_ack() -> Result {
+    // A pure ACK whose sequence number falls before what's already been received can arrive while a
+    // connection is in CLOSE-WAIT, waiting to drain its queued data before sending its own FIN.
+    // It must be dropped and get a current-state reply, not accepted or allowed to disturb the
+    // connection's progress toward closing.
+
+    let mut connections = TcpConnections::default();
+    let initial_state = ConnState {
+        tcp_state: TcpState::CloseWait(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+        send_buffer: VecDeque::from(b"leftover".to_vec()),
+        ..AFTER_HANDSHAKE
+    };
+    connections.insert(initial_state.clone());
+
+    // Carries a sequence number from before RCV.NXT, and a distinctive window that must not get
+    // adopted
+    let stale_pure_ack = TcpSegment {
+        seq_num: CLIENT_ISN,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        window: SeqOffset::new(1234),
+        ..CLIENT_PKT
+    };
+
+    assert_eq!(
+        stale_pure_ack.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ..SERVER_REPLY
+        }),
+        "A stale pure ACK should get a duplicate ACK, not a RST"
+    );
+
+    assert_eq!(connections.try_get()?, &initial_state, "The connection should be untouched");
 
     Ok(())
 }

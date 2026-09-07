@@ -92,17 +92,18 @@ impl TcpConnections {
 
     pub(super) fn remove(&mut self, key: &ConnKey) { self.table.remove(key); }
 
-    /// Returns whether any connection is currently mid-close (FIN-WAIT-1, FIN-WAIT-2, CLOSING, or
-    /// LAST-ACK), i.e. has sent or received a FIN but not yet completed teardown.
+    /// Returns whether any connection is currently mid-close (FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT,
+    /// CLOSING, or LAST-ACK), i.e. has sent or received a FIN but not yet completed teardown.
     pub fn closing_in_progress(&self) -> bool {
-        self.table.values().any(|conn| {
-            matches!(
-                conn.tcp_state,
-                TcpState::FinWait1(_)
-                    | TcpState::FinWait2(_)
-                    | TcpState::Closing(_)
-                    | TcpState::LastAck(_),
-            )
+        // Explicitly match on all variants despite the `bool` result to ensure that any changes to
+        // the enum must be addressed here
+        self.table.values().any(|conn| match conn.tcp_state {
+            TcpState::SynReceived(_) | TcpState::Established(_) => false,
+            TcpState::FinWait1(_)
+            | TcpState::FinWait2(_)
+            | TcpState::CloseWait(_)
+            | TcpState::Closing(_)
+            | TcpState::LastAck(_) => true,
         })
     }
 
@@ -179,10 +180,7 @@ impl TcpConnections {
                 };
 
                 conn.tcp_state = TcpState::FinWait1(established.close());
-
-                // Consume one sequence number in SND.NXT for the FIN about to be sent
                 conn.snd_nxt += LOCAL_FIN_BYTE;
-
                 conn.pending
                     .push(PendingSegment::new(send_info.clone(), now));
 
@@ -224,6 +222,7 @@ impl TcpConnections {
         use {
             crate::protocol::tcp::{
                 LOCAL_SYN_BYTE, REMOTE_SYN_BYTE,
+                reassembly::TcpReassembly,
                 state::SynReceived,
                 tests::{CLIENT_ISN, KEY, SERVER_ISN},
             },
@@ -247,6 +246,7 @@ impl TcpConnections {
                     sent_at,
                 )],
                 send_buffer: VecDeque::new(),
+                reassembly: TcpReassembly::new(),
             },
         );
 

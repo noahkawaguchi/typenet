@@ -60,69 +60,74 @@ fn new_ack_adopts_window_from_segment() -> Result {
 
 #[test]
 fn stale_segment_does_not_clobber_send_window() -> Result {
-    // A retransmitted/out-of-order segment can still carry a "new" ack_num (SND.UNA < SEG.ACK <=
-    // SND.NXT is about cumulative acknowledgment, not about the segment being in order), but per
-    // RFC 9293, Section 3.10.7.4, SND.WND must only adopt a segment's window when SND.WL1 < SEG.SEQ
-    // or (SND.WL1 == SEG.SEQ and SND.WL2 <= SEG.ACK), preventing this kind of old segment from
-    // clobbering it with stale data.
+    // An out-of-order data segment still runs the window update check from RFC 9293, Section
+    // 3.10.7.4, "Fifth, check the ACK bit", "ESTABLISHED STATE" even though its data can't be
+    // delivered yet, so it can push SND.WL1 ahead of RCV.NXT while the gap before it remains open.
+    // A later segment landing in that gap is still in-window relative to RCV.NXT, but it's stale
+    // relative to the fresher SND.WL1 the out-of-order segment already set, and must not clobber
+    // the window with a different SEG.WND.
 
     let mut connections = TcpConnections::default().after_handshake();
     let mut cloned_state = connections.try_get()?.clone();
 
-    // "Hello" data, ack=SERVER_ISN+1 == current SND.UNA -> RCV.NXT advances to CLIENT_ISN+6,
-    // SND.NXT advances to SERVER_ISN+6, leaving room below for a "new" ACK
-    TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+    // A 10-byte gap remains before it (RCV.NXT stays at CLIENT_ISN+1), but its SEG.SEQ is fresher
+    // than the handshake's SND.WL1=CLIENT_ISN+1, so it still updates the window
+    let out_of_order = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(10),
         ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
-        payload: TcpPayload::from_test_str("Hello")?,
-        ..CLIENT_PKT
-    }
-    .create_reply(&mut connections)?;
-
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
-
-    assert_eq!(connections.try_get()?, &cloned_state, "State confirmation before window update");
-
-    // Pure ACK with seq=CLIENT_ISN+6, fresher than the handshake's SND.WL1=CLIENT_ISN+1, so this
-    // legitimately updates SND.WND/SND.WL1/SND.WL2 as if it were the last segment to do so before
-    // the stale duplicate below arrives
-    let fresh_window_update = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
-        window: SeqOffset::new(1000),
+        window: SeqOffset::new(2000),
+        payload: TcpPayload::from_test_str("World")?,
         ..CLIENT_PKT
     };
 
-    assert_eq!(fresh_window_update.create_reply(&mut connections)?, None);
+    assert_eq!(
+        out_of_order.create_reply(&mut connections)?,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ..SERVER_REPLY
+        }),
+        "Out-of-order data should still get a duplicate ACK reflecting RCV.NXT unchanged"
+    );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        fresh_window_update.window,
-        fresh_window_update.seq_num,
-        fresh_window_update.ack_num,
+        out_of_order.window,
+        out_of_order.seq_num,
+        out_of_order.ack_num,
     )));
+    cloned_state.reassembly.insert(
+        out_of_order.seq_num,
+        out_of_order
+            .payload
+            .clone()
+            .ok_or("Expected segment to carry a payload")?,
+    );
 
-    assert_eq!(connections.try_get()?, &cloned_state, "First window update should be adopted");
+    assert_eq!(
+        connections.try_get()?,
+        &cloned_state,
+        "The out-of-order segment should still update the window despite its data being buffered"
+    );
 
-    // Stale SEG.SEQ duplicates that of the original "Hello" segment, but SEG.ACK is exactly
-    // SND.NXT, satisfying the "new ACK" check on its own, and it has a different window
+    // Lands inside the still-open gap (seq=CLIENT_ISN+6): in-window relative to
+    // RCV.NXT=CLIENT_ISN+1, but stale relative to the SND.WL1=CLIENT_ISN+11 the out-of-order
+    // segment just set
     assert_eq!(
         TcpSegment {
-            seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-            ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
-            window: SeqOffset::new(65_000),
+            seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(5),
+            ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            window: SeqOffset::new(9999),
             ..CLIENT_PKT
         }
         .create_reply(&mut connections)?,
         None
     );
 
-    cloned_state.snd_una += LOCAL_HELLO_LEN;
-
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "SND.WND must not adopt the stale segment's window despite SEG.ACK being new"
+        "SND.WND must not adopt the stale segment's window despite it being in-window relative to \
+         RCV.NXT"
     );
 
     Ok(())
