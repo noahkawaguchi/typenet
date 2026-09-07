@@ -32,10 +32,18 @@ impl TcpReassembly {
     }
 
     /// Buffers `payload` starting at `seq` for later reassembly. If a segment starting at `seq` is
-    /// already buffered (e.g. the original if `payload` is a retransmission), the existing one is
-    /// kept and `payload` is dropped.
+    /// already buffered (e.g. because `payload` is a retransmission), the longer of the two is
+    /// kept.
     pub(super) fn insert(&mut self, seq: SeqPoint<Remote>, payload: TcpPayload) {
-        if !self.segments.iter().any(|&(start, _)| start == seq) {
+        if let Some((_, existing)) = self
+            .segments
+            .iter_mut()
+            .find(|&&mut (start, _)| start == seq)
+        {
+            if payload.len() > existing.len() {
+                *existing = payload;
+            }
+        } else {
             self.segments.push((seq, payload));
         }
     }
@@ -145,16 +153,33 @@ mod tests {
     }
 
     #[test]
-    fn keeps_first_segment_when_same_start_seq_inserted_again() -> Result<(), &'static str> {
+    fn keeps_longer_segment_when_shorter_arrives_with_same_seq() -> Result<(), &'static str> {
         let mut reassembly = TcpReassembly::new();
-        let seq = SeqPoint::<Remote>::new(100);
-        reassembly.insert(seq, test_payload("first")?);
-        reassembly.insert(seq, test_payload("second")?);
+        let seq = SeqPoint::new(100);
+
+        reassembly.insert(seq, test_payload("longer")?);
+        reassembly.insert(seq, test_payload("short")?);
 
         let mut out = Vec::new();
         reassembly.drain_contiguous(seq, &mut out);
 
-        assert_eq!(out, b"first");
+        assert_eq!(out, b"longer");
+
+        Ok(())
+    }
+
+    #[test]
+    fn replaces_shorter_segment_when_longer_arrives_with_same_seq() -> Result<(), &'static str> {
+        let mut reassembly = TcpReassembly::new();
+        let seq = SeqPoint::new(100);
+
+        reassembly.insert(seq, test_payload("short")?);
+        reassembly.insert(seq, test_payload("longer")?);
+
+        let mut out = Vec::new();
+        reassembly.drain_contiguous(seq, &mut out);
+
+        assert_eq!(out, b"longer");
 
         Ok(())
     }
