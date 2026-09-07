@@ -17,7 +17,7 @@ pub(crate) fn random_u32() -> io::Result<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, pretty_assertions::assert_ne};
 
     #[test]
     fn produces_different_values_across_calls() -> io::Result<()> {

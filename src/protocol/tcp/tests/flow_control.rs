@@ -1,4 +1,4 @@
-use super::*;
+use {super::*, pretty_assertions::assert_eq};
 
 /// Creates a `ConnState` that is the same as `AFTER_HANDSHAKE` except for a custom `snd_wnd`.
 fn after_handshake_with_snd_wnd(snd_wnd: SeqOffset<u16, Local>) -> ConnState {

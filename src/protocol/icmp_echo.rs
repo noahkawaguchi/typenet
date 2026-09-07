@@ -146,7 +146,7 @@ mod tests {
     use {
         super::*,
         crate::{ETHERNET_MTU, protocol::test_consts::REMOTE_TO_LOCAL_IP_PAIR},
-        std::assert_matches,
+        pretty_assertions::{assert_eq, assert_matches},
     };
 
     #[test]

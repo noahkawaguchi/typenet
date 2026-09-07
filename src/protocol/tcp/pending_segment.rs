@@ -92,6 +92,7 @@ mod tests {
     use {
         super::*,
         crate::{Result, protocol::tcp::TcpPayload},
+        pretty_assertions::assert_eq,
         std::time::Duration,
     };
 

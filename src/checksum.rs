@@ -148,7 +148,10 @@ pub fn range_checked_cksum(data: &[u8]) -> u16 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        pretty_assertions::{assert_eq, assert_ne},
+    };
 
     #[test]
     fn empty_input_produces_negative_zero() {

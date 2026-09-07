@@ -1,4 +1,4 @@
-use super::*;
+use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn correct_for_valid_segment() -> Result {

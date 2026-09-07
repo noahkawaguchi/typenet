@@ -79,7 +79,10 @@ impl fmt::Display for TcpFlags {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::assert_matches};
+    use {
+        super::*,
+        pretty_assertions::{assert_eq, assert_matches},
+    };
 
     #[test]
     fn round_trips_all_variants() {

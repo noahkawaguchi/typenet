@@ -91,7 +91,7 @@ mod tests {
     use {
         super::*,
         crate::{Result, config::Config},
-        std::assert_matches,
+        pretty_assertions::assert_matches,
     };
 
     #[test]

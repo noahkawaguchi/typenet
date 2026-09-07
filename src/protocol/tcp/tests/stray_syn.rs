@@ -1,4 +1,4 @@
-use super::*;
+use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn stray_syn_out_of_window_gets_challenge_ack() -> Result {

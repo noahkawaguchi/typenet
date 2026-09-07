@@ -1,4 +1,4 @@
-use super::*;
+use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn syn_ack_is_resent_while_due() -> Result {

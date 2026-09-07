@@ -78,6 +78,7 @@ impl_display_thousands_separated!(u16, u32);
 mod tests {
     use {
         super::*,
+        pretty_assertions::assert_eq,
         std::{num::ParseIntError, str::FromStr},
     };
 

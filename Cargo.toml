@@ -12,7 +12,8 @@ required-features = ["bench-internals"]
 libc = "0.2.189"
 
 [dev-dependencies]
-criterion = { version = "0.8.2", features = ["html_reports"] }
+criterion         = { version = "0.8.2", features = ["html_reports"] }
+pretty_assertions = { version = "1.4.1", features = ["unstable"] }
 
 [features]
 bench-internals = [] # Used for compiling/exposing some internals only in benchmarks

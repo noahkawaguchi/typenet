@@ -78,7 +78,7 @@ impl TcpReassembly {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::protocol::tcp::seq_space::SeqOffset};
+    use {super::*, crate::protocol::tcp::seq_space::SeqOffset, pretty_assertions::assert_eq};
 
     fn test_payload(s: &str) -> Result<TcpPayload, &'static str> {
         TcpPayload::from_test_str(s)?.ok_or("Test payload must not be empty")

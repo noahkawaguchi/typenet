@@ -337,10 +337,8 @@ mod tests {
         super::*,
         crate::logger::LogLevel,
         mocks::*,
-        std::{
-            assert_matches,
-            cell::{Cell, RefCell},
-        },
+        pretty_assertions::assert_matches,
+        std::cell::{Cell, RefCell},
     };
 
     /// A zero grace period, meaning the very next iteration's poll timeout is already past the
