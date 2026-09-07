@@ -55,7 +55,7 @@ fn overflowing_deadline_errors_instead_of_panicking() {
             ..decision_test_server()
         }
         .decide_shutdown(Instant::now()),
-        Err(e) if e.contains("Overflowed")
+        Err(e) if e.to_string().contains("Overflowed")
     );
 }
 

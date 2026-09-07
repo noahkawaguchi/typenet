@@ -4,6 +4,7 @@ use {
         addr_pairs::Ipv4AddrPair,
         checksum,
         endpoint::{Endpoint, Local, Remote},
+        error::Result,
         protocol::Protocol,
         try_ops::TryAdd as _,
     },
@@ -27,7 +28,7 @@ pub struct Ipv4Header<S: Endpoint> {
 impl Ipv4Header<Remote> {
     /// Parses `data` as an IPv4 packet going in the remote to local direction, returning the header
     /// fields and a slice starting at the beginning of the payload.
-    pub fn parse(data: &[u8]) -> Result<(Self, &[u8]), String> { Self::inner_parse(data) }
+    pub fn parse(data: &[u8]) -> Result<(Self, &[u8])> { Self::inner_parse(data) }
 }
 
 impl Ipv4Header<Local> {
@@ -44,7 +45,7 @@ impl Ipv4Header<Local> {
         protocol: Protocol,
         ip_pair: Ipv4AddrPair<Local>,
         proto_len: u16,
-    ) -> Result<Self, String> {
+    ) -> Result<Self> {
         Self::inner_try_new(protocol, ip_pair, proto_len)
     }
 
@@ -59,7 +60,7 @@ impl<S: Endpoint> Ipv4Header<S> {
     ///
     /// The local to remote direction is for tests only. Only the remote to local direction should
     /// be exposed in production code.
-    fn inner_parse(data: &[u8]) -> Result<(Self, &[u8]), String> {
+    fn inner_parse(data: &[u8]) -> Result<(Self, &[u8])> {
         let ip_hdr = data
             .first_chunk::<IPV4_HDR_MIN_LEN_USIZE>()
             .ok_or_else(|| format!("Too short for IPv4 header ({} bytes)", data.len()))?;
@@ -67,12 +68,12 @@ impl<S: Endpoint> Ipv4Header<S> {
         // Must be IPv4
         match ip_hdr[0] >> 4 {
             4 => {}
-            6 => return Err(String::from("IPv6 packet")),
-            version => return Err(format!("Unexpected IP version {version}")),
+            6 => return Err("IPv6 packet".into()),
+            version => return Err(format!("Unexpected IP version {version}").into()),
         }
 
         if checksum::calculate(ip_hdr) != 0 {
-            return Err(String::from("Invalid IPv4 header checksum"));
+            return Err("Invalid IPv4 header checksum".into());
         }
 
         let ihl_bytes = usize::from(ip_hdr[0] & 0xF) * 4; // Convert 32-bit words to bytes
@@ -100,13 +101,10 @@ impl<S: Endpoint> Ipv4Header<S> {
     /// # Errors
     ///
     /// Returns `Err` if adding `proto_len` to the IPv4 header length overflows `u16`.
-    fn inner_try_new(
-        protocol: Protocol,
-        ip_pair: Ipv4AddrPair<S>,
-        proto_len: u16,
-    ) -> Result<Self, String> {
+    fn inner_try_new(protocol: Protocol, ip_pair: Ipv4AddrPair<S>, proto_len: u16) -> Result<Self> {
         u16::from(IPV4_HDR_MIN_LEN_U8)
             .try_add(proto_len)
+            .map_err(Into::into)
             .map(|total_len| Self { total_len, protocol, ip_pair })
     }
 
@@ -156,9 +154,7 @@ mod tests {
         ///
         /// This is a test-only version because a header created locally would never be parsed from
         /// bytes in production.
-        pub fn test_parse_local(data: &[u8]) -> Result<(Self, &[u8]), String> {
-            Self::inner_parse(data)
-        }
+        pub fn test_parse_local(data: &[u8]) -> Result<(Self, &[u8])> { Self::inner_parse(data) }
     }
 
     impl Ipv4Header<Remote> {
@@ -175,7 +171,7 @@ mod tests {
             protocol: Protocol,
             ip_pair: Ipv4AddrPair<Remote>,
             proto_len: u16,
-        ) -> Result<Self, String> {
+        ) -> Result<Self> {
             Self::inner_try_new(protocol, ip_pair, proto_len)
         }
 
@@ -190,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn correctly_parses_valid_pkt() -> Result<(), String> {
+    fn correctly_parses_valid_pkt() -> Result {
         #[rustfmt::skip]
         const DATA: [u8; 20] = [
             0x45, 0x00, 0x00, 0x3C,  // Version 4, IHL 5, TOS 0, Total Length 60
@@ -214,7 +210,7 @@ mod tests {
     #[test]
     fn parsing_fails_if_too_short() {
         const DATA: [u8; 3] = [0x45, 0x00, 0x00]; // Only 3 bytes
-        assert_matches!(Ipv4Header::parse(&DATA), Err(e) if e.contains("Too short"));
+        assert_matches!(Ipv4Header::parse(&DATA), Err(e) if e.to_string().contains("Too short"));
     }
 
     #[test]
@@ -228,7 +224,7 @@ mod tests {
             172, 16, 10, 12,         // Dest IP: 172.16.10.12
         ];
 
-        assert_matches!(Ipv4Header::parse(&DATA), Err(e) if e.contains("checksum"));
+        assert_matches!(Ipv4Header::parse(&DATA), Err(e) if e.to_string().contains("checksum"));
     }
 
     #[test]
@@ -243,11 +239,11 @@ mod tests {
             0x00, 0x00, 0x00, 0x01,
         ];
 
-        assert_matches!(Ipv4Header::parse(&DATA), Err(e) if e.contains("IPv6"));
+        assert_matches!(Ipv4Header::parse(&DATA), Err(e) if e.to_string().contains("IPv6"));
     }
 
     #[test]
-    fn creates_valid_ipv4_hdr_for_reply() -> Result<(), String> {
+    fn creates_valid_ipv4_hdr_for_reply() -> Result {
         #[rustfmt::skip]
         const REQUEST: [u8; 20] = [
             0x45, 0x00, 0x00, 0x3C,  // Version 4, IHL 5, TOS 0, Total Length 60

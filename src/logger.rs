@@ -1,5 +1,8 @@
 use {
-    crate::{endpoint::Endpoint, ipv4_header::Ipv4Header, protocol::router::PrettyProtocol},
+    crate::{
+        endpoint::Endpoint, error::Result, ipv4_header::Ipv4Header,
+        protocol::router::PrettyProtocol,
+    },
     std::{
         fmt,
         io::{self, Write as _},
@@ -100,7 +103,7 @@ impl Logger {
         &self,
         ipv4_hdr: &Ipv4Header<S>,
         pretty_proto: &impl PrettyProtocol,
-    ) -> io::Result<()> {
+    ) -> Result {
         match self.level {
             LogLevel::Silent | LogLevel::ServerInfo => {}
 

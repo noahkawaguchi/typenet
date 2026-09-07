@@ -223,7 +223,7 @@ impl<S: Endpoint> TcpSegment<S> {
         let tcp_seg_len = u16::from(TCP_HDR_MIN_LEN).try_add(
             self.payload
                 .as_ref()
-                .map(|payload| -> Result<u16, String> {
+                .map(|payload| -> Result<u16> {
                     let payload_len = payload.len().get();
 
                     buf.try_get_mut(

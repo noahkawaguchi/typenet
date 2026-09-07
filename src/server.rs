@@ -287,7 +287,7 @@ impl<D, P, S> Server<'_, D, P, S> {
     }
 
     /// Decides how to react to a shutdown signal. If not already draining, initiates active close.
-    fn decide_shutdown(&mut self, now: Instant) -> Result<ShutdownDecision, String> {
+    fn decide_shutdown(&mut self, now: Instant) -> Result<ShutdownDecision> {
         Ok(if let Some(deadline) = self.shutdown_deadline {
             ShutdownDecision::AlreadyDraining { time_left: deadline.saturating_duration_since(now) }
         } else {
@@ -307,7 +307,7 @@ impl<D, P, S> Server<'_, D, P, S> {
     /// Parses `data` as an IPv4 header and protocol-specific header and payload, returning the
     /// incoming packet parsed into structs ready to be logged, and optionally a reply if one is
     /// required.
-    fn parse_incoming<'a>(&mut self, data: &'a [u8]) -> Result<ParsedExchange<'a>, String> {
+    fn parse_incoming<'a>(&mut self, data: &'a [u8]) -> Result<ParsedExchange<'a>> {
         let (ipv4_hdr, ipv4_payload) =
             Ipv4Header::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
 

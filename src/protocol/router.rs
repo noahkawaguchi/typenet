@@ -51,9 +51,7 @@ impl<'a> ProtocolRouter<'a, Remote> {
         ip_pair: Ipv4AddrPair<Remote>,
     ) -> Result<Self> {
         match protocol {
-            Protocol::Icmp => IcmpEchoMsg::parse(data, ip_pair)
-                .map(Self::Icmp)
-                .map_err(Into::into),
+            Protocol::Icmp => IcmpEchoMsg::parse(data, ip_pair).map(Self::Icmp),
             Protocol::Tcp => TcpSegment::parse(data, ip_pair).map(Self::Tcp),
             Protocol::Udp => UdpDatagram::parse(data, ip_pair).map(Self::Udp),
         }

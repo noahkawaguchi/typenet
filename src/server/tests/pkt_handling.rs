@@ -4,7 +4,7 @@ use {super::*, pretty_assertions::assert_eq};
 fn ipv4_parse_error_is_skipped() {
     assert_matches!(
         decision_test_server().parse_incoming(&[0u8; 5]),
-        Err(e) if e.contains("Skipping packet") && e.contains("IPv4")
+        Err(e) if e.to_string().contains("Skipping packet") && e.to_string().contains("IPv4")
     );
 }
 
@@ -21,7 +21,7 @@ fn ipv4_ok_but_tcp_parse_error_is_skipped() -> Result {
 
     assert_matches!(
         decision_test_server().parse_incoming(buf.try_get(..ipv4_hdr.total_len.into())?),
-        Err(e) if e.contains("Skipping packet") && e.contains("TCP")
+        Err(e) if e.to_string().contains("Skipping packet") && e.to_string().contains("TCP")
     );
 
     Ok(())

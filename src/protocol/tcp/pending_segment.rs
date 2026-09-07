@@ -97,7 +97,7 @@ mod tests {
     };
 
     #[test]
-    fn clamps_rto() -> Result<(), &'static str> {
+    fn clamps_rto() -> Result {
         let now = Instant::now();
 
         let pending = PendingSegment::new(
@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_due_now_on_overflow() -> Result<(), &'static str> {
+    fn reports_due_now_on_overflow() -> Result {
         assert!(
             PendingSegment::new(
                 SendInfo {

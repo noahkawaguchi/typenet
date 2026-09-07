@@ -39,13 +39,13 @@ impl<S: Endpoint> IcmpEchoMsg<'_, S> {
 
 impl<'a> IcmpEchoMsg<'a, Remote> {
     /// Parses `data` as an ICMP Echo Request header and payload.
-    pub(super) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<Remote>) -> Result<Self, String> {
+    pub(super) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<Remote>) -> Result<Self> {
         let (icmp_hdr, payload) = data
             .split_first_chunk::<{ ICMP_HDR_LEN as usize }>()
             .ok_or_else(|| format!("Too short for ICMP header ({} bytes)", data.len()))?;
 
         if checksum::calculate(data) != 0 {
-            return Err(String::from("Invalid ICMP checksum"));
+            return Err("Invalid ICMP checksum".into());
         }
 
         let icmp_type = icmp_hdr[0];
@@ -53,7 +53,9 @@ impl<'a> IcmpEchoMsg<'a, Remote> {
 
         // ICMP Echo Request (ping): type=8, code=0
         if icmp_type != Self::ICMP_TYPE_ECHO_REQUEST || icmp_code != Self::ICMP_CODE_ECHO {
-            return Err(format!("Not an Echo Request: got type={icmp_type}, code={icmp_code}"));
+            return Err(
+                format!("Not an Echo Request: got type={icmp_type}, code={icmp_code}").into()
+            );
         }
 
         Ok(Self {
@@ -150,7 +152,7 @@ mod tests {
     };
 
     #[test]
-    fn correctly_parses_valid_request() -> Result<(), String> {
+    fn correctly_parses_valid_request() -> Result {
         #[rustfmt::skip]
         const DATA: [u8; 11] = [
             8, 0,              // Type 8 (Echo Request), Code 0
@@ -175,7 +177,7 @@ mod tests {
 
         assert_matches!(
             IcmpEchoMsg::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR),
-            Err(e) if e.contains("Too short")
+            Err(e) if e.to_string().contains("Too short")
         );
     }
 
@@ -191,7 +193,7 @@ mod tests {
 
         assert_matches!(
             IcmpEchoMsg::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR),
-            Err(e) if e.contains("Not an Echo Request")
+            Err(e) if e.to_string().contains("Not an Echo Request")
         );
     }
 
@@ -207,7 +209,7 @@ mod tests {
 
         assert_matches!(
             IcmpEchoMsg::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR),
-            Err(e) if e.contains("Not an Echo Request")
+            Err(e) if e.to_string().contains("Not an Echo Request")
         );
     }
 
@@ -224,12 +226,12 @@ mod tests {
 
         assert_matches!(
             IcmpEchoMsg::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR),
-            Err(e) if e.contains("checksum")
+            Err(e) if e.to_string().contains("checksum")
         );
     }
 
     #[test]
-    fn handles_empty_payload() -> Result<(), String> {
+    fn handles_empty_payload() -> Result {
         #[rustfmt::skip]
         const DATA: [u8; 8] = [
             8, 0,              // Type 8 (Echo Request), Code 0
