@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn drains_segment_starting_at_rcv_nxt() -> Result<(), &'static str> {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::<Remote>::new(100);
+        let rcv_nxt = SeqPoint::new(100);
         reassembly.insert(rcv_nxt, test_payload("abc")?);
 
         let mut out = Vec::new();
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn does_not_drain_when_gap_remains_before_buffered_segment() -> Result<(), &'static str> {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::<Remote>::new(100);
+        let rcv_nxt = SeqPoint::new(100);
         reassembly.insert(rcv_nxt + SeqOffset::new(3), test_payload("later")?);
 
         let mut out = Vec::new();
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn drains_multiple_contiguous_segments_once_gap_closes() -> Result<(), &'static str> {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::<Remote>::new(100);
+        let rcv_nxt = SeqPoint::new(100);
 
         // "load" arrives first, buffered as out-of-order
         reassembly.insert(rcv_nxt + SeqOffset::new(3), test_payload("load")?);
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn discards_buffered_segment_that_starts_before_rcv_nxt() -> Result<(), &'static str> {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::<Remote>::new(100);
+        let rcv_nxt = SeqPoint::new(100);
         reassembly.insert(SeqPoint::new(90), test_payload("stale")?);
 
         let mut out = Vec::new();
@@ -187,27 +187,27 @@ mod tests {
     #[test]
     fn fin_not_reached_when_no_fin_marked() {
         let reassembly = TcpReassembly::new();
-        assert!(!reassembly.fin_reached(SeqPoint::<Remote>::new(100)));
+        assert!(!reassembly.fin_reached(SeqPoint::new(100)));
     }
 
     #[test]
     fn fin_not_reached_before_rcv_nxt_catches_up() {
         let mut reassembly = TcpReassembly::new();
-        reassembly.mark_fin(SeqPoint::<Remote>::new(107));
+        reassembly.mark_fin(SeqPoint::new(107));
         assert!(!reassembly.fin_reached(SeqPoint::new(100)));
     }
 
     #[test]
     fn fin_reached_once_rcv_nxt_catches_up() {
         let mut reassembly = TcpReassembly::new();
-        reassembly.mark_fin(SeqPoint::<Remote>::new(107));
+        reassembly.mark_fin(SeqPoint::new(107));
         assert!(reassembly.fin_reached(SeqPoint::new(107)));
     }
 
     #[test]
     fn fin_reached_after_draining_buffered_data_up_to_fin_seq() -> Result<(), &'static str> {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::<Remote>::new(100);
+        let rcv_nxt = SeqPoint::new(100);
 
         // FIN-carrying segment arrives first, out of order, its FIN sitting past its own payload
         reassembly.insert(rcv_nxt + SeqOffset::new(3), test_payload("load")?);
