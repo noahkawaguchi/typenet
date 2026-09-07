@@ -1,4 +1,4 @@
-use super::*;
+use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn due_retransmission_is_sent_as_real_io() -> Result {

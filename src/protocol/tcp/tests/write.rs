@@ -1,4 +1,4 @@
-use super::*;
+use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn write_into_produces_correct_bytes_with_no_payload() -> Result {

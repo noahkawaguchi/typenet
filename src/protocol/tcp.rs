@@ -310,7 +310,8 @@ mod tests {
                 test_consts::{LOCAL_TO_REMOTE_IP_PAIR, REMOTE_TO_LOCAL_IP_PAIR},
             },
         },
-        std::{assert_matches, collections::VecDeque, thread, time::Duration},
+        pretty_assertions::assert_matches,
+        std::{collections::VecDeque, thread, time::Duration},
     };
 
     impl TcpSegment<Remote> {

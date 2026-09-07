@@ -1,4 +1,4 @@
-use super::*;
+use {super::*, pretty_assertions::assert_eq};
 
 fn client_rst(seq_num: SeqPoint<Remote>) -> TcpSegment<Remote> {
     TcpSegment { seq_num, flags: TcpFlags::Rst, ..CLIENT_PKT }

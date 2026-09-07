@@ -1,4 +1,4 @@
-use super::*;
+use {super::*, pretty_assertions::assert_eq};
 
 /// Four of the states that are in the process of terminating after we've sent our FIN: FIN-WAIT-1,
 /// FIN-WAIT-2, CLOSING, and LAST-ACK. All have the window state right after the initial three-way

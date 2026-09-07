@@ -189,7 +189,7 @@ mod tests {
     }
 
     mod comparison {
-        use super::*;
+        use {super::*, pretty_assertions::assert_eq};
 
         #[test]
         fn point_equality() {
@@ -272,7 +272,7 @@ mod tests {
     }
 
     mod offset_past {
-        use super::*;
+        use {super::*, pretty_assertions::assert_eq};
 
         #[test]
         fn computes_offset_when_rhs_precedes_or_equals_self() {

@@ -145,7 +145,10 @@ impl<S: Endpoint> fmt::Display for Ipv4Header<S> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::assert_matches};
+    use {
+        super::*,
+        pretty_assertions::{assert_eq, assert_matches},
+    };
 
     impl Ipv4Header<Local> {
         /// Parses `data` as an IPv4 packet going in the local to remote direction, returning the

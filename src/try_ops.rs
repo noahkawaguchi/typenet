@@ -78,7 +78,11 @@ impl<T> TryGetMut for [T] {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::Result, std::assert_matches};
+    use {
+        super::*,
+        crate::Result,
+        pretty_assertions::{assert_eq, assert_matches},
+    };
 
     #[test]
     fn try_add_errors_for_overflow() {

@@ -70,7 +70,10 @@ impl TcpPayload {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::assert_matches};
+    use {
+        super::*,
+        pretty_assertions::{assert_eq, assert_matches},
+    };
 
     /// A byte array with the maximum valid length.
     static MAX_ARRAY: [u8; u16::MAX as usize] = [b'H'; u16::MAX as usize];

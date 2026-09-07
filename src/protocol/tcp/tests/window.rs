@@ -1,4 +1,7 @@
-use super::*;
+use {
+    super::*,
+    pretty_assertions::{assert_eq, assert_ne},
+};
 
 #[test]
 fn new_ack_adopts_window_from_segment() -> Result {
