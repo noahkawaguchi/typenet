@@ -1,5 +1,5 @@
 use {
-    crate::Result,
+    crate::error::Result,
     std::{iter, num::NonZeroU16, rc::Rc},
 };
 

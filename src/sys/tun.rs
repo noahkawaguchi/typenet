@@ -90,7 +90,7 @@ const fn u8_to_c_char(b: u8) -> libc::c_char { b as libc::c_char }
 mod tests {
     use {
         super::*,
-        crate::{Result, config::Config},
+        crate::{config::Config, error::Result},
         pretty_assertions::assert_matches,
     };
 

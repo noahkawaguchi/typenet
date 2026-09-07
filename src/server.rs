@@ -1,8 +1,9 @@
 use {
     crate::{
-        ETHERNET_MTU, Result,
+        ETHERNET_MTU,
         config::Config,
         endpoint::{Local, Remote},
+        error::Result,
         ipv4_header::Ipv4Header,
         logger::Logger,
         protocol::{

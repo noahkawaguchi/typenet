@@ -9,10 +9,11 @@ mod udp;
 
 use {
     crate::{
-        ETHERNET_MTU, Result,
+        ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
         checksum,
         endpoint::Endpoint,
+        error::Result,
         try_ops::{TryGet as _, TryGetMut as _},
     },
     std::fmt,

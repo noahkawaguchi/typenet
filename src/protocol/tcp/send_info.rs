@@ -1,7 +1,7 @@
 use {
     crate::{
-        Result,
         endpoint::{Local, Remote},
+        error::Result,
         protocol::{
             TcpConnections, TcpSegment,
             tcp::{

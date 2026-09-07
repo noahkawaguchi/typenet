@@ -80,7 +80,7 @@ impl<T> TryGetMut for [T] {
 mod tests {
     use {
         super::*,
-        crate::Result,
+        crate::error::Result,
         pretty_assertions::{assert_eq, assert_matches},
     };
 

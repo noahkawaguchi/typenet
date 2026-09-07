@@ -11,9 +11,9 @@ mod state;
 
 use {
     crate::{
-        Result,
         addr_pairs::{Ipv4AddrPair, PortPair},
         endpoint::{Endpoint, Local, Remote},
+        error::Result,
         protocol::{
             Protocol,
             display::{PrettyPayload, WithThousandsSeparators as _},

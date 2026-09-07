@@ -91,7 +91,7 @@ impl PendingSegment {
 mod tests {
     use {
         super::*,
-        crate::{Result, protocol::tcp::TcpPayload},
+        crate::{error::Result, protocol::tcp::TcpPayload},
         pretty_assertions::assert_eq,
         std::time::Duration,
     };

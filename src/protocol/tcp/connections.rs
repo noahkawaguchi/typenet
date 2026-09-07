@@ -1,8 +1,8 @@
 use {
     crate::{
-        Result,
         addr_pairs::{Ipv4AddrPair, PortPair},
         endpoint::Local,
+        error::Result,
         protocol::tcp::{
             LOCAL_FIN_BYTE, TcpSegment,
             flags::TcpFlags,

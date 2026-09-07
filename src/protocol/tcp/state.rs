@@ -1,7 +1,8 @@
 use {
     crate::{
-        ETHERNET_MTU, Result,
+        ETHERNET_MTU,
         endpoint::{Local, Remote},
+        error::Result,
         ipv4_header::Ipv4Header,
         protocol::tcp::{
             LOCAL_SYN_BYTE, TCP_HDR_MIN_LEN, TcpSegment,

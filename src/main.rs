@@ -1,6 +1,6 @@
 use typenet::{
-    Result,
     config::Config,
+    error::Result,
     server,
     sys::{ShutdownSignal, poll, tun},
 };
