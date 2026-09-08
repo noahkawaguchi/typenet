@@ -1,24 +1,24 @@
 use std::{
     backtrace::{Backtrace, BacktraceStatus},
-    fmt, io, num,
-    panic::Location,
+    fmt::{self, Write as _},
+    io, num,
 };
 
 pub type Result<T = (), E = Error> = std::result::Result<T, E>;
 
-/// Custom error struct that tracks caller location when created and optionally includes backtrace
-/// information (controlled by `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1`).
+/// Custom error struct that optionally includes backtrace information (controlled by
+/// `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1`).
 ///
-/// Location and backtrace if enabled are only shown in `Debug` representations, not `Display`.
+/// If enabled, backtraces are only shown in `Debug` representations, not `Display`.
 pub struct Error {
     inner: ErrorKind,
-    location: &'static Location<'static>,
     backtrace: Backtrace,
 }
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "[{}] {:?}", self.location, self.inner)?;
+        self.inner.fmt(f)?;
+        f.write_char('\n')?;
 
         match self.backtrace.status() {
             BacktraceStatus::Captured => {
@@ -49,10 +49,8 @@ impl fmt::Display for Error {
 
 #[cfg(test)]
 impl PartialEq for Error {
-    fn eq(&self, &Self { ref inner, location, ref backtrace }: &Self) -> bool {
-        &self.inner == inner
-            && self.location == location
-            && self.backtrace.status() == backtrace.status()
+    fn eq(&self, Self { inner, backtrace }: &Self) -> bool {
+        &self.inner == inner && self.backtrace.status() == backtrace.status()
     }
 }
 
@@ -62,13 +60,11 @@ macro_rules! impl_from_error_types {
     {$($variant:ident($err_type:ty)),+ $(,)?} => {
         $(
             impl From<$err_type> for Error {
-                #[track_caller]
                 fn from(value: $err_type) -> Self {
                     Self {
                         inner: ErrorKind::$variant(value),
-                        location: Location::caller(),
-                        // Cheap no-op if the `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` backtrace
-                        // environment variables are both not set
+                        // Cheap no-op if `RUST_BACKTRACE` and `RUST_LIB_BACKTRACE` backtrace are
+                        // both not set
                         backtrace: Backtrace::capture(),
                     }
                 }
