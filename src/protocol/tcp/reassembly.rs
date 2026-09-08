@@ -78,14 +78,18 @@ impl TcpReassembly {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::protocol::tcp::seq_space::SeqOffset, pretty_assertions::assert_eq};
+    use {
+        super::*,
+        crate::{error::TraceableResult, protocol::tcp::seq_space::SeqOffset},
+        pretty_assertions::assert_eq,
+    };
 
-    fn test_payload(s: &str) -> Result<TcpPayload, &'static str> {
-        TcpPayload::from_test_str(s)?.ok_or("Test payload must not be empty")
+    fn test_payload(s: &str) -> TraceableResult<TcpPayload> {
+        TcpPayload::from_test_str(s)?.ok_or_else(|| "Test payload must not be empty".into())
     }
 
     #[test]
-    fn drains_segment_starting_at_rcv_nxt() -> Result<(), &'static str> {
+    fn drains_segment_starting_at_rcv_nxt() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
         let rcv_nxt = SeqPoint::new(100);
         reassembly.insert(rcv_nxt, test_payload("abc")?);
@@ -101,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn does_not_drain_when_gap_remains_before_buffered_segment() -> Result<(), &'static str> {
+    fn does_not_drain_when_gap_remains_before_buffered_segment() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
         let rcv_nxt = SeqPoint::new(100);
         reassembly.insert(rcv_nxt + SeqOffset::new(3), test_payload("later")?);
@@ -117,7 +121,7 @@ mod tests {
     }
 
     #[test]
-    fn drains_multiple_contiguous_segments_once_gap_closes() -> Result<(), &'static str> {
+    fn drains_multiple_contiguous_segments_once_gap_closes() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
         let rcv_nxt = SeqPoint::new(100);
 
@@ -137,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn discards_buffered_segment_that_starts_before_rcv_nxt() -> Result<(), &'static str> {
+    fn discards_buffered_segment_that_starts_before_rcv_nxt() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
         let rcv_nxt = SeqPoint::new(100);
         reassembly.insert(SeqPoint::new(90), test_payload("stale")?);
@@ -153,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_longer_segment_when_shorter_arrives_with_same_seq() -> Result<(), &'static str> {
+    fn keeps_longer_segment_when_shorter_arrives_with_same_seq() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
         let seq = SeqPoint::new(100);
 
@@ -169,7 +173,7 @@ mod tests {
     }
 
     #[test]
-    fn replaces_shorter_segment_when_longer_arrives_with_same_seq() -> Result<(), &'static str> {
+    fn replaces_shorter_segment_when_longer_arrives_with_same_seq() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
         let seq = SeqPoint::new(100);
 
@@ -205,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn fin_reached_after_draining_buffered_data_up_to_fin_seq() -> Result<(), &'static str> {
+    fn fin_reached_after_draining_buffered_data_up_to_fin_seq() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
         let rcv_nxt = SeqPoint::new(100);
 

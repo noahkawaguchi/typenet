@@ -1,5 +1,5 @@
 use {
-    crate::Result,
+    crate::error::TraceableResult,
     std::{iter, num::NonZeroU16, rc::Rc},
 };
 
@@ -36,7 +36,7 @@ impl TcpPayload {
     /// # Errors
     ///
     /// Returns `Err` if the length of `iter` is greater than `u16::MAX`.
-    pub(super) fn try_from_iter<I>(iter: I) -> Result<Option<Self>, &'static str>
+    pub(super) fn try_from_iter<I>(iter: I) -> TraceableResult<Option<Self>>
     where
         I: IntoIterator<Item = u8>,
     {
@@ -55,7 +55,7 @@ impl TcpPayload {
 
         u16::try_from(data.len())
             .map_err(|_| {
-                "Attempted to create a `TcpPayload` from an iterator longer than `u16::MAX`"
+                "Attempted to create a `TcpPayload` from an iterator longer than `u16::MAX`".into()
             })
             .map(|maybe_zero_len| NonZeroU16::new(maybe_zero_len).map(|len| Self { data, len }))
     }
@@ -63,7 +63,7 @@ impl TcpPayload {
     /// Attempts to create a test payload by converting a `&str` into a `Self`. An empty string maps
     /// to `Ok(None)`.
     #[cfg(test)]
-    pub(super) fn from_test_str(s: &str) -> Result<Option<Self>, &'static str> {
+    pub(super) fn from_test_str(s: &str) -> TraceableResult<Option<Self>> {
         Self::try_from_iter(s.as_bytes().iter().copied())
     }
 }
@@ -79,7 +79,7 @@ mod tests {
     static MAX_ARRAY: [u8; u16::MAX as usize] = [b'H'; u16::MAX as usize];
 
     #[test]
-    fn creates_valid_payload_when_length_in_range() -> Result {
+    fn creates_valid_payload_when_length_in_range() -> TraceableResult {
         for data in ["H".as_ref(), "Hello".as_ref(), MAX_ARRAY.as_ref()] {
             assert_eq!(
                 TcpPayload::try_from_iter(data.iter().copied()),
@@ -100,7 +100,7 @@ mod tests {
     fn err_for_too_large() {
         assert_matches!(
             TcpPayload::try_from_iter(MAX_ARRAY.into_iter().chain(*b"e")),
-            Err(e) if e.contains("longer than")
+            Err(e) if e.to_string().contains("longer than")
         );
     }
 }

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn poll_error_unrelated_to_interruption_propagates() -> Result {
+fn poll_error_unrelated_to_interruption_propagates() -> TraceableResult {
     const MESSAGE: &str = "boom from poll";
 
     let poll = MockPoll::with_results([Err(io::Error::other(MESSAGE))]);
@@ -25,7 +25,7 @@ fn poll_error_unrelated_to_interruption_propagates() -> Result {
 }
 
 #[test]
-fn read_error_unrelated_to_interruption_propagates() -> Result {
+fn read_error_unrelated_to_interruption_propagates() -> TraceableResult {
     const MESSAGE: &str = "boom from read";
 
     let poll = MockPoll::with_results([Ok(true)]);
@@ -49,7 +49,7 @@ fn read_error_unrelated_to_interruption_propagates() -> Result {
 }
 
 #[test]
-fn write_failure_while_sending_fin_ack_propagates() -> Result {
+fn write_failure_while_sending_fin_ack_propagates() -> TraceableResult {
     const MESSAGE: &str = "boom from write";
 
     let poll = MockPoll::with_results([Err(io::ErrorKind::Interrupted.into())]);

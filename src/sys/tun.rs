@@ -1,4 +1,5 @@
 use {
+    crate::error::TraceableResult,
     libc::{IFF_NO_PI, IFF_TUN, IFNAMSIZ, TUNSETIFF},
     std::{
         ffi::CString,
@@ -25,7 +26,7 @@ const IFRU_FLAGS: libc::c_short = (IFF_TUN | IFF_NO_PI) as libc::c_short;
 ///
 /// Returns `Err` if the device does not exist or could not be attached to.
 #[expect(unsafe_code, reason = "libc FFI to attach to TUN device")]
-pub fn attach(device_name: &str) -> io::Result<File> {
+pub fn attach(device_name: &str) -> TraceableResult<File> {
     // The interface must already exist, otherwise the `ioctl()` syscall below will try to create it
     // and fail with permission denied.
     //
@@ -35,10 +36,7 @@ pub fn attach(device_name: &str) -> io::Result<File> {
         // SAFETY: `name` is a valid, NUL-terminated C string that outlives this call.
         (unsafe { libc::if_nametoindex(name.as_ptr()) }) == 0
     }) {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("TUN device {device_name} does not exist"),
-        ));
+        return Err(format!("TUN device {device_name} does not exist").into());
     }
 
     // Initialize a new interface request C struct.
@@ -71,6 +69,7 @@ pub fn attach(device_name: &str) -> io::Result<File> {
     (unsafe { libc::ioctl(tun_file.as_raw_fd(), TUNSETIFF, &mut ifr) } != -1)
         .then_some(tun_file)
         .ok_or_else(io::Error::last_os_error)
+        .map_err(Into::into)
 }
 
 /// Casts Rust `u8` to C `char` without performing any checks.
@@ -88,15 +87,11 @@ const fn u8_to_c_char(b: u8) -> libc::c_char { b as libc::c_char }
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::{Result, config::Config},
-        pretty_assertions::assert_matches,
-    };
+    use {super::*, crate::config::Config, pretty_assertions::assert_matches};
 
     #[test]
     fn errors_for_nonexistent_tun_with_valid_name() {
-        assert_matches!(attach("nonexistent"), Err(e) if e.kind() == io::ErrorKind::NotFound);
+        assert_matches!(attach("nonexistent"), Err(e) if e.to_string().contains("does not exist"));
     }
 
     #[test]
@@ -109,13 +104,16 @@ mod tests {
         for invalid_name in
             ["/dev/null", "/proc/version", ".", "..", "", "\tun", "t\0\0n", "1234567890123456"]
         {
-            assert_matches!(attach(invalid_name), Err(e) if e.kind() == io::ErrorKind::NotFound);
+            assert_matches!(
+                attach(invalid_name),
+                Err(e) if e.to_string().contains("does not exist")
+            );
         }
     }
 
     #[test]
     #[ignore = "requires TUN setup"]
-    fn successfully_attaches_to_existing_tun() -> Result {
+    fn successfully_attaches_to_existing_tun() -> TraceableResult {
         assert_matches!(attach(&Config::load()?.tun_name), Ok(_));
         Ok(())
     }

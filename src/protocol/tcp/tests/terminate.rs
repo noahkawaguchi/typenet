@@ -11,7 +11,7 @@ const STATES_AFTER_SENDING_FIN: [TcpState; 4] = [
 ];
 
 #[test]
-fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> Result {
+fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> TraceableResult {
     // A FIN-ACK arriving in SYN-RECEIVED can legitimately complete the handshake and initiate
     // passive close in the same segment. RFC 9293, Section 3.10.7.4 processes "Fifth, check the ACK
     // field" (in SYN-RECEIVED completing the handshake) before "Eighth, check the FIN bit", so this
@@ -59,7 +59,7 @@ fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> Result {
 }
 
 #[test]
-fn creates_valid_fin_ack() -> Result {
+fn creates_valid_fin_ack() -> TraceableResult {
     // Simulate an established connection, FIN-ACK arrives at seq=CLIENT_ISN+1
     let mut connections = TcpConnections::default().after_handshake();
     let mut cloned_state = connections.try_get()?.clone();
@@ -96,7 +96,7 @@ fn creates_valid_fin_ack() -> Result {
 }
 
 #[test]
-fn fin_ack_acks_prior_data_and_advances_snd_una() -> Result {
+fn fin_ack_acks_prior_data_and_advances_snd_una() -> TraceableResult {
     // FIN-ACK also includes "check the ACK field" processing just like a plain ACK (RFC 9293,
     // Section 3.10.7.4). Its SEG.ACK can acknowledge data sent earlier in the connection, and that
     // must still advance SND.UNA and prune `pending`.
@@ -169,7 +169,7 @@ fn fin_ack_acks_prior_data_and_advances_snd_una() -> Result {
 }
 
 #[test]
-fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> Result {
+fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> TraceableResult {
     // A FIN-ACK arriving before data preceding it (seq_num != rcv_nxt, e.g. an earlier data segment
     // was lost) must not be processed yet. Doing so would signal "no more data" before the missing
     // data has been delivered. Until the gap is filled, treat it like out-of-order data by sending
@@ -216,7 +216,7 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> Result {
 }
 
 #[test]
-fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Result {
+fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> TraceableResult {
     // A FIN-ACK carrying trailing data arrives in window but SEG.SEQ != RCV.NXT (an earlier data
     // segment hasn't arrived yet), so it must be buffered rather than acted on immediately. Once
     // the missing segment fills the gap, the connection should discover the peer's FIN has now been
@@ -315,7 +315,7 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Result {
 }
 
 #[test]
-fn partial_ack_after_sending_our_fin_does_not_close_or_reset() -> Result {
+fn partial_ack_after_sending_our_fin_does_not_close_or_reset() -> TraceableResult {
     // In any of the states after sending our FIN, our own FIN can be acked separately from data
     // sent alongside it (e.g. the peer acks previously buffered chunks before finally acking the
     // byte that covers the FIN). Regardless of which of those states the connection is in, an ACK
@@ -359,7 +359,7 @@ fn partial_ack_after_sending_our_fin_does_not_close_or_reset() -> Result {
 }
 
 #[test]
-fn final_ack_after_fin_ack_removes_connection_and_returns_none() -> Result {
+fn final_ack_after_fin_ack_removes_connection_and_returns_none() -> TraceableResult {
     // Simulates the client's final ACK completing the 4-step close. Should get no reply (not RST)
     // so the client can close cleanly from TIME-WAIT.
 
@@ -402,7 +402,7 @@ fn final_ack_after_fin_ack_removes_connection_and_returns_none() -> Result {
 }
 
 #[test]
-fn close_established_sends_fin_ack_and_transitions_to_fin_wait_1() -> Result {
+fn close_established_sends_fin_ack_and_transitions_to_fin_wait_1() -> TraceableResult {
     // snd_nxt=SERVER_ISN+1, rcv_nxt=CLIENT_ISN+1
     let mut connections = TcpConnections::default().after_handshake();
     let mut cloned_state = connections.try_get()?.clone();
@@ -432,7 +432,7 @@ fn close_established_sends_fin_ack_and_transitions_to_fin_wait_1() -> Result {
 }
 
 #[test]
-fn fin_wait_1_to_fin_wait_2_on_ack_of_our_fin() -> Result {
+fn fin_wait_1_to_fin_wait_2_on_ack_of_our_fin() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
     connections.close_established(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
     let mut cloned_state = connections.try_get()?.clone();
@@ -459,7 +459,7 @@ fn fin_wait_1_to_fin_wait_2_on_ack_of_our_fin() -> Result {
 }
 
 #[test]
-fn fin_wait_2_closes_on_fin_ack_from_peer() -> Result {
+fn fin_wait_2_closes_on_fin_ack_from_peer() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
     connections.close_established(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
     let mut cloned_state = connections.try_get()?.clone();
@@ -506,7 +506,7 @@ fn fin_wait_2_closes_on_fin_ack_from_peer() -> Result {
 }
 
 #[test]
-fn fin_wait_1_closes_immediately_if_peers_fin_also_acks_ours() -> Result {
+fn fin_wait_1_closes_immediately_if_peers_fin_also_acks_ours() -> TraceableResult {
     // Simultaneous close where the peer's FIN, arriving while we're still in FIN-WAIT-1, also
     // acknowledges our FIN -> fully closed immediately, skipping FIN-WAIT-2/CLOSING.
 
@@ -537,7 +537,7 @@ fn fin_wait_1_closes_immediately_if_peers_fin_also_acks_ours() -> Result {
 }
 
 #[test]
-fn data_after_our_fin_in_fin_wait_1_is_acked_without_echo() -> Result {
+fn data_after_our_fin_in_fin_wait_1_is_acked_without_echo() -> TraceableResult {
     // After we've sent our FIN (FIN-WAIT-1), the connection isn't fully closed until the peer's
     // FIN also arrives, so data already in flight from the peer must still be accepted and ACKed,
     // even though we have no send side left to echo it with.
@@ -571,7 +571,7 @@ fn data_after_our_fin_in_fin_wait_1_is_acked_without_echo() -> Result {
 }
 
 #[test]
-fn data_after_our_fin_in_fin_wait_2_is_acked_without_echo() -> Result {
+fn data_after_our_fin_in_fin_wait_2_is_acked_without_echo() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
     connections.close_established(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
     let mut cloned_state = connections.try_get()?.clone();
@@ -619,7 +619,7 @@ fn data_after_our_fin_in_fin_wait_2_is_acked_without_echo() -> Result {
 }
 
 #[test]
-fn simultaneous_close_transitions_through_closing_to_closed() -> Result {
+fn simultaneous_close_transitions_through_closing_to_closed() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
     connections.close_established(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
     let mut cloned_state = connections.try_get()?.clone();
@@ -667,7 +667,7 @@ fn simultaneous_close_transitions_through_closing_to_closed() -> Result {
 }
 
 #[test]
-fn fin_ack_with_data_in_fin_wait_1_advances_rcv_nxt_past_data_and_fin() -> Result {
+fn fin_ack_with_data_in_fin_wait_1_advances_rcv_nxt_past_data_and_fin() -> TraceableResult {
     // Simultaneous close where the peer's FIN carries trailing data. Our own FIN has already been
     // sent, so the data can't be echoed (same as plain data arriving in FIN-WAIT-1), but RCV.NXT
     // must still advance past both the data and the FIN's phantom byte.
@@ -707,7 +707,7 @@ fn fin_ack_with_data_in_fin_wait_1_advances_rcv_nxt_past_data_and_fin() -> Resul
 }
 
 #[test]
-fn fin_ack_with_data_in_fin_wait_1_acking_our_fin_closes_immediately() -> Result {
+fn fin_ack_with_data_in_fin_wait_1_acking_our_fin_closes_immediately() -> TraceableResult {
     // Similar to the other case with FIN-ACK with data in FIN-WAIT-1, but the peer's FIN+data also
     // acknowledges our own FIN, so the close completes immediately instead of moving to CLOSING.
 
@@ -739,7 +739,7 @@ fn fin_ack_with_data_in_fin_wait_1_acking_our_fin_closes_immediately() -> Result
 }
 
 #[test]
-fn fin_ack_with_data_in_fin_wait_2_advances_rcv_nxt_past_data_and_fin() -> Result {
+fn fin_ack_with_data_in_fin_wait_2_advances_rcv_nxt_past_data_and_fin() -> TraceableResult {
     // The peer's final FIN in FIN-WAIT-2 carries trailing data, so the ACK we send back must
     // reflect RCV.NXT advanced past both the data and the FIN before the connection is removed.
 
@@ -783,7 +783,7 @@ fn fin_ack_with_data_in_fin_wait_2_advances_rcv_nxt_past_data_and_fin() -> Resul
 }
 
 #[test]
-fn fin_ack_with_data_in_established_echoes_data_and_starts_closing() -> Result {
+fn fin_ack_with_data_in_established_echoes_data_and_starts_closing() -> TraceableResult {
     // A FIN-ACK carrying trailing data on an established connection should echo the data (like
     // plain in-order data) before closing. Unlike FIN-WAIT-1/2, our own FIN hasn't been sent yet
     // here, so it can be piggybacked on the same FIN-ACK reply.
@@ -826,7 +826,7 @@ fn fin_ack_with_data_in_established_echoes_data_and_starts_closing() -> Result {
 }
 
 #[test]
-fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Result {
+fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> TraceableResult {
     // If the peer's advertised window can't fit all the trailing data right now, only what fits
     // gets echoed as a plain ACK, with the rest buffered in the send buffer. Since not everything
     // has been sent yet, our own FIN must not go out yet either. The connection enters CLOSE-WAIT,
@@ -925,7 +925,7 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Resul
 }
 
 #[test]
-fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Result {
+fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> TraceableResult {
     // Filling a gap left by packet loss can reveal more previously-buffered data than fits in a
     // single segment's payload, with the peer's FIN sitting right after all of it. Every byte of
     // that backlog must still reach the peer, so only as much as fits in one segment goes out right
@@ -1060,7 +1060,7 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Res
 }
 
 #[test]
-fn stale_retransmission_after_sending_our_fin_gets_duplicate_ack_not_rst() -> Result {
+fn stale_retransmission_after_sending_our_fin_gets_duplicate_ack_not_rst() -> TraceableResult {
     // A retransmission of data the server already fully processed can arrive in any of the states
     // after we've sent our FIN. Regardless of which of those states the connection is in, this
     // should get a duplicate ACK reflecting the current state, with the connection otherwise left
@@ -1100,7 +1100,7 @@ fn stale_retransmission_after_sending_our_fin_gets_duplicate_ack_not_rst() -> Re
 }
 
 #[test]
-fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> Result {
+fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> TraceableResult {
     // A retransmission of data already fully processed can still arrive while a connection is in
     // CLOSE-WAIT, waiting to drain the rest of its queued data before it can send its own FIN.
     // This should get a duplicate ACK reflecting the current state, leaving the connection and its
@@ -1137,7 +1137,7 @@ fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> Result {
 }
 
 #[test]
-fn stale_pure_ack_after_sending_our_fin_gets_duplicate_ack() -> Result {
+fn stale_pure_ack_after_sending_our_fin_gets_duplicate_ack() -> TraceableResult {
     // A pure ACK whose SEG.SEQ fails the sequence acceptability check can arrive in any of the
     // states after we've sent our FIN. It must be dropped and get a current state reply, not get a
     // RST or advance the connection's close progress.
@@ -1177,7 +1177,7 @@ fn stale_pure_ack_after_sending_our_fin_gets_duplicate_ack() -> Result {
 }
 
 #[test]
-fn stale_pure_ack_in_close_wait_gets_duplicate_ack() -> Result {
+fn stale_pure_ack_in_close_wait_gets_duplicate_ack() -> TraceableResult {
     // A pure ACK whose sequence number falls before what's already been received can arrive while a
     // connection is in CLOSE-WAIT, waiting to drain its queued data before sending its own FIN.
     // It must be dropped and get a current-state reply, not accepted or allowed to disturb the

@@ -1,5 +1,10 @@
 use {
-    crate::{endpoint::Endpoint, ipv4_header::Ipv4Header, protocol::router::PrettyProtocol},
+    crate::{
+        endpoint::Endpoint,
+        error::{TraceableError, TraceableResult},
+        ipv4_header::Ipv4Header,
+        protocol::router::PrettyProtocol,
+    },
     std::{
         fmt,
         io::{self, Write as _},
@@ -29,7 +34,7 @@ pub enum LogLevel {
 }
 
 impl FromStr for LogLevel {
-    type Err = &'static str;
+    type Err = TraceableError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
@@ -38,7 +43,10 @@ impl FromStr for LogLevel {
             "2" => Ok(Self::PktQuiet),
             "3" => Ok(Self::PktDetails),
             "4" => Ok(Self::PktFull),
-            _ => Err("Log level must be a digit between 0 and 4 inclusive"),
+            other => {
+                Err(format!("Log level must be a digit between 0 and 4 inclusive, got {other}")
+                    .into())
+            }
         }
     }
 }
@@ -100,7 +108,7 @@ impl Logger {
         &self,
         ipv4_hdr: &Ipv4Header<S>,
         pretty_proto: &impl PrettyProtocol,
-    ) -> io::Result<()> {
+    ) -> TraceableResult {
         match self.level {
             LogLevel::Silent | LogLevel::ServerInfo => {}
 

@@ -6,7 +6,7 @@ fn neither_deadline_gives_no_timeout() {
 }
 
 #[test]
-fn shutdown_deadline_alone_gives_duration() -> Result {
+fn shutdown_deadline_alone_gives_duration() -> TraceableResult {
     const GRACE_PERIOD: Duration = Duration::from_secs(10);
 
     let now = Instant::now();
@@ -41,7 +41,7 @@ fn pending_retransmission_alone_gives_duration() {
 }
 
 #[test]
-fn earlier_retransmit_deadline_taken_over_later_shutdown_deadline() -> Result {
+fn earlier_retransmit_deadline_taken_over_later_shutdown_deadline() -> TraceableResult {
     const INITIAL_RTO: Duration = Duration::from_millis(250);
 
     let now = Instant::now();
@@ -66,7 +66,7 @@ fn earlier_retransmit_deadline_taken_over_later_shutdown_deadline() -> Result {
 }
 
 #[test]
-fn earlier_shutdown_deadline_taken_over_later_retransmit_deadline() -> Result {
+fn earlier_shutdown_deadline_taken_over_later_retransmit_deadline() -> TraceableResult {
     const GRACE_PERIOD: Duration = Duration::from_millis(250);
 
     let now = Instant::now();
@@ -91,7 +91,7 @@ fn earlier_shutdown_deadline_taken_over_later_retransmit_deadline() -> Result {
 }
 
 #[test]
-fn past_deadline_saturates_to_zero() -> Result {
+fn past_deadline_saturates_to_zero() -> TraceableResult {
     let now = Instant::now();
 
     assert_eq!(
@@ -110,7 +110,7 @@ fn past_deadline_saturates_to_zero() -> Result {
 }
 
 #[test]
-fn poll_timeout_reflects_shutdown_deadline_across_a_real_run() -> Result {
+fn poll_timeout_reflects_shutdown_deadline_across_a_real_run() -> TraceableResult {
     // Showing here that the loop actually uses the computed timeout when polling, and that the
     // grace period being elapsed actually ends the loop.
     //

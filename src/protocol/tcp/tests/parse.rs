@@ -1,7 +1,7 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn correct_for_valid_segment() -> Result {
+fn correct_for_valid_segment() -> TraceableResult {
     #[rustfmt::skip]
         const DATA: [u8; 25] = [
             0x04, 0xD2,                          // Source port: 1234
@@ -60,7 +60,7 @@ fn fails_for_invalid_cksum() {
 }
 
 #[test]
-fn handles_large_sequence_numbers() -> Result {
+fn handles_large_sequence_numbers() -> TraceableResult {
     #[rustfmt::skip]
         const DATA: [u8; 20] = [
             0x04, 0xD2,                          // Source port: 1234

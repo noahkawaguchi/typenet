@@ -1,4 +1,4 @@
-use std::fmt;
+use {crate::error::TraceableError, std::fmt};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(test, derive(Debug))]
@@ -29,7 +29,7 @@ impl TcpFlags {
 }
 
 impl TryFrom<u8> for TcpFlags {
-    type Error = String;
+    type Error = TraceableError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         /// Mask of only the bits currently considered by this enum.
@@ -55,7 +55,8 @@ impl TryFrom<u8> for TcpFlags {
                 other & Self::RST_BIT != 0,
                 other & Self::SYN_BIT != 0,
                 other & Self::FIN_BIT != 0,
-            )),
+            )
+            .into()),
         }
     }
 }

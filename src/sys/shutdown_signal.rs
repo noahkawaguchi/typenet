@@ -1,6 +1,9 @@
-use std::{
-    io,
-    sync::atomic::{AtomicBool, Ordering},
+use {
+    crate::error::TraceableResult,
+    std::{
+        io,
+        sync::atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// The flag for graceful shutdown, private to this module.
@@ -28,7 +31,7 @@ impl ShutdownSignal {
     ///
     /// Returns `Err` if the signal handler could not be installed.
     #[expect(unsafe_code, reason = "libc system calls to install handler")]
-    pub fn install() -> io::Result<Self> {
+    pub fn install() -> TraceableResult<Self> {
         // Use `sigaction` here to ensure the `SA_RESTART` flag is not set
 
         // SAFETY: All fields of `sigaction` have valid all-zero bit patterns.
@@ -39,7 +42,7 @@ impl ShutdownSignal {
         // SAFETY: `&raw mut sa.sa_mask` is a valid, aligned, writable pointer to an owned
         // `sigset_t` on the stack for `sigemptyset` to write an empty set of signals through.
         if unsafe { libc::sigemptyset(&raw mut sa.sa_mask) } != 0 {
-            return Err(io::Error::last_os_error());
+            return Err(io::Error::last_os_error().into());
         }
 
         // SAFETY:
@@ -49,7 +52,7 @@ impl ShutdownSignal {
         // - `shutdown_signal_handler` is async-signal-safe because its body is a single relaxed
         //   store to a lock-free `AtomicBool`.
         if unsafe { libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut()) } != 0 {
-            return Err(io::Error::last_os_error());
+            return Err(io::Error::last_os_error().into());
         }
 
         Ok(Self { flag: &SHUTDOWN })

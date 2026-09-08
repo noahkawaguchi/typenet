@@ -1,8 +1,8 @@
 use {
     crate::{
-        Result,
         addr_pairs::{Ipv4AddrPair, PortPair},
         endpoint::{Endpoint, Local, Remote},
+        error::TraceableResult,
         protocol::{
             Protocol,
             display::PrettyPayload,
@@ -29,7 +29,7 @@ pub struct UdpDatagram<'a, S: Endpoint> {
 
 impl<'a> UdpDatagram<'a, Remote> {
     /// Parses `data` as a UDP header and payload.
-    pub(super) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<Remote>) -> Result<Self> {
+    pub(super) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<Remote>) -> TraceableResult<Self> {
         let (udp_hdr, payload) = data
             .split_first_chunk::<{ UDP_HDR_LEN as usize }>()
             .ok_or_else(|| format!("Too short for UDP header ({} bytes)", data.len()))?;
@@ -63,7 +63,7 @@ impl<'a> UdpDatagram<'a, Remote> {
 }
 
 impl Encode<Local> for UdpDatagram<'_, Local> {
-    fn write_into(&self, buf: &mut [u8]) -> Result<u16> {
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> {
         // Source and destination ports
         buf.try_get_mut(..2)?
             .copy_from_slice(&self.ports.src.to_be_bytes());
@@ -124,7 +124,7 @@ mod tests {
     };
 
     #[test]
-    fn correctly_parses_valid_datagram() -> Result {
+    fn correctly_parses_valid_datagram() -> TraceableResult {
         #[rustfmt::skip]
         const DATA: [u8; 16] = [
             0x04, 0xD2,              // Source port: 1234
@@ -172,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn parsing_accepts_zero_checksum_as_not_computed() -> Result {
+    fn parsing_accepts_zero_checksum_as_not_computed() -> TraceableResult {
         #[rustfmt::skip]
         const DATA: [u8; 16] = [
             0x04, 0xD2,              // Source port: 1234
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn parsing_handles_empty_payload() -> Result {
+    fn parsing_handles_empty_payload() -> TraceableResult {
         #[rustfmt::skip]
         const DATA: [u8; 8] = [
             0x1F, 0x90,              // Source port: 8080
@@ -210,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn extracts_ports_correctly() -> Result {
+    fn extracts_ports_correctly() -> TraceableResult {
         #[rustfmt::skip]
         const DATA: [u8; 12] = [
             0xFF, 0xFF,              // Source port: 65535 (max)
@@ -228,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn transmits_all_ones_when_computed_cksum_is_zero() -> Result {
+    fn transmits_all_ones_when_computed_cksum_is_zero() -> TraceableResult {
         // Payload `[0xE6, 0xB5]` results in a pseudo-header checksum of 0x0000 for IP addresses
         // 10.0.0.1 and 10.0.0.2 (in either order) and ports 1234 and 80 (in either order).
         // However, 0xFFFF must be transmitted instead of 0x0000.
@@ -248,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn creates_valid_echo_reply() -> Result {
+    fn creates_valid_echo_reply() -> TraceableResult {
         #[rustfmt::skip]
         const REQUEST: [u8; 16] = [
             0x04, 0xD2,              // Source port: 1234

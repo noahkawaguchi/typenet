@@ -10,12 +10,15 @@
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
-    typenet::sys::{ShutdownSignal, poll},
+    typenet::{
+        error::TraceableResult,
+        sys::{ShutdownSignal, poll},
+    },
 };
 
 #[test]
 #[expect(unsafe_code, reason = "libc FFI to target a spawned thread with a real SIGINT")]
-fn poll_is_interrupted_by_sigint_instead_of_restarted() -> io::Result<()> {
+fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
     ShutdownSignal::install()?; // `SA_RESTART` unset
 
     let (_tx, rx) = UnixStream::pair()?;
@@ -40,7 +43,7 @@ fn poll_is_interrupted_by_sigint_instead_of_restarted() -> io::Result<()> {
     // SAFETY: `tid` names the poller thread, which is still alive (joined below), and `SIGINT` is
     // a valid signal number.
     if unsafe { libc::pthread_kill(tid, libc::SIGINT) } != 0 {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::last_os_error().into());
     }
 
     let result = poller
