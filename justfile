@@ -18,6 +18,8 @@ logs-dir := justfile_dir() / 'logs'
 log-file := logs-dir / project-name + '_' + datetime('%F_%T') + '.log'
 pcap-dir := justfile_dir() / 'pcap'
 pcap-file := pcap-dir / project-name + '_' + datetime('%F_%T') + '.pcap'
+blob-dir := justfile_dir() / 'blob'
+blob-file := blob-dir / 'random.bin'
 
 tshark-cmd := 'tshark -n --print' \
     + ' -o ip.check_checksum:true -o tcp.check_checksum:true -o udp.check_checksum:true'
@@ -135,6 +137,27 @@ throughput input-file=justfile() echo-file=f'/tmp/{{ project-name }}-out' timeou
     fi
 
     echo 'Echoed data matched input exactly'
+
+# Time echoing a random binary blob through the server using TCP and verify identical output bytes
+blob: blob-gen
+    time nc -Nnv {{ server-addr }} {{ server-port }} \
+        < '{{ blob-file }}' > '/tmp/{{ project-name }}-blob-out'
+
+    cmp '{{ blob-file }}' '/tmp/{{ project-name }}-blob-out'
+    @echo "$(wc -c < '{{ blob-file }}' | numfmt --to=iec) blob echo matched byte for byte"
+
+# Generate the random binary blob if it doesn't already exist
+[private]
+blob-gen size='1M':
+    @mkdir -p '{{ blob-dir }}'
+    @if [ ! -f '{{ blob-file }}' ]; then \
+        head -c {{ size }} /dev/urandom > '{{ blob-file }}'; \
+        echo 'Generated {{ size }} blob at {{ blob-file }}'; \
+    fi
+
+# Remove the generated binary blob
+blob-clean:
+    rm -rf '{{ blob-dir }}'
 
 # Add emulation of real-world networks to the TUN device (uses sudo)
 [
