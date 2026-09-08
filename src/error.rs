@@ -1,24 +1,50 @@
-use std::{fmt, io, num, panic::Location};
+use std::{
+    backtrace::{Backtrace, BacktraceStatus},
+    fmt, io, num,
+    panic::Location,
+};
 
 pub type Result<T = (), E = Error> = std::result::Result<T, E>;
 
-/// Custom error struct that tracks the location of the caller when created and avoids unnecessary
-/// allocations.
+/// Custom error struct that tracks caller location when created and optionally includes backtrace
+/// information (controlled by `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1`).
+///
+/// Location and backtrace if enabled are only shown in `Debug` representations, not `Display`.
 pub struct Error {
-    error: ErrorKind,
+    inner: ErrorKind,
     location: &'static Location<'static>,
+    backtrace: Backtrace,
 }
 
 impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}] {:?}", self.location, self.error)
+        writeln!(f, "[{}] {:?}", self.location, self.inner)?;
+
+        match self.backtrace.status() {
+            BacktraceStatus::Captured => {
+                writeln!(f, "Stack backtrace (trimmed):")?;
+
+                self.backtrace
+                    .to_string()
+                    .lines()
+                    .skip_while(|line| !line.contains(env!("CARGO_CRATE_NAME")))
+                    .take_while(|line| !line.contains("__rust_begin_short_backtrace"))
+                    .try_for_each(|line| writeln!(f, "{line}"))
+            }
+
+            BacktraceStatus::Disabled => f.write_str(
+                "Set `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1` to display a backtrace",
+            ),
+
+            BacktraceStatus::Unsupported => f.write_str("(Backtrace unsupported)"),
+
+            _ => f.write_str("Unexpected backtrace status"),
+        }
     }
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}] {}", self.location, self.error)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.inner.fmt(f) }
 }
 
 /// Generates `impl From<E> for Error` blocks for the passed set of error types, accepting the same
@@ -29,7 +55,13 @@ macro_rules! impl_from_error_types {
             impl From<$err_type> for Error {
                 #[track_caller]
                 fn from(value: $err_type) -> Self {
-                    Self { error: ErrorKind::$variant(value), location: Location::caller() }
+                    Self {
+                        inner: ErrorKind::$variant(value),
+                        location: Location::caller(),
+                        // Cheap no-op if the `RUST_BACKTRACE` or `RUST_LIB_BACKTRACE` backtrace
+                        // environment variables are both not set
+                        backtrace: Backtrace::capture(),
+                    }
                 }
             }
         )+
