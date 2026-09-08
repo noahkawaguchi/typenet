@@ -152,6 +152,15 @@ netem delay='1ms' loss='0%' corrupt='0%' duplicate='0%' reorder='0%': tun
         duplicate {{ duplicate }} 25% \
         reorder {{ reorder }} 25%
 
+# Apply jittery delay but no impairment
+netem-jitter: (netem '1ms' '0%' '0%' '0%' '0%')
+# Apply typical WAN/cross-region conditions
+netem-wan: (netem '75ms' '0.3%' '0%' '0%' '0.1%')
+# Apply poor mobile/Wi-Fi conditions
+netem-mobile: (netem '150ms' '2%' '0.1%' '1%' '1%')
+# Apply extreme conditions to stress test correctness
+netem-abuse: (netem '100ms' '20%' '3%' '15%' '15%')
+
 # Show current network emulation and packet counters
 netem-show:
     tc -stats qdisc show dev {{ tun-name }}
