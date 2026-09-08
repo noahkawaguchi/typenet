@@ -65,7 +65,7 @@ tun-del:
     sudo ip link del {{ tun-name }}
 
 ####################################################################################################
-# Connecting as a client
+# Connecting as a client (interactive)
 ####################################################################################################
 
 # Connect to the server using TCP (telnet)
@@ -86,39 +86,8 @@ icmp:
     ping {{ server-addr }}
 
 ####################################################################################################
-# Observation and stress testing
+# File throughput
 ####################################################################################################
-
-# Capture and print TUN device traffic and save to PCAP
-[arg('x', short, value='-x', help='Show hex and ASCII')]
-[continue]
-sniff x='': tun
-    mkdir -p '{{ pcap-dir }}'
-    {{ tshark-cmd }} -i {{ tun-name }} -w '{{ pcap-file }}' {{ x }}
-    @echo 'Saved to {{ pcap-file }}'
-
-# Read a PCAP file with TShark (defaults to the most recent)
-[
-    arg('pcap', short, long, help='Name of PCAP file to read'),
-    arg('x', short, value='-x', help='Show hex and ASCII'),
-    arg('V', short, value='-V', help='Show full packet dissection')
-]
-sniff-inspect pcap=`just most-recent-pcap` x='' V='':
-    @if [ -z "{{ pcap }}" ]; then \
-        echo 'No PCAP file to inspect' >&2; \
-        exit 1; \
-    fi
-
-    {{ tshark-cmd }} -r '{{ pcap }}' {{ x }} {{ V }} | "${PAGER:-less}"
-
-# Internal helper for the `sniff-inspect` recipe's default PCAP file path
-[private]
-most-recent-pcap:
-    ls -t {{ pcap-dir / "*.pcap" }} | head -n 1
-
-# Remove the `pcap` directory
-sniff-clean:
-    rm -rf '{{ pcap-dir }}'
 
 # Time echoing a text file through the server using TCP and diff the reply against the original
 [arg('input-file', short='f', long, help='File to send')]
@@ -155,6 +124,10 @@ blob-gen size='1M':
 blob-clean:
     rm -rf '{{ blob-dir }}'
 
+####################################################################################################
+# Network emulation
+####################################################################################################
+
 # Add emulation of real-world networks to the TUN device (uses sudo)
 [
     arg('delay', short, long),
@@ -187,6 +160,41 @@ netem-show:
 # Remove emulated network conditions (uses sudo)
 netem-clear:
     sudo tc qdisc del dev {{ tun-name }} root
+
+####################################################################################################
+# Observation (TShark and PCAP files)
+####################################################################################################
+
+# Capture and print TUN device traffic and save to PCAP
+[arg('x', short, value='-x', help='Show hex and ASCII')]
+[continue]
+sniff x='': tun
+    mkdir -p '{{ pcap-dir }}'
+    {{ tshark-cmd }} -i {{ tun-name }} -w '{{ pcap-file }}' {{ x }}
+    @echo 'Saved to {{ pcap-file }}'
+
+# Read a PCAP file with TShark (defaults to the most recent)
+[
+    arg('pcap', short, long, help='Name of PCAP file to read'),
+    arg('x', short, value='-x', help='Show hex and ASCII'),
+    arg('V', short, value='-V', help='Show full packet dissection')
+]
+sniff-inspect pcap=`just most-recent-pcap` x='' V='':
+    @if [ -z "{{ pcap }}" ]; then \
+        echo 'No PCAP file to inspect' >&2; \
+        exit 1; \
+    fi
+
+    {{ tshark-cmd }} -r '{{ pcap }}' {{ x }} {{ V }} | "${PAGER:-less}"
+
+# Internal helper for the `sniff-inspect` recipe's default PCAP file path
+[private]
+most-recent-pcap:
+    ls -t {{ pcap-dir / "*.pcap" }} | head -n 1
+
+# Remove the `pcap` directory
+sniff-clean:
+    rm -rf '{{ pcap-dir }}'
 
 ####################################################################################################
 # Testing and quality
