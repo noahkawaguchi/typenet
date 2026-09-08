@@ -1,7 +1,7 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn creates_valid_data_echo() -> Result {
+fn creates_valid_data_echo() -> TraceableResult {
     // rcv_nxt = client's seq at handshake ACK time
     let mut connections = TcpConnections::default().after_handshake();
 
@@ -27,7 +27,7 @@ fn creates_valid_data_echo() -> Result {
 }
 
 #[test]
-fn pure_ack_on_established_connection_returns_none() -> Result {
+fn pure_ack_on_established_connection_returns_none() -> TraceableResult {
     // Simulates the client ACKing the server's echo reply. This should get no reply (not RST) so
     // the connection stays open for more data.
 
@@ -71,7 +71,7 @@ fn pure_ack_on_established_connection_returns_none() -> Result {
 }
 
 #[test]
-fn consecutive_replies_use_snd_nxt_for_seq_num() -> Result {
+fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
     // Verifies that the server updates and uses its own snd_nxt for seq_num rather than simply
     // mirroring the client's ack_num. After sending a 5-byte echo, snd_nxt=SERVER_ISN+6, then the
     // next reply's seq_num must be SERVER_ISN+6 even when the client sends a stale
@@ -133,7 +133,7 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> Result {
 }
 
 #[test]
-fn old_ack_num_does_not_regress_snd_una() -> Result {
+fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     // SND.UNA should only ever advance on a "new" ack (RFC 9293, Section 3.10.7.4). After two
     // exchanges bring SND.UNA up to SERVER_ISN+6, a third packet with a stale ack_num=SERVER_ISN+1
     // (now older than SND.UNA) must not move SND.UNA backward, even though the segment is
@@ -248,7 +248,7 @@ fn old_ack_num_does_not_regress_snd_una() -> Result {
 }
 
 #[test]
-fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> Result {
+fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
     // A retransmitted segment should get a duplicate ACK pointing at the current rcv_nxt, not
     // another echo. Processing a second distinct packet first makes the seq_num check meaningful
     // because the retransmitted packet's seq+len points back to CLIENT_ISN+6, but rcv_nxt is
@@ -312,7 +312,7 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> Result {
 }
 
 #[test]
-fn stale_pure_ack_gets_duplicate_ack_without_updating_state() -> Result {
+fn stale_pure_ack_gets_duplicate_ack_without_updating_state() -> TraceableResult {
     // Per RFC 9293, Section 3.10.7.4, "First, check sequence number" applies to every segment,
     // including a payload-less ACK, and takes priority over "Fifth, check the ACK field." A pure
     // ACK whose SEG.SEQ fails that check must be dropped and get a current state reply.
@@ -349,7 +349,7 @@ fn stale_pure_ack_gets_duplicate_ack_without_updating_state() -> Result {
 }
 
 #[test]
-fn ack_for_unsent_data_is_dropped_and_gets_current_state_reply() -> Result {
+fn ack_for_unsent_data_is_dropped_and_gets_current_state_reply() -> TraceableResult {
     // Per RFC 9293 Section 3.10.7.4, an ACK acknowledging data the server hasn't sent yet (ack_num
     // past SND.NXT) must be dropped, and the reply should be a bare ACK reflecting the current
     // SND.NXT/RCV.NXT, with no payload echoed and no state change. seq_num matches RCV.NXT, so this
@@ -383,7 +383,7 @@ fn ack_for_unsent_data_is_dropped_and_gets_current_state_reply() -> Result {
 }
 
 #[test]
-fn wraparound_ack_for_unsent_data_is_still_rejected() -> Result {
+fn wraparound_ack_for_unsent_data_is_still_rejected() -> TraceableResult {
     // ISNs are random (RFC 9293, Section 3.4.1) and can land near `u32::MAX`, wrapping SND.NXT to a
     // small value. An ack_num that wraps one past SND.NXT must still be recognized as acknowledging
     // unsent data, even though a naive numeric comparison (ack_num > snd_nxt) would say 0 >
@@ -421,7 +421,7 @@ fn wraparound_ack_for_unsent_data_is_still_rejected() -> Result {
 }
 
 #[test]
-fn data_pkt_for_unknown_connection_gets_rst() -> Result {
+fn data_pkt_for_unknown_connection_gets_rst() -> TraceableResult {
     // ACK with payload for a connection the server has no record of (e.g. after restart)
 
     let mut connections = TcpConnections::default(); // Empty, no known connections
@@ -447,7 +447,7 @@ fn data_pkt_for_unknown_connection_gets_rst() -> Result {
 }
 
 #[test]
-fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> Result {
+fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> TraceableResult {
     // "Hi" arrives positioned as if "Hello" (5 bytes) had already been received, but "Hello" hasn't
     // actually arrived yet, so this segment is out of order.
 
@@ -481,7 +481,7 @@ fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> Result {
 }
 
 #[test]
-fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> Result {
+fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
     // "Hi" arrives out of order first (buffered, not echoed), then "Hello" fills the gap before it.
     // Both should be echoed together in a single coalesced reply once the gap closes.
 
@@ -524,7 +524,7 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> Result {
 }
 
 #[test]
-fn seq_one_before_rcv_nxt_is_rejected() -> Result {
+fn seq_one_before_rcv_nxt_is_rejected() -> TraceableResult {
     // The receive window starts at RCV.NXT (RFC 9293, Section 3.10.7.4, "First, check sequence
     // number"), so a segment landing exactly one byte before it is the nearest possible byte still
     // outside the window. It must get a challenge ACK reflecting the connection's current state,
@@ -562,7 +562,7 @@ fn seq_one_before_rcv_nxt_is_rejected() -> Result {
 }
 
 #[test]
-fn seq_at_last_acceptable_offset_is_still_buffered() -> Result {
+fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
     // RCV.NXT + RCV.WND - 1 is the last byte still inside the receive window (RFC 9293, Section
     // 3.10.7.4, "First, check sequence number"). A segment landing there carries acceptable data,
     // so it must be treated as ordinary in-window, out-of-order data by being buffered for
@@ -610,7 +610,7 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> Result {
 }
 
 #[test]
-fn seq_at_first_unacceptable_offset_is_rejected() -> Result {
+fn seq_at_first_unacceptable_offset_is_rejected() -> TraceableResult {
     // RCV.NXT + RCV.WND is the first byte past the receive window (RFC 9293, Section 3.10.7.4,
     // "First, check sequence number"). A segment landing there must get a challenge ACK reflecting
     // the connection's current state, and its payload must never reach the reassembly buffer.

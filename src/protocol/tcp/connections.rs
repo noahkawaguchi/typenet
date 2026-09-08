@@ -2,7 +2,7 @@ use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
         endpoint::Local,
-        error::Result,
+        error::TraceableResult,
         protocol::tcp::{
             LOCAL_FIN_BYTE, TcpSegment,
             flags::TcpFlags,
@@ -78,16 +78,14 @@ impl TcpConnections {
     /// # Errors
     ///
     /// Returns `Err` if the connection's TCP state is not SYN-RECEIVED.
-    pub(super) fn insert_syn_rcv(
-        &mut self,
-        key: ConnKey,
-        state: ConnState,
-    ) -> Result<(), &'static str> {
+    pub(super) fn insert_syn_rcv(&mut self, key: ConnKey, state: ConnState) -> TraceableResult {
         matches!(state.tcp_state, TcpState::SynReceived(_))
             .then(|| {
                 self.table.insert(key, state);
             })
-            .ok_or("Attempted to insert a connection with a state other than SYN-RECEIVED")
+            .ok_or_else(|| {
+                "Attempted to insert a connection with a state other than SYN-RECEIVED".into()
+            })
     }
 
     pub(super) fn remove(&mut self, key: &ConnKey) { self.table.remove(key); }
@@ -196,7 +194,7 @@ impl TcpConnections {
     /// Attempts to retrieve the connection in the table under `KEY`, returning `Err` if not
     /// present.
     #[cfg(test)]
-    pub(super) fn try_get(&self) -> Result<&ConnState> {
+    pub(super) fn try_get(&self) -> TraceableResult<&ConnState> {
         use crate::protocol::tcp::tests::KEY;
 
         self.table

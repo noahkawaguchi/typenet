@@ -6,12 +6,12 @@
 
 use {
     std::io,
-    typenet::{error::Result, sys::ShutdownSignal},
+    typenet::{error::TraceableResult, sys::ShutdownSignal},
 };
 
 #[test]
 #[expect(unsafe_code, reason = "libc FFI to raise a real SIGINT for testing the handler")]
-fn shutdown_flag_starts_false_and_flips_on_sigint() -> Result {
+fn shutdown_flag_starts_false_and_flips_on_sigint() -> TraceableResult {
     let shutdown = ShutdownSignal::install()?;
 
     assert!(!shutdown.load());

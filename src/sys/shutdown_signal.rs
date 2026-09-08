@@ -1,5 +1,5 @@
 use {
-    crate::error::Result,
+    crate::error::TraceableResult,
     std::{
         io,
         sync::atomic::{AtomicBool, Ordering},
@@ -31,7 +31,7 @@ impl ShutdownSignal {
     ///
     /// Returns `Err` if the signal handler could not be installed.
     #[expect(unsafe_code, reason = "libc system calls to install handler")]
-    pub fn install() -> Result<Self> {
+    pub fn install() -> TraceableResult<Self> {
         // Use `sigaction` here to ensure the `SA_RESTART` flag is not set
 
         // SAFETY: All fields of `sigaction` have valid all-zero bit patterns.

@@ -4,20 +4,24 @@ use std::{
     io, num,
 };
 
-pub type Result<T = (), E = Error> = std::result::Result<T, E>;
+/// Custom result type that optionally includes backtrace information (controlled by
+/// `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1`).
+///
+/// If enabled, backtraces are only shown in `Debug` representations, not `Display`.
+pub type TraceableResult<T = ()> = Result<T, TraceableError>;
 
 /// Custom error struct that optionally includes backtrace information (controlled by
 /// `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1`).
 ///
 /// If enabled, backtraces are only shown in `Debug` representations, not `Display`.
-pub struct Error {
-    inner: ErrorKind,
+pub struct TraceableError {
+    error: TraceableErrorKind,
     backtrace: Backtrace,
 }
 
-impl fmt::Debug for Error {
+impl fmt::Debug for TraceableError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.inner.fmt(f)?;
+        self.error.fmt(f)?;
         f.write_char('\n')?;
 
         match self.backtrace.status() {
@@ -43,26 +47,26 @@ impl fmt::Debug for Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.inner.fmt(f) }
+impl fmt::Display for TraceableError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.error.fmt(f) }
 }
 
 #[cfg(test)]
-impl PartialEq for Error {
-    fn eq(&self, Self { inner, backtrace }: &Self) -> bool {
-        &self.inner == inner && self.backtrace.status() == backtrace.status()
+impl PartialEq for TraceableError {
+    fn eq(&self, Self { error, backtrace }: &Self) -> bool {
+        &self.error == error && self.backtrace.status() == backtrace.status()
     }
 }
 
-/// Generates `impl From<E> for Error` blocks for the passed set of error types, accepting the same
-/// syntax as the enum definition for `ErrorKind`.
+/// Generates `impl From<E> for TraceableError` blocks for the passed set of error types, accepting
+/// the same syntax as the enum definition for `TraceableErrorKind`.
 macro_rules! impl_from_error_types {
     {$($variant:ident($err_type:ty)),+ $(,)?} => {
         $(
-            impl From<$err_type> for Error {
+            impl From<$err_type> for TraceableError {
                 fn from(value: $err_type) -> Self {
                     Self {
-                        inner: ErrorKind::$variant(value),
+                        error: TraceableErrorKind::$variant(value),
                         // Cheap no-op if `RUST_BACKTRACE` and `RUST_LIB_BACKTRACE` backtrace are
                         // both not set
                         backtrace: Backtrace::capture(),
@@ -80,14 +84,14 @@ impl_from_error_types! {
     TryFromInt(num::TryFromIntError),
 }
 
-enum ErrorKind {
+enum TraceableErrorKind {
     Static(&'static str),
     Dynamic(String),
     Io(io::Error),
     TryFromInt(num::TryFromIntError),
 }
 
-impl fmt::Debug for ErrorKind {
+impl fmt::Debug for TraceableErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Static(s) => s.fmt(f),
@@ -98,7 +102,7 @@ impl fmt::Debug for ErrorKind {
     }
 }
 
-impl fmt::Display for ErrorKind {
+impl fmt::Display for TraceableErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Static(s) => s.fmt(f),
@@ -110,7 +114,7 @@ impl fmt::Display for ErrorKind {
 }
 
 #[cfg(test)]
-impl PartialEq for ErrorKind {
+impl PartialEq for TraceableErrorKind {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Static(s1), Self::Static(s2)) => s1 == s2,

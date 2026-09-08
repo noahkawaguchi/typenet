@@ -1,7 +1,7 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn already_draining_reports_time_left() -> Result {
+fn already_draining_reports_time_left() -> TraceableResult {
     const GRACE_PERIOD: Duration = Duration::from_secs(10);
 
     let now = Instant::now();
@@ -16,7 +16,7 @@ fn already_draining_reports_time_left() -> Result {
 }
 
 #[test]
-fn established_connection_begins_draining_with_fin_ack_and_deadline() -> Result {
+fn established_connection_begins_draining_with_fin_ack_and_deadline() -> TraceableResult {
     const GRACE_PERIOD: Duration = Duration::from_secs(10);
 
     let now = Instant::now();
@@ -36,7 +36,7 @@ fn established_connection_begins_draining_with_fin_ack_and_deadline() -> Result 
 }
 
 #[test]
-fn no_established_connections_reports_no_connections() -> Result {
+fn no_established_connections_reports_no_connections() -> TraceableResult {
     assert_eq!(
         Server { tcp_connections: TcpConnections::default(), ..decision_test_server() }
             .decide_shutdown(Instant::now())?,
@@ -60,7 +60,7 @@ fn overflowing_deadline_errors_instead_of_panicking() {
 }
 
 #[test]
-fn first_interrupt_with_established_connection_sends_fin_ack_and_continues() -> Result {
+fn first_interrupt_with_established_connection_sends_fin_ack_and_continues() -> TraceableResult {
     // The first poll call simulates the shutdown signal, then the second lets the (already-elapsed)
     // grace period end the loop instead of running forever. Proves that the loop sends the packets
     // as real I/O when draining begins.
@@ -84,7 +84,7 @@ fn first_interrupt_with_established_connection_sends_fin_ack_and_continues() -> 
 }
 
 #[test]
-fn second_interrupt_while_draining_does_not_resend_or_exit() -> Result {
+fn second_interrupt_while_draining_does_not_resend_or_exit() -> TraceableResult {
     // The first interrupt begins draining and sends FIN-ACK. The second interrupt, arriving while
     // still draining, should neither resend the FIN-ACK nor break the loop. The third, unrelated
     // poll error ends the loop deterministically and proves that the second interrupt didn't
@@ -129,7 +129,7 @@ fn second_interrupt_while_draining_does_not_resend_or_exit() -> Result {
 }
 
 #[test]
-fn interrupt_with_no_established_connections_exits_immediately() -> Result {
+fn interrupt_with_no_established_connections_exits_immediately() -> TraceableResult {
     // The server should exit after the initial interrupted error, avoiding the second error, which
     // would be propagated
 
@@ -161,7 +161,7 @@ fn interrupt_with_no_established_connections_exits_immediately() -> Result {
 }
 
 #[test]
-fn interrupt_unrelated_to_shutdown_is_ignored() -> Result {
+fn interrupt_unrelated_to_shutdown_is_ignored() -> TraceableResult {
     // The shutdown check only starts returning `true` on the second poll call, so the first
     // interruption must be treated as an unrelated signal (just continue) rather than the start of
     // a shutdown. Connections start empty so that, if the first interrupt were wrongly treated as
@@ -195,7 +195,7 @@ fn interrupt_unrelated_to_shutdown_is_ignored() -> Result {
 }
 
 #[test]
-fn read_interrupt_reaches_the_same_shutdown_handling_as_poll_interrupt() -> Result {
+fn read_interrupt_reaches_the_same_shutdown_handling_as_poll_interrupt() -> TraceableResult {
     // Mirrors the test for poll, but the `EINTR` arrives from the `read()` call instead of the
     // `poll()`, confirming that both entry points reach the same shutdown decision handling
 

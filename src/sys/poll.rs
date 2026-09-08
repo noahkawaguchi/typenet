@@ -40,7 +40,7 @@ pub fn readable(fd: impl AsFd, timeout: Option<Duration>) -> io::Result<bool> {
 mod tests {
     use {
         super::*,
-        crate::error::Result,
+        crate::error::TraceableResult,
         std::{
             io::Write as _,
             os::unix::net::UnixStream,
@@ -49,7 +49,7 @@ mod tests {
     };
 
     /// Joins on a writer thread with error handling.
-    fn join_writer(writer: JoinHandle<io::Result<()>>) -> Result {
+    fn join_writer(writer: JoinHandle<io::Result<()>>) -> TraceableResult {
         writer
             .join()
             .unwrap_or_else(|_| Err(io::Error::other("Writer thread panicked")))
@@ -57,7 +57,7 @@ mod tests {
     }
 
     #[test]
-    fn true_when_data_is_available() -> Result {
+    fn true_when_data_is_available() -> TraceableResult {
         let (mut tx, rx) = UnixStream::pair()?;
         tx.write_all(b"hi")?;
         assert!(readable(&rx, Some(Duration::ZERO))?);
@@ -65,14 +65,14 @@ mod tests {
     }
 
     #[test]
-    fn false_when_no_data_is_available() -> Result {
+    fn false_when_no_data_is_available() -> TraceableResult {
         let (_tx, rx) = UnixStream::pair()?;
         assert!(!readable(&rx, Some(Duration::ZERO))?);
         Ok(())
     }
 
     #[test]
-    fn handles_extreme_durations() -> Result {
+    fn handles_extreme_durations() -> TraceableResult {
         let (mut tx, rx) = UnixStream::pair()?;
         tx.write_all(b"hi")?;
         assert!(readable(&rx, Some(Duration::MAX))?);
@@ -80,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    fn blocks_until_data_arrives_when_timeout_is_none() -> Result {
+    fn blocks_until_data_arrives_when_timeout_is_none() -> TraceableResult {
         let (mut tx, rx) = UnixStream::pair()?;
 
         let writer = thread::spawn(move || {
@@ -94,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn true_when_data_arrives_in_time() -> Result {
+    fn true_when_data_arrives_in_time() -> TraceableResult {
         let (mut tx, rx) = UnixStream::pair()?;
 
         let writer = thread::spawn(move || {
@@ -108,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn false_when_data_arrives_too_late() -> Result {
+    fn false_when_data_arrives_too_late() -> TraceableResult {
         let (mut tx, rx) = UnixStream::pair()?;
 
         let writer = thread::spawn(move || {

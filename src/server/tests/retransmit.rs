@@ -1,7 +1,7 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn due_retransmission_is_sent_as_real_io() -> Result {
+fn due_retransmission_is_sent_as_real_io() -> TraceableResult {
     // Zero RTO means the pending SYN-ACK is due the instant it's seeded, so the very first
     // `Ok(false)` (a poll timeout) should trigger a real resend. The second poll call is a shutdown
     // signal, and since a SYN-RECEIVED connection isn't mid-close, it exits immediately without
@@ -26,7 +26,7 @@ fn due_retransmission_is_sent_as_real_io() -> Result {
 }
 
 #[test]
-fn retransmission_does_not_drop_the_connection() -> Result {
+fn retransmission_does_not_drop_the_connection() -> TraceableResult {
     // Max retries of 5 comfortably covers two retransmissions, so if the connection survives the
     // first retransmit, the second due poll should trigger another one instead of finding the
     // connection already gone.
@@ -61,7 +61,7 @@ fn retransmission_does_not_drop_the_connection() -> Result {
 }
 
 #[test]
-fn gives_up_and_drops_connection_after_max_retries() -> Result {
+fn gives_up_and_drops_connection_after_max_retries() -> TraceableResult {
     // With max retries of 2, the first two due polls retransmit, and the third finds the retries
     // exhausted and drops the connection instead of sending again. The final poll is a shutdown
     // signal, and with the connection already gone, it should exit immediately without another

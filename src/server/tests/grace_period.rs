@@ -6,7 +6,7 @@ fn grace_period_not_elapsed_with_no_deadline() {
 }
 
 #[test]
-fn grace_period_not_elapsed_before_deadline() -> Result {
+fn grace_period_not_elapsed_before_deadline() -> TraceableResult {
     let now = Instant::now();
 
     assert!(
@@ -21,7 +21,7 @@ fn grace_period_not_elapsed_before_deadline() -> Result {
 }
 
 #[test]
-fn grace_period_elapsed_past_deadline() -> Result {
+fn grace_period_elapsed_past_deadline() -> TraceableResult {
     let now = Instant::now();
 
     assert!(

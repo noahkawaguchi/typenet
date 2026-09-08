@@ -4,7 +4,7 @@ use {
         addr_pairs::Ipv4AddrPair,
         checksum,
         endpoint::{Endpoint, Local, Remote},
-        error::Result,
+        error::TraceableResult,
         protocol::Protocol,
         try_ops::TryAdd as _,
     },
@@ -28,7 +28,7 @@ pub struct Ipv4Header<S: Endpoint> {
 impl Ipv4Header<Remote> {
     /// Parses `data` as an IPv4 packet going in the remote to local direction, returning the header
     /// fields and a slice starting at the beginning of the payload.
-    pub fn parse(data: &[u8]) -> Result<(Self, &[u8])> { Self::inner_parse(data) }
+    pub fn parse(data: &[u8]) -> TraceableResult<(Self, &[u8])> { Self::inner_parse(data) }
 }
 
 impl Ipv4Header<Local> {
@@ -45,7 +45,7 @@ impl Ipv4Header<Local> {
         protocol: Protocol,
         ip_pair: Ipv4AddrPair<Local>,
         proto_len: u16,
-    ) -> Result<Self> {
+    ) -> TraceableResult<Self> {
         Self::inner_try_new(protocol, ip_pair, proto_len)
     }
 
@@ -60,7 +60,7 @@ impl<S: Endpoint> Ipv4Header<S> {
     ///
     /// The local to remote direction is for tests only. Only the remote to local direction should
     /// be exposed in production code.
-    fn inner_parse(data: &[u8]) -> Result<(Self, &[u8])> {
+    fn inner_parse(data: &[u8]) -> TraceableResult<(Self, &[u8])> {
         let ip_hdr = data
             .first_chunk::<IPV4_HDR_MIN_LEN_USIZE>()
             .ok_or_else(|| format!("Too short for IPv4 header ({} bytes)", data.len()))?;
@@ -101,7 +101,11 @@ impl<S: Endpoint> Ipv4Header<S> {
     /// # Errors
     ///
     /// Returns `Err` if adding `proto_len` to the IPv4 header length overflows `u16`.
-    fn inner_try_new(protocol: Protocol, ip_pair: Ipv4AddrPair<S>, proto_len: u16) -> Result<Self> {
+    fn inner_try_new(
+        protocol: Protocol,
+        ip_pair: Ipv4AddrPair<S>,
+        proto_len: u16,
+    ) -> TraceableResult<Self> {
         u16::from(IPV4_HDR_MIN_LEN_U8)
             .try_add(proto_len)
             .map(|total_len| Self { total_len, protocol, ip_pair })
@@ -153,7 +157,9 @@ mod tests {
         ///
         /// This is a test-only version because a header created locally would never be parsed from
         /// bytes in production.
-        pub fn test_parse_local(data: &[u8]) -> Result<(Self, &[u8])> { Self::inner_parse(data) }
+        pub fn test_parse_local(data: &[u8]) -> TraceableResult<(Self, &[u8])> {
+            Self::inner_parse(data)
+        }
     }
 
     impl Ipv4Header<Remote> {
@@ -170,7 +176,7 @@ mod tests {
             protocol: Protocol,
             ip_pair: Ipv4AddrPair<Remote>,
             proto_len: u16,
-        ) -> Result<Self> {
+        ) -> TraceableResult<Self> {
             Self::inner_try_new(protocol, ip_pair, proto_len)
         }
 
@@ -185,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn correctly_parses_valid_pkt() -> Result {
+    fn correctly_parses_valid_pkt() -> TraceableResult {
         #[rustfmt::skip]
         const DATA: [u8; 20] = [
             0x45, 0x00, 0x00, 0x3C,  // Version 4, IHL 5, TOS 0, Total Length 60
@@ -242,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn creates_valid_ipv4_hdr_for_reply() -> Result {
+    fn creates_valid_ipv4_hdr_for_reply() -> TraceableResult {
         #[rustfmt::skip]
         const REQUEST: [u8; 20] = [
             0x45, 0x00, 0x00, 0x3C,  // Version 4, IHL 5, TOS 0, Total Length 60

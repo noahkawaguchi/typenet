@@ -11,14 +11,14 @@
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
     typenet::{
-        error::Result,
+        error::TraceableResult,
         sys::{ShutdownSignal, poll},
     },
 };
 
 #[test]
 #[expect(unsafe_code, reason = "libc FFI to target a spawned thread with a real SIGINT")]
-fn poll_is_interrupted_by_sigint_instead_of_restarted() -> Result {
+fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
     ShutdownSignal::install()?; // `SA_RESTART` unset
 
     let (_tx, rx) = UnixStream::pair()?;

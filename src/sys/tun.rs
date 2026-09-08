@@ -1,5 +1,5 @@
 use {
-    crate::error::Result,
+    crate::error::TraceableResult,
     libc::{IFF_NO_PI, IFF_TUN, IFNAMSIZ, TUNSETIFF},
     std::{
         ffi::CString,
@@ -26,7 +26,7 @@ const IFRU_FLAGS: libc::c_short = (IFF_TUN | IFF_NO_PI) as libc::c_short;
 ///
 /// Returns `Err` if the device does not exist or could not be attached to.
 #[expect(unsafe_code, reason = "libc FFI to attach to TUN device")]
-pub fn attach(device_name: &str) -> Result<File> {
+pub fn attach(device_name: &str) -> TraceableResult<File> {
     // The interface must already exist, otherwise the `ioctl()` syscall below will try to create it
     // and fail with permission denied.
     //
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires TUN setup"]
-    fn successfully_attaches_to_existing_tun() -> Result {
+    fn successfully_attaches_to_existing_tun() -> TraceableResult {
         assert_matches!(attach(&Config::load()?.tun_name), Ok(_));
         Ok(())
     }

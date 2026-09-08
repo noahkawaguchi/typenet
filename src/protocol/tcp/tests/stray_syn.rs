@@ -1,7 +1,7 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn stray_syn_out_of_window_gets_challenge_ack() -> Result {
+fn stray_syn_out_of_window_gets_challenge_ack() -> TraceableResult {
     // RFC 9293, Section 3.10.7.4, "First, check sequence number": a segment outside the receive
     // window gets a challenge ACK (<SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>) and is dropped. "Fourth,
     // check the SYN bit" is not reached.
@@ -36,7 +36,7 @@ fn stray_syn_out_of_window_gets_challenge_ack() -> Result {
 }
 
 #[test]
-fn stray_syn_in_window_gets_challenge_ack() -> Result {
+fn stray_syn_in_window_gets_challenge_ack() -> TraceableResult {
     // RFC 9293, Section 3.10.7.4, "Fourth, check the SYN bit": for synchronized states, RFC 5961
     // (incorporated into RFC 9293) recommends a challenge ACK irrespective of the sequence number,
     // and the connection must not be reset.
@@ -70,7 +70,7 @@ fn stray_syn_in_window_gets_challenge_ack() -> Result {
 }
 
 #[test]
-fn stray_syn_in_fin_wait_1_gets_challenge_ack() -> Result {
+fn stray_syn_in_fin_wait_1_gets_challenge_ack() -> TraceableResult {
     // The same RFC 9293, Section 3.10.7.4 SYN rule as above applies to all synchronized states
     // listed there, not just ESTABLISHED.
 
@@ -105,7 +105,7 @@ fn stray_syn_in_fin_wait_1_gets_challenge_ack() -> Result {
 }
 
 #[test]
-fn stray_syn_ack_gets_challenge_ack() -> Result {
+fn stray_syn_ack_gets_challenge_ack() -> TraceableResult {
     // The same RFC 9293, Section 3.10.7.4 SYN rule as above applies to SYN-ACK as well, not just
     // SYN, since SYN is checked fourth and ACK is checked fifth. As a server with only passive
     // OPEN, a SYN-ACK would never come from a real client, but this behavior should still be

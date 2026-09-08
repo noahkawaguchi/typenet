@@ -1,5 +1,5 @@
 use {
-    crate::error::Result,
+    crate::error::TraceableResult,
     std::{
         any::type_name,
         fmt,
@@ -10,7 +10,7 @@ use {
 
 pub trait TryAdd<T>: Sized {
     /// Attempts to add `self + rhs`, returning `Err` if overflow occurred.
-    fn try_add(self, rhs: T) -> Result<Self>;
+    fn try_add(self, rhs: T) -> TraceableResult<Self>;
 }
 
 /// Generates `TryAdd<Self>` implementations for all types passed as comma-separated arguments.
@@ -19,7 +19,7 @@ macro_rules! impl_try_add_self {
     ($($t:ty),+ $(,)?) => {
         $(
             impl TryAdd<Self> for $t {
-                fn try_add(self, rhs: Self) -> Result<Self> {
+                fn try_add(self, rhs: Self) -> TraceableResult<Self> {
                     self.checked_add(rhs).ok_or_else(|| {
                         format!("Overflowed `{}` adding {self} and {rhs}", stringify!($t)).into()
                     })
@@ -32,7 +32,7 @@ macro_rules! impl_try_add_self {
 impl_try_add_self!(usize, u16);
 
 impl TryAdd<Duration> for Instant {
-    fn try_add(self, rhs: Duration) -> Result<Self> {
+    fn try_add(self, rhs: Duration) -> TraceableResult<Self> {
         self.checked_add(rhs)
             .ok_or_else(|| format!("Overflowed `Instant` adding {} seconds", rhs.as_secs()).into())
     }
@@ -40,13 +40,13 @@ impl TryAdd<Duration> for Instant {
 
 pub trait TryGet {
     /// Returns a reference to the element or subslice at `index`, or `Err` if out of bounds.
-    fn try_get<I>(&self, index: I) -> Result<&I::Output>
+    fn try_get<I>(&self, index: I) -> TraceableResult<&I::Output>
     where
         I: SliceIndex<Self> + fmt::Debug + Clone;
 }
 
 impl<T> TryGet for [T] {
-    fn try_get<I>(&self, index: I) -> Result<&I::Output>
+    fn try_get<I>(&self, index: I) -> TraceableResult<&I::Output>
     where
         I: SliceIndex<Self> + fmt::Debug + Clone,
     {
@@ -61,13 +61,13 @@ impl<T> TryGet for [T] {
 pub trait TryGetMut {
     /// Returns a mutable reference to the element or subslice at `index`, or `Err` if out of
     /// bounds.
-    fn try_get_mut<I>(&mut self, index: I) -> Result<&mut I::Output>
+    fn try_get_mut<I>(&mut self, index: I) -> TraceableResult<&mut I::Output>
     where
         I: SliceIndex<Self> + fmt::Debug + Clone;
 }
 
 impl<T> TryGetMut for [T] {
-    fn try_get_mut<I>(&mut self, index: I) -> Result<&mut I::Output>
+    fn try_get_mut<I>(&mut self, index: I) -> TraceableResult<&mut I::Output>
     where
         I: SliceIndex<Self> + fmt::Debug + Clone,
     {
@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[test]
-    fn try_add_adds_successfully() -> Result {
+    fn try_add_adds_successfully() -> TraceableResult {
         assert_eq!((u16::MAX - 1).try_add(1), Ok(u16::MAX));
 
         let now = Instant::now();

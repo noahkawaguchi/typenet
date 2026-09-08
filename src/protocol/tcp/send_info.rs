@@ -1,7 +1,7 @@
 use {
     crate::{
         endpoint::{Local, Remote},
-        error::Result,
+        error::TraceableResult,
         protocol::{
             TcpConnections, TcpSegment,
             tcp::{
@@ -81,7 +81,7 @@ impl SendInfo {
     pub(super) fn decide_reply(
         seg: &TcpSegment<Remote>,
         connections: &mut TcpConnections,
-    ) -> Result<Option<Self>> {
+    ) -> TraceableResult<Option<Self>> {
         let key = ConnKey {
             client_ip: seg.ip_pair.src,
             client_port: seg.ports.src,
@@ -135,7 +135,7 @@ impl SendInfo {
         seg: &TcpSegment<Remote>,
         connections: &mut TcpConnections,
         key: ConnKey,
-    ) -> Result<Option<Self>> {
+    ) -> TraceableResult<Option<Self>> {
         Ok(match seg.flags {
             // SYN (step 1 of handshake) -> store new connection, reply with SYN-ACK (step 2).
             TcpFlags::Syn => {
@@ -209,7 +209,7 @@ impl SendInfo {
         seg: &TcpSegment<Remote>,
         conn: &mut ConnState,
         syn_received: SynReceived,
-    ) -> Result<(Option<Self>, bool)> {
+    ) -> TraceableResult<(Option<Self>, bool)> {
         let acceptable_ack =
             conn.snd_una.precedes(seg.ack_num) && seg.ack_num.precedes_or_eq(conn.snd_nxt);
 
@@ -325,7 +325,7 @@ impl SendInfo {
         seg: &TcpSegment<Remote>,
         conn: &mut ConnState,
         established: SyncedState<Established>,
-    ) -> Result<(Option<Self>, bool)> {
+    ) -> TraceableResult<(Option<Self>, bool)> {
         Ok(match (seg.flags, &seg.payload, SeqCheck::check(seg, conn)) {
             // ACK acknowledging data the server has not yet sent (SEG.ACK > SND.NXT) -> drop the
             // segment and reply with an ACK reflecting current state (RFC 9293, Section 3.10.7.4,
@@ -441,7 +441,7 @@ impl SendInfo {
         conn: &mut ConnState,
         maybe_payload: Option<&TcpPayload>,
         old_established: SyncedState<Established>,
-    ) -> Result<Self> {
+    ) -> TraceableResult<Self> {
         if let Some(payload) = maybe_payload {
             conn.rcv_nxt += payload.len().into();
             conn.send_buffer.extend(payload.as_bytes());
@@ -460,7 +460,7 @@ impl SendInfo {
     fn close_wait_or_last_ack(
         conn: &mut ConnState,
         close_wait: SyncedState<CloseWait>,
-    ) -> Result<Self> {
+    ) -> TraceableResult<Self> {
         let to_send = close_wait.drain_transmittable(conn)?;
 
         Ok(if conn.send_buffer.is_empty() {
@@ -605,7 +605,7 @@ impl SendInfo {
         seg: &TcpSegment<Remote>,
         conn: &mut ConnState,
         close_wait: SyncedState<CloseWait>,
-    ) -> Result<(Option<Self>, bool)> {
+    ) -> TraceableResult<(Option<Self>, bool)> {
         Ok(match (seg.flags, &seg.payload, SeqCheck::check(seg, conn)) {
             // ACK of previously sent data (or a window update) while still draining the send buffer
             // -> update send-side state, then try to send more and/or proceed to LAST-ACK.

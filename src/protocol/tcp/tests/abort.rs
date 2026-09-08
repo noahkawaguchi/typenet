@@ -5,7 +5,7 @@ fn client_rst(seq_num: SeqPoint<Remote>) -> TcpSegment<Remote> {
 }
 
 #[test]
-fn rst_in_established_at_rcv_nxt_cleans_up_connection_and_returns_none() -> Result {
+fn rst_in_established_at_rcv_nxt_cleans_up_connection_and_returns_none() -> TraceableResult {
     // RFC 9293, Section 3.10.7.4, RST bit set, SEG.SEQ == RCV.NXT -> reset connection
 
     let mut connections = TcpConnections::default().after_handshake();
@@ -16,7 +16,7 @@ fn rst_in_established_at_rcv_nxt_cleans_up_connection_and_returns_none() -> Resu
 }
 
 #[test]
-fn rst_in_established_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> Result {
+fn rst_in_established_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> TraceableResult {
     // RFC 9293, Section 3.10.7.4, RST bit set, SEG.SEQ in receive window but SEG.SEQ != RCV.NXT ->
     // send challenge ACK, don't reset connection
 
@@ -48,7 +48,7 @@ fn rst_in_established_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> R
 }
 
 #[test]
-fn rst_in_established_with_out_of_window_seq_is_silently_dropped() -> Result {
+fn rst_in_established_with_out_of_window_seq_is_silently_dropped() -> TraceableResult {
     // RFC 9293, Section 3.10.7.4, RST bit set, SEG.SEQ outside the current receive window -> must
     // be silently ignored. (This is protection against blind RST-spoofing where an attacker knows
     // the 4-tuple but not the current sequence numbers.)
@@ -74,7 +74,7 @@ fn rst_in_established_with_out_of_window_seq_is_silently_dropped() -> Result {
 }
 
 #[test]
-fn rst_in_syn_received_at_rcv_nxt_cleans_up_connection_and_returns_none() -> Result {
+fn rst_in_syn_received_at_rcv_nxt_cleans_up_connection_and_returns_none() -> TraceableResult {
     let mut connections = TcpConnections::default().with_syn_rcv();
 
     assert_eq!(client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_reply(&mut connections)?, None);
@@ -84,7 +84,7 @@ fn rst_in_syn_received_at_rcv_nxt_cleans_up_connection_and_returns_none() -> Res
 }
 
 #[test]
-fn rst_in_syn_received_with_out_of_window_seq_is_silently_dropped() -> Result {
+fn rst_in_syn_received_with_out_of_window_seq_is_silently_dropped() -> TraceableResult {
     // RFC 9293, Section 3.10.7.4, "Second, check the RST bit," applies its three-case blind-reset
     // protection to SYN-RECEIVED the same as any other state. SEG.SEQ outside the receive window
     // must be silently ignored, not treated as a valid reset.
@@ -110,7 +110,7 @@ fn rst_in_syn_received_with_out_of_window_seq_is_silently_dropped() -> Result {
 }
 
 #[test]
-fn rst_in_syn_received_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> Result {
+fn rst_in_syn_received_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> TraceableResult {
     // RFC 9293, Section 3.10.7.4, "Second, check the RST bit," applies its three-case blind-reset
     // protection to SYN-RECEIVED the same as any other state. SEG.SEQ in the receive window but not
     // exactly RCV.NXT must get a challenge ACK, not treated as a valid reset.
@@ -143,7 +143,7 @@ fn rst_in_syn_received_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> 
 }
 
 #[test]
-fn rst_for_unknown_connection_is_silently_dropped() -> Result {
+fn rst_for_unknown_connection_is_silently_dropped() -> TraceableResult {
     let mut connections = TcpConnections::default();
 
     assert_eq!(

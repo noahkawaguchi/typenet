@@ -1,7 +1,7 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn syn_ack_is_resent_while_due() -> Result {
+fn syn_ack_is_resent_while_due() -> TraceableResult {
     let mut connections = TcpConnections::new(RtoConfig::default(), 5);
 
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
@@ -28,7 +28,7 @@ fn syn_ack_is_resent_while_due() -> Result {
 }
 
 #[test]
-fn pending_segment_is_cleared_once_acked() -> Result {
+fn pending_segment_is_cleared_once_acked() -> TraceableResult {
     let mut connections = TcpConnections::new(RtoConfig::default(), 5);
 
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
@@ -53,7 +53,7 @@ fn pending_segment_is_cleared_once_acked() -> Result {
 }
 
 #[test]
-fn data_echo_is_resent_unchanged() -> Result {
+fn data_echo_is_resent_unchanged() -> TraceableResult {
     let mut connections = TcpConnections::new(RtoConfig::default(), 5).after_handshake();
 
     TcpSegment {
@@ -82,7 +82,7 @@ fn data_echo_is_resent_unchanged() -> Result {
 }
 
 #[test]
-fn fin_ack_is_resent_unchanged() -> Result {
+fn fin_ack_is_resent_unchanged() -> TraceableResult {
     let mut connections = TcpConnections::new(RtoConfig::default(), 5).after_handshake();
     connections.close_established();
 
@@ -104,7 +104,7 @@ fn fin_ack_is_resent_unchanged() -> Result {
 }
 
 #[test]
-fn multiple_unacked_segments_are_all_retransmitted() -> Result {
+fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
     // If the client pipelines multiple segments before acking the first, the server must keep
     // retransmitting every unacked segment, not just the most recently sent one.
 
@@ -159,7 +159,7 @@ fn multiple_unacked_segments_are_all_retransmitted() -> Result {
 }
 
 #[test]
-fn gives_up_after_max_retransmits() -> Result {
+fn gives_up_after_max_retransmits() -> TraceableResult {
     const MAX_RETRIES: u8 = 3;
 
     let mut connections = TcpConnections::new(RtoConfig::default(), MAX_RETRIES);
@@ -184,7 +184,7 @@ fn gives_up_after_max_retransmits() -> Result {
 }
 
 #[test]
-fn retransmissions_back_off_exponentially() -> Result {
+fn retransmissions_back_off_exponentially() -> TraceableResult {
     let mut connections = TcpConnections::new(
         RtoConfig { initial: Duration::from_millis(10), ..Default::default() },
         3,

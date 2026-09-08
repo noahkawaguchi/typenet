@@ -13,7 +13,7 @@ use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
         endpoint::{Endpoint, Local, Remote},
-        error::Result,
+        error::TraceableResult,
         protocol::{
             Protocol,
             display::{PrettyPayload, WithThousandsSeparators as _},
@@ -83,7 +83,7 @@ pub struct TcpSegment<S: Endpoint> {
 
 impl TcpSegment<Remote> {
     /// Parses `data` as a TCP header and payload in the remote to local direction.
-    pub(super) fn parse(data: &[u8], ip_pair: Ipv4AddrPair<Remote>) -> Result<Self> {
+    pub(super) fn parse(data: &[u8], ip_pair: Ipv4AddrPair<Remote>) -> TraceableResult<Self> {
         Self::inner_parse(data, ip_pair)
     }
 
@@ -92,7 +92,7 @@ impl TcpSegment<Remote> {
     pub(super) fn create_reply(
         &self,
         connections: &mut TcpConnections,
-    ) -> Result<Option<TcpSegment<Local>>> {
+    ) -> TraceableResult<Option<TcpSegment<Local>>> {
         SendInfo::decide_reply(self, connections).map(|maybe_send_info| {
             maybe_send_info.map(|send_info| {
                 TcpSegment::<Local>::from_pairs_and_info(
@@ -135,7 +135,7 @@ impl TcpSegment<Local> {
 }
 
 impl Encode<Local> for TcpSegment<Local> {
-    fn write_into(&self, buf: &mut [u8]) -> Result<u16> { self.inner_write_into(buf) }
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> { self.inner_write_into(buf) }
     fn proto(&self) -> Protocol { Protocol::Tcp }
     fn get_ip_pair(&self) -> Ipv4AddrPair<Local> { self.ip_pair }
 }
@@ -144,7 +144,7 @@ impl<S: Endpoint> TcpSegment<S> {
     /// Parses `data` as a TCP header and payload, which could be local to remote or remote to
     /// local. The local to remote direction is for tests only. Only the remote to local direction
     /// should be exposed in production code.
-    fn inner_parse(data: &[u8], ip_pair: Ipv4AddrPair<S>) -> Result<Self> {
+    fn inner_parse(data: &[u8], ip_pair: Ipv4AddrPair<S>) -> TraceableResult<Self> {
         let tcp_hdr = data
             .first_chunk::<{ TCP_HDR_MIN_LEN as usize }>()
             .ok_or_else(|| format!("Too short for TCP header ({} bytes)", data.len()))?;
@@ -188,7 +188,7 @@ impl<S: Endpoint> TcpSegment<S> {
     ///
     /// The remote to local direction is for tests only. Only the local to remote direction
     /// should be exposed in production code.
-    fn inner_write_into(&self, buf: &mut [u8]) -> Result<u16> {
+    fn inner_write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> {
         // Source and destination ports
         buf.try_get_mut(..2)?
             .copy_from_slice(&self.ports.src.to_be_bytes());
@@ -223,7 +223,7 @@ impl<S: Endpoint> TcpSegment<S> {
         let tcp_seg_len = u16::from(TCP_HDR_MIN_LEN).try_add(
             self.payload
                 .as_ref()
-                .map(|payload| -> Result<u16> {
+                .map(|payload| -> TraceableResult<u16> {
                     let payload_len = payload.len().get();
 
                     buf.try_get_mut(
@@ -338,7 +338,7 @@ mod tests {
     }
 
     impl Encode<Remote> for TcpSegment<Remote> {
-        fn write_into(&self, buf: &mut [u8]) -> Result<u16> { self.inner_write_into(buf) }
+        fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> { self.inner_write_into(buf) }
         fn proto(&self) -> Protocol { Protocol::Tcp }
         fn get_ip_pair(&self) -> Ipv4AddrPair<Remote> { self.ip_pair }
     }
@@ -376,7 +376,10 @@ mod tests {
         ///
         /// This is a test-only version because a segment created locally would never be parsed from
         /// bytes in production.
-        pub(crate) fn test_parse_local(data: &[u8], ip_pair: Ipv4AddrPair<Local>) -> Result<Self> {
+        pub(crate) fn test_parse_local(
+            data: &[u8],
+            ip_pair: Ipv4AddrPair<Local>,
+        ) -> TraceableResult<Self> {
             Self::inner_parse(data, ip_pair)
         }
     }

@@ -1,7 +1,7 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn creates_valid_syn_ack() -> Result {
+fn creates_valid_syn_ack() -> TraceableResult {
     let mut connections = TcpConnections::default();
 
     let reply = TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
@@ -24,7 +24,7 @@ fn creates_valid_syn_ack() -> Result {
 }
 
 #[test]
-fn duplicate_syn_during_syn_received_resends_same_syn_ack() -> Result {
+fn duplicate_syn_during_syn_received_resends_same_syn_ack() -> TraceableResult {
     // If our SYN-ACK is lost, the client's retransmission timer will resend its SYN. We must resend
     // the same SYN-ACK (same ISN), not RST the retry, and not generate a new ISN.
 
@@ -56,7 +56,7 @@ fn duplicate_syn_during_syn_received_resends_same_syn_ack() -> Result {
 }
 
 #[test]
-fn handshake_ack_without_data_establishes_connection_and_returns_none() -> Result {
+fn handshake_ack_without_data_establishes_connection_and_returns_none() -> TraceableResult {
     // Simulate having sent a SYN-ACK with ISN=SERVER_ISN so ack_num=SERVER_ISN+1 is the correct
     // completion
     let mut connections = TcpConnections::default().with_syn_rcv();
@@ -83,7 +83,7 @@ fn handshake_ack_without_data_establishes_connection_and_returns_none() -> Resul
 }
 
 #[test]
-fn handshake_ack_with_data_establishes_and_echoes() -> Result {
+fn handshake_ack_with_data_establishes_and_echoes() -> TraceableResult {
     // Clients may send data along with the handshake-completing ACK. This must still complete the
     // handshake and echo the data, not get a RST.
 
@@ -124,7 +124,7 @@ fn handshake_ack_with_data_establishes_and_echoes() -> Result {
 }
 
 #[test]
-fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -> Result {
+fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -> TraceableResult {
     // RFC 9293, Section 3.10.7.4, "First, check sequence number," only rejects a segment that
     // falls entirely outside the receive window. An in-window but out-of-order SEG.SEQ is still
     // acceptable, so "Fifth, check the ACK field" still applies and completes the handshake here,
@@ -169,7 +169,7 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
 }
 
 #[test]
-fn acceptable_seq_but_unacceptable_ack_in_syn_rcv_gets_rst() -> Result {
+fn acceptable_seq_but_unacceptable_ack_in_syn_rcv_gets_rst() -> TraceableResult {
     // Per RFC 9293, Section 3.10.7.4, SEG.SEQ is checked at "First, check sequence number," earlier
     // than SEG.ACK at "Fifth, check the ACK field." If SEG.SEQ is acceptable, but SEG.ACK is
     // unacceptable, that means a RST, not a mere current state ACK.
@@ -198,7 +198,7 @@ fn acceptable_seq_but_unacceptable_ack_in_syn_rcv_gets_rst() -> Result {
 }
 
 #[test]
-fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -> Result {
+fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -> TraceableResult {
     // Same reasoning as the plain ACK case. An in-window but out-of-order FIN-ACK still has a
     // valid ACK field, so RFC 9293 still completes the handshake here. The FIN itself can't be
     // processed yet, so its position is remembered for later instead, the same as an out-of-order
@@ -244,7 +244,8 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
 }
 
 #[test]
-fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_data() -> Result {
+fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_data()
+-> TraceableResult {
     // Same reasoning as the plain ACK case. An in-window but out-of-order handshake-completing ACK
     // still has a valid ACK field, so the handshake completes. The payload can't be delivered
     // yet, so it's buffered for later reassembly instead.
@@ -295,7 +296,7 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
 }
 
 #[test]
-fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Result {
+fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> TraceableResult {
     // "Hi" arrives as the handshake-completing ACK, but out of order (as if "Hello" preceded it).
     // The handshake completes immediately since SEG.SEQ is in window and SEG.ACK is valid, but "Hi"
     // is buffered rather than echoed. Once "Hello" fills the gap, both should be echoed together,

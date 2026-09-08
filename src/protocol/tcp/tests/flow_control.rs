@@ -13,7 +13,7 @@ fn after_handshake_with_snd_wnd(snd_wnd: SeqOffset<u16, Local>) -> ConnState {
 }
 
 #[test]
-fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> Result {
+fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResult {
     const WINDOW: SeqOffset<u16, Local> = SeqOffset::new(3);
 
     let mut connections = TcpConnections::default();
@@ -54,7 +54,7 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> Result {
 }
 
 #[test]
-fn unacked_bytes_count_toward_room_left_in_send_window() -> Result {
+fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     // The room left in the send window must account for bytes already sent but not yet
     // acknowledged, not just use the advertised window size as is. (In other tests where there are
     // zero unacked bytes, using the window directly without considering SND.NXT and SND.UNA would
@@ -122,7 +122,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> Result {
 }
 
 #[test]
-fn window_opening_via_ack_drains_buffered_remainder() -> Result {
+fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
     const HEL_LEN: SeqOffset<u32, Local> = SeqOffset::new(3);
     const LO_LEN: SeqOffset<u32, Local> = SeqOffset::new(2);
 
@@ -189,7 +189,7 @@ fn window_opening_via_ack_drains_buffered_remainder() -> Result {
 }
 
 #[test]
-fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> Result {
+fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
     const ZERO_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(0);
 
     let mut connections = TcpConnections::default();
@@ -229,7 +229,7 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> Result {
 }
 
 #[test]
-fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Result {
+fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> TraceableResult {
     // Data queued while the peer's window was closed or small can grow larger than the size of one
     // segment. Once the window reopens wide enough to take all of it, the amount handed back in a
     // single reply must still be capped to what fits in the size of one segment, with the rest kept

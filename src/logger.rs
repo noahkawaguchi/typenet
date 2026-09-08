@@ -1,7 +1,7 @@
 use {
     crate::{
         endpoint::Endpoint,
-        error::{Error, Result},
+        error::{TraceableError, TraceableResult},
         ipv4_header::Ipv4Header,
         protocol::router::PrettyProtocol,
     },
@@ -34,7 +34,7 @@ pub enum LogLevel {
 }
 
 impl FromStr for LogLevel {
-    type Err = Error;
+    type Err = TraceableError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
@@ -108,7 +108,7 @@ impl Logger {
         &self,
         ipv4_hdr: &Ipv4Header<S>,
         pretty_proto: &impl PrettyProtocol,
-    ) -> Result {
+    ) -> TraceableResult {
         match self.level {
             LogLevel::Silent | LogLevel::ServerInfo => {}
 

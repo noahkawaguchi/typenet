@@ -49,7 +49,7 @@ fn some_deadline_no_closing() {
 }
 
 #[test]
-fn exits_once_connections_finish_closing() -> Result {
+fn exits_once_connections_finish_closing() -> TraceableResult {
     // The first poll is a shutdown signal that begins active close (FIN-ACK sent -> FIN-WAIT-1).
     // The second poll delivers the client's real closing FIN-ACK, which the connection accepts as
     // completing the close. The post-packet check should then end the loop immediately, without

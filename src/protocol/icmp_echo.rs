@@ -3,7 +3,7 @@ use {
         addr_pairs::Ipv4AddrPair,
         checksum,
         endpoint::{Endpoint, Local, Remote},
-        error::Result,
+        error::TraceableResult,
         protocol::{
             Protocol,
             display::{PrettyPayload, WithThousandsSeparators as _},
@@ -39,7 +39,7 @@ impl<S: Endpoint> IcmpEchoMsg<'_, S> {
 
 impl<'a> IcmpEchoMsg<'a, Remote> {
     /// Parses `data` as an ICMP Echo Request header and payload.
-    pub(super) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<Remote>) -> Result<Self> {
+    pub(super) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<Remote>) -> TraceableResult<Self> {
         let (icmp_hdr, payload) = data
             .split_first_chunk::<{ ICMP_HDR_LEN as usize }>()
             .ok_or_else(|| format!("Too short for ICMP header ({} bytes)", data.len()))?;
@@ -83,7 +83,7 @@ impl<'a> IcmpEchoMsg<'a, Remote> {
 }
 
 impl Encode<Local> for IcmpEchoMsg<'_, Local> {
-    fn write_into(&self, buf: &mut [u8]) -> Result<u16> {
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> {
         // Copy echo payload
         buf.try_get_mut(
             usize::from(ICMP_HDR_LEN)..usize::from(ICMP_HDR_LEN).try_add(self.payload.len())?,
@@ -152,7 +152,7 @@ mod tests {
     };
 
     #[test]
-    fn correctly_parses_valid_request() -> Result {
+    fn correctly_parses_valid_request() -> TraceableResult {
         #[rustfmt::skip]
         const DATA: [u8; 11] = [
             8, 0,              // Type 8 (Echo Request), Code 0
@@ -231,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn handles_empty_payload() -> Result {
+    fn handles_empty_payload() -> TraceableResult {
         #[rustfmt::skip]
         const DATA: [u8; 8] = [
             8, 0,              // Type 8 (Echo Request), Code 0
@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn creates_valid_echo_reply() -> Result {
+    fn creates_valid_echo_reply() -> TraceableResult {
         #[rustfmt::skip]
         const REQUEST: [u8; 13] = [
             8, 0,                          // Type 8 (Echo Request), Code 0

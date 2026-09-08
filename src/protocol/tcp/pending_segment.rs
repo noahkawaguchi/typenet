@@ -91,13 +91,13 @@ impl PendingSegment {
 mod tests {
     use {
         super::*,
-        crate::{error::Result, protocol::tcp::TcpPayload},
+        crate::{error::TraceableResult, protocol::tcp::TcpPayload},
         pretty_assertions::assert_eq,
         std::time::Duration,
     };
 
     #[test]
-    fn clamps_rto() -> Result {
+    fn clamps_rto() -> TraceableResult {
         let now = Instant::now();
 
         let pending = PendingSegment::new(
@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_due_now_on_overflow() -> Result {
+    fn reports_due_now_on_overflow() -> TraceableResult {
         assert!(
             PendingSegment::new(
                 SendInfo {

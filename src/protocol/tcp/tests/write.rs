@@ -1,7 +1,7 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn write_into_produces_correct_bytes_with_no_payload() -> Result {
+fn write_into_produces_correct_bytes_with_no_payload() -> TraceableResult {
     let seg = TcpSegment::<Local> {
         ip_pair: LOCAL_TO_REMOTE_IP_PAIR,
         ports: PortPair::new(80, 1234),
@@ -33,7 +33,7 @@ fn write_into_produces_correct_bytes_with_no_payload() -> Result {
 }
 
 #[test]
-fn write_into_produces_correct_bytes_with_payload() -> Result {
+fn write_into_produces_correct_bytes_with_payload() -> TraceableResult {
     let seg = TcpSegment::<Local> {
         ip_pair: LOCAL_TO_REMOTE_IP_PAIR,
         ports: PortPair::new(80, 1234),

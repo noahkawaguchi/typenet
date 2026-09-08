@@ -2,7 +2,7 @@ use {
     crate::{
         ETHERNET_MTU,
         endpoint::{Local, Remote},
-        error::Result,
+        error::TraceableResult,
         ipv4_header::Ipv4Header,
         protocol::tcp::{
             LOCAL_SYN_BYTE, TCP_HDR_MIN_LEN, TcpSegment,
@@ -48,7 +48,7 @@ impl ConnState {
     /// # Errors
     ///
     /// Returns `Err` if the flags are not SYN-ACK.
-    pub(super) fn from_syn_ack(send_info: SendInfo) -> Result<Self> {
+    pub(super) fn from_syn_ack(send_info: SendInfo) -> TraceableResult<Self> {
         (send_info.flags == TcpFlags::SynAck)
             .then(|| Self {
                 // State after the initial two-way exchange
@@ -315,7 +315,10 @@ impl<T: SendSideOpen> SyncedState<T> {
     /// Removes and returns as many bytes as possible from the front of the send buffer, bounded by
     /// the peer's currently advertised window and the maximum length of a segment, or returns
     /// `Ok(None)` if nothing can be sent. Does not mutate any other state.
-    pub(super) fn drain_transmittable(&self, conn: &mut ConnState) -> Result<Option<TcpPayload>> {
+    pub(super) fn drain_transmittable(
+        &self,
+        conn: &mut ConnState,
+    ) -> TraceableResult<Option<TcpPayload>> {
         /// The maximum number of bytes that a single TCP payload can have. Constant because the
         /// current implementation never sends options in IP or TCP headers.
         const MAX_PAYLOAD_LEN: usize =

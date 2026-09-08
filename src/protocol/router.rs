@@ -2,7 +2,7 @@ use {
     crate::{
         addr_pairs::Ipv4AddrPair,
         endpoint::{Endpoint, Local, Remote},
-        error::Result,
+        error::TraceableResult,
         protocol::{
             Protocol,
             display::PrettyPayload,
@@ -26,7 +26,7 @@ pub trait PrettyProtocol: fmt::Display {
 pub trait Encode<S: Endpoint>: PrettyProtocol {
     /// Copies data from `self` to write the protocol-specific header and payload into `buf`,
     /// returning the number of bytes written.
-    fn write_into(&self, buf: &mut [u8]) -> Result<u16>;
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16>;
 
     /// Returns the protocol of `self`.
     fn proto(&self) -> Protocol;
@@ -49,7 +49,7 @@ impl<'a> ProtocolRouter<'a, Remote> {
         data: &'a [u8],
         protocol: Protocol,
         ip_pair: Ipv4AddrPair<Remote>,
-    ) -> Result<Self> {
+    ) -> TraceableResult<Self> {
         match protocol {
             Protocol::Icmp => IcmpEchoMsg::parse(data, ip_pair).map(Self::Icmp),
             Protocol::Tcp => TcpSegment::parse(data, ip_pair).map(Self::Tcp),
@@ -62,7 +62,7 @@ impl<'a> ProtocolRouter<'a, Remote> {
     pub fn create_reply(
         &self,
         tcp_connections: &mut TcpConnections,
-    ) -> Result<Option<ProtocolRouter<'a, Local>>> {
+    ) -> TraceableResult<Option<ProtocolRouter<'a, Local>>> {
         Ok(match self {
             Self::Icmp(msg) => Some(ProtocolRouter::<Local>::Icmp(msg.create_reply())),
 
@@ -102,7 +102,7 @@ macro_rules! static_dispatch {
 }
 
 impl Encode<Local> for ProtocolRouter<'_, Local> {
-    static_dispatch!(write_into(&self, &mut [u8]) -> Result<u16>);
+    static_dispatch!(write_into(&self, &mut [u8]) -> TraceableResult<u16>);
     static_dispatch!(proto(&self) -> Protocol);
     static_dispatch!(get_ip_pair(&self) -> Ipv4AddrPair<Local>);
 }

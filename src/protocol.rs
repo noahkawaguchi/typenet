@@ -13,7 +13,7 @@ use {
         addr_pairs::Ipv4AddrPair,
         checksum,
         endpoint::Endpoint,
-        error::{Error, Result},
+        error::{TraceableError, TraceableResult},
         try_ops::{TryGet as _, TryGetMut as _},
     },
     std::fmt,
@@ -26,7 +26,7 @@ fn pseudo_hdr_cksum<S: Endpoint>(
     data: &[u8],
     ip_pair: Ipv4AddrPair<S>,
     protocol: Protocol,
-) -> Result<u16> {
+) -> TraceableResult<u16> {
     /// The number of bytes in a TCP/UDP pseudo-header.
     const PSEUDO_HDR_LEN: usize = 12;
 
@@ -56,7 +56,7 @@ pub enum Protocol {
 }
 
 impl TryFrom<u8> for Protocol {
-    type Error = Error;
+    type Error = TraceableError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         const ICMP: u8 = Protocol::Icmp as u8;

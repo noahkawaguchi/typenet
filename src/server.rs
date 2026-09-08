@@ -3,7 +3,7 @@ use {
         ETHERNET_MTU,
         config::Config,
         endpoint::{Local, Remote},
-        error::Result,
+        error::TraceableResult,
         ipv4_header::Ipv4Header,
         logger::Logger,
         protocol::{
@@ -61,7 +61,12 @@ struct ParsedExchange<'a> {
 ///
 /// Returns `Err` for errors related to packet I/O, but logs and continues for errors related to
 /// parsing and replying to individual packets.
-pub fn run<D, P, S>(device: &mut D, poll_readable: P, shutdown_check: S, config: &Config) -> Result
+pub fn run<D, P, S>(
+    device: &mut D,
+    poll_readable: P,
+    shutdown_check: S,
+    config: &Config,
+) -> TraceableResult
 where
     D: Read + Write + AsFd,
     P: Fn(&D, Option<Duration>) -> io::Result<bool>,
@@ -110,7 +115,7 @@ where
     P: Fn(&D, Option<Duration>) -> io::Result<bool>,
     S: Fn() -> bool,
 {
-    fn run(&mut self) -> Result {
+    fn run(&mut self) -> TraceableResult {
         let mut read_buf = [0u8; ETHERNET_MTU];
 
         self.logger.divider();
@@ -204,7 +209,7 @@ where
 
     /// Reacts to an `EINTR` caused by the shutdown signal, performing I/O resulting from the
     /// shutdown decision as necessary. Returns whether to proceed to shutdown immediately.
-    fn handle_shutdown_interrupt(&mut self, now: Instant) -> Result<bool> {
+    fn handle_shutdown_interrupt(&mut self, now: Instant) -> TraceableResult<bool> {
         self.logger.server_newline(); // Because ^C is probably in the terminal
 
         Ok(match self.decide_shutdown(now)? {
@@ -247,7 +252,7 @@ where
     /// Writes the protocol-specific header and payload of `outgoing` into the write buffer,
     /// prefixed with an IPv4 header, then writes the resulting packet to the device and logs its
     /// transmission.
-    fn send_pkt(&mut self, outgoing: &impl Encode<Local>) -> Result {
+    fn send_pkt(&mut self, outgoing: &impl Encode<Local>) -> TraceableResult {
         let proto_len = outgoing.write_into(&mut self.write_buf[Ipv4Header::REPLY_HDR_LEN..])?;
 
         let ipv4_hdr = Ipv4Header::try_new(outgoing.proto(), outgoing.get_ip_pair(), proto_len)?;
@@ -287,7 +292,7 @@ impl<D, P, S> Server<'_, D, P, S> {
     }
 
     /// Decides how to react to a shutdown signal. If not already draining, initiates active close.
-    fn decide_shutdown(&mut self, now: Instant) -> Result<ShutdownDecision> {
+    fn decide_shutdown(&mut self, now: Instant) -> TraceableResult<ShutdownDecision> {
         Ok(if let Some(deadline) = self.shutdown_deadline {
             ShutdownDecision::AlreadyDraining { time_left: deadline.saturating_duration_since(now) }
         } else {
@@ -307,7 +312,7 @@ impl<D, P, S> Server<'_, D, P, S> {
     /// Parses `data` as an IPv4 header and protocol-specific header and payload, returning the
     /// incoming packet parsed into structs ready to be logged, and optionally a reply if one is
     /// required.
-    fn parse_incoming<'a>(&mut self, data: &'a [u8]) -> Result<ParsedExchange<'a>> {
+    fn parse_incoming<'a>(&mut self, data: &'a [u8]) -> TraceableResult<ParsedExchange<'a>> {
         let (ipv4_hdr, ipv4_payload) =
             Ipv4Header::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
 
@@ -360,7 +365,7 @@ mod tests {
         poll_readable: impl Fn(&MockDevice, Option<Duration>) -> io::Result<bool>,
         shutdown_check: impl Fn() -> bool,
         shutdown_grace_period: Duration,
-    ) -> Result {
+    ) -> TraceableResult {
         Server {
             write_buf: [0u8; ETHERNET_MTU],
             tcp_connections,
