@@ -1,6 +1,8 @@
 use {
     crate::{
-        endpoint::Endpoint, error::Result, ipv4_header::Ipv4Header,
+        endpoint::Endpoint,
+        error::{Error, Result},
+        ipv4_header::Ipv4Header,
         protocol::router::PrettyProtocol,
     },
     std::{
@@ -32,7 +34,7 @@ pub enum LogLevel {
 }
 
 impl FromStr for LogLevel {
-    type Err = &'static str;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
@@ -41,7 +43,10 @@ impl FromStr for LogLevel {
             "2" => Ok(Self::PktQuiet),
             "3" => Ok(Self::PktDetails),
             "4" => Ok(Self::PktFull),
-            _ => Err("Log level must be a digit between 0 and 4 inclusive"),
+            other => {
+                Err(format!("Log level must be a digit between 0 and 4 inclusive, got {other}")
+                    .into())
+            }
         }
     }
 }

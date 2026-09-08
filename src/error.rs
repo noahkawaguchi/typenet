@@ -47,6 +47,15 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.inner.fmt(f) }
 }
 
+#[cfg(test)]
+impl PartialEq for Error {
+    fn eq(&self, &Self { ref inner, location, ref backtrace }: &Self) -> bool {
+        &self.inner == inner
+            && self.location == location
+            && self.backtrace.status() == backtrace.status()
+    }
+}
+
 /// Generates `impl From<E> for Error` blocks for the passed set of error types, accepting the same
 /// syntax as the enum definition for `ErrorKind`.
 macro_rules! impl_from_error_types {
@@ -100,6 +109,27 @@ impl fmt::Display for ErrorKind {
             Self::Dynamic(s) => s.fmt(f),
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::TryFromInt(e) => write!(f, "Integer conversion error: {e}"),
+        }
+    }
+}
+
+#[cfg(test)]
+impl PartialEq for ErrorKind {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Static(s1), Self::Static(s2)) => s1 == s2,
+
+            (Self::Dynamic(s1), Self::Dynamic(s2)) => s1 == s2,
+
+            (Self::Io(e1), Self::Io(e2)) => {
+                e1.kind() == e2.kind()
+                    && e1.raw_os_error() == e2.raw_os_error()
+                    && e1.to_string() == e2.to_string()
+            }
+
+            (Self::TryFromInt(e1), Self::TryFromInt(e2)) => e1 == e2,
+
+            _ => false,
         }
     }
 }

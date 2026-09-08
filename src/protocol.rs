@@ -13,7 +13,7 @@ use {
         addr_pairs::Ipv4AddrPair,
         checksum,
         endpoint::Endpoint,
-        error::Result,
+        error::{Error, Result},
         try_ops::{TryGet as _, TryGetMut as _},
     },
     std::fmt,
@@ -56,7 +56,7 @@ pub enum Protocol {
 }
 
 impl TryFrom<u8> for Protocol {
-    type Error = String;
+    type Error = Error;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         const ICMP: u8 = Protocol::Icmp as u8;
@@ -67,7 +67,7 @@ impl TryFrom<u8> for Protocol {
             ICMP => Ok(Self::Icmp),
             TCP => Ok(Self::Tcp),
             UDP => Ok(Self::Udp),
-            other => Err(format!("Unsupported protocol {other}")),
+            other => Err(format!("Unsupported protocol {other}").into()),
         }
     }
 }

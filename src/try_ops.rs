@@ -1,13 +1,16 @@
-use std::{
-    any::type_name,
-    fmt,
-    slice::SliceIndex,
-    time::{Duration, Instant},
+use {
+    crate::error::Result,
+    std::{
+        any::type_name,
+        fmt,
+        slice::SliceIndex,
+        time::{Duration, Instant},
+    },
 };
 
 pub trait TryAdd<T>: Sized {
     /// Attempts to add `self + rhs`, returning `Err` if overflow occurred.
-    fn try_add(self, rhs: T) -> Result<Self, String>;
+    fn try_add(self, rhs: T) -> Result<Self>;
 }
 
 /// Generates `TryAdd<Self>` implementations for all types passed as comma-separated arguments.
@@ -16,9 +19,9 @@ macro_rules! impl_try_add_self {
     ($($t:ty),+ $(,)?) => {
         $(
             impl TryAdd<Self> for $t {
-                fn try_add(self, rhs: Self) -> Result<Self, String> {
+                fn try_add(self, rhs: Self) -> Result<Self> {
                     self.checked_add(rhs).ok_or_else(|| {
-                        format!("Overflowed `{}` adding {self} and {rhs}", stringify!($t))
+                        format!("Overflowed `{}` adding {self} and {rhs}", stringify!($t)).into()
                     })
                 }
             }
@@ -29,28 +32,28 @@ macro_rules! impl_try_add_self {
 impl_try_add_self!(usize, u16);
 
 impl TryAdd<Duration> for Instant {
-    fn try_add(self, rhs: Duration) -> Result<Self, String> {
+    fn try_add(self, rhs: Duration) -> Result<Self> {
         self.checked_add(rhs)
-            .ok_or_else(|| format!("Overflowed `Instant` adding {} seconds", rhs.as_secs()))
+            .ok_or_else(|| format!("Overflowed `Instant` adding {} seconds", rhs.as_secs()).into())
     }
 }
 
 pub trait TryGet {
     /// Returns a reference to the element or subslice at `index`, or `Err` if out of bounds.
-    fn try_get<I>(&self, index: I) -> Result<&I::Output, String>
+    fn try_get<I>(&self, index: I) -> Result<&I::Output>
     where
         I: SliceIndex<Self> + fmt::Debug + Clone;
 }
 
 impl<T> TryGet for [T] {
-    fn try_get<I>(&self, index: I) -> Result<&I::Output, String>
+    fn try_get<I>(&self, index: I) -> Result<&I::Output>
     where
         I: SliceIndex<Self> + fmt::Debug + Clone,
     {
         let n = self.len();
 
         self.get(index.clone()).ok_or_else(|| {
-            format!("Index {index:?} out of range on `[{}]` of length {n}", type_name::<T>())
+            format!("Index {index:?} out of range on `[{}]` of length {n}", type_name::<T>()).into()
         })
     }
 }
@@ -58,20 +61,20 @@ impl<T> TryGet for [T] {
 pub trait TryGetMut {
     /// Returns a mutable reference to the element or subslice at `index`, or `Err` if out of
     /// bounds.
-    fn try_get_mut<I>(&mut self, index: I) -> Result<&mut I::Output, String>
+    fn try_get_mut<I>(&mut self, index: I) -> Result<&mut I::Output>
     where
         I: SliceIndex<Self> + fmt::Debug + Clone;
 }
 
 impl<T> TryGetMut for [T] {
-    fn try_get_mut<I>(&mut self, index: I) -> Result<&mut I::Output, String>
+    fn try_get_mut<I>(&mut self, index: I) -> Result<&mut I::Output>
     where
         I: SliceIndex<Self> + fmt::Debug + Clone,
     {
         let n = self.len();
 
         self.get_mut(index.clone()).ok_or_else(|| {
-            format!("Index {index:?} out of range on `[{}]` of length {n}", type_name::<T>())
+            format!("Index {index:?} out of range on `[{}]` of length {n}", type_name::<T>()).into()
         })
     }
 }
@@ -80,7 +83,6 @@ impl<T> TryGetMut for [T] {
 mod tests {
     use {
         super::*,
-        crate::error::Result,
         pretty_assertions::{assert_eq, assert_matches},
     };
 

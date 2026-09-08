@@ -84,8 +84,8 @@ mod tests {
         pretty_assertions::assert_eq,
     };
 
-    fn test_payload(s: &str) -> Result<TcpPayload, &'static str> {
-        TcpPayload::from_test_str(s)?.ok_or("Test payload must not be empty")
+    fn test_payload(s: &str) -> Result<TcpPayload> {
+        TcpPayload::from_test_str(s)?.ok_or_else(|| "Test payload must not be empty".into())
     }
 
     #[test]

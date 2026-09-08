@@ -48,7 +48,7 @@ impl ConnState {
     /// # Errors
     ///
     /// Returns `Err` if the flags are not SYN-ACK.
-    pub(super) fn from_syn_ack(send_info: SendInfo) -> Result<Self, &'static str> {
+    pub(super) fn from_syn_ack(send_info: SendInfo) -> Result<Self> {
         (send_info.flags == TcpFlags::SynAck)
             .then(|| Self {
                 // State after the initial two-way exchange
@@ -63,9 +63,10 @@ impl ConnState {
                 send_buffer: VecDeque::new(),
                 reassembly: TcpReassembly::new(),
             })
-            .ok_or(
-                "Attempted to create a new `ConnState` when sending something other than SYN-ACK",
-            )
+            .ok_or_else(|| {
+                "Attempted to create a new `ConnState` when sending something other than SYN-ACK"
+                    .into()
+            })
     }
 
     #[cfg(test)]
@@ -332,6 +333,6 @@ impl<T: SendSideOpen> SyncedState<T> {
             .min(conn.send_buffer.len())
             .min(MAX_PAYLOAD_LEN);
 
-        TcpPayload::try_from_iter(conn.send_buffer.drain(..bytes_to_send)).map_err(Into::into)
+        TcpPayload::try_from_iter(conn.send_buffer.drain(..bytes_to_send))
     }
 }

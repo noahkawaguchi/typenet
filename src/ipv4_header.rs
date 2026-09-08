@@ -104,7 +104,6 @@ impl<S: Endpoint> Ipv4Header<S> {
     fn inner_try_new(protocol: Protocol, ip_pair: Ipv4AddrPair<S>, proto_len: u16) -> Result<Self> {
         u16::from(IPV4_HDR_MIN_LEN_U8)
             .try_add(proto_len)
-            .map_err(Into::into)
             .map(|total_len| Self { total_len, protocol, ip_pair })
     }
 

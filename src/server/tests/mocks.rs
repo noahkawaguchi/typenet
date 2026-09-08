@@ -22,7 +22,7 @@ impl MockDevice {
     /// call.
     pub fn with_read_results(
         results: impl IntoIterator<Item = io::Result<Vec<u8>>>,
-    ) -> io::Result<Self> {
+    ) -> Result<Self> {
         Ok(Self {
             reads: results.into_iter().collect(),
             writes: Vec::new(),
@@ -48,7 +48,7 @@ impl Read for MockDevice {
             .ok_or_else(|| io::Error::other("Ran out of scripted reads"))??;
 
         buf.try_get_mut(..data.len())
-            .map_err(io::Error::other)?
+            .map_err(|e| io::Error::other(e.to_string()))?
             .copy_from_slice(&data);
 
         Ok(data.len())

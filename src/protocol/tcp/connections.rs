@@ -196,10 +196,12 @@ impl TcpConnections {
     /// Attempts to retrieve the connection in the table under `KEY`, returning `Err` if not
     /// present.
     #[cfg(test)]
-    pub(super) fn try_get(&self) -> Result<&ConnState, &'static str> {
+    pub(super) fn try_get(&self) -> Result<&ConnState> {
         use crate::protocol::tcp::tests::KEY;
 
-        self.table.get(&KEY).ok_or("Connection not found")
+        self.table
+            .get(&KEY)
+            .ok_or_else(|| "Connection not found".into())
     }
 
     /// Inserts `conn` into the connection table using `KEY`.

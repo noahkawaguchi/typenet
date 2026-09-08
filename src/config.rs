@@ -1,5 +1,5 @@
 use {
-    crate::logger::LogLevel,
+    crate::{error::Result, logger::LogLevel},
     std::{any::type_name, env, fmt::Display, str::FromStr, time::Duration},
 };
 
@@ -29,7 +29,7 @@ impl Config {
     /// # Errors
     ///
     /// Returns `Err` if an environment variable is present but unparsable.
-    pub fn load() -> Result<Self, String> {
+    pub fn load() -> Result<Self> {
         Ok(Self {
             // NOTE: "TYPENET_TUN_NAME" is also read in the `justfile` with a "tun0" fallback
             tun_name: Self::get_env_or_else(|| String::from("tun0"), "TYPENET_TUN_NAME")?,
@@ -57,7 +57,7 @@ impl Config {
     ///
     /// Returns `Err` if the environment variable is present but is not valid Unicode or cannot be
     /// parsed as `T`.
-    fn get_env_or_else<T, F>(op: F, key: &str) -> Result<T, String>
+    fn get_env_or_else<T, F>(op: F, key: &str) -> Result<T>
     where
         T: FromStr,
         T::Err: Display,
@@ -67,7 +67,7 @@ impl Config {
             Err(env::VarError::NotPresent) => Ok(op()),
 
             Err(env::VarError::NotUnicode(_)) => {
-                Err(format!("Environment variable {key} present but not valid Unicode"))
+                Err(format!("Environment variable {key} present but not valid Unicode").into())
             }
 
             Ok(val) => val.parse().map_err(|e| {
@@ -75,6 +75,7 @@ impl Config {
                     "Environment variable {key} present but could not be parsed as {}: {e}",
                     type_name::<T>()
                 )
+                .into()
             }),
         }
     }
