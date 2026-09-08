@@ -120,23 +120,19 @@ most-recent-pcap:
 sniff-clean:
     rm -rf '{{ pcap-dir }}'
 
-# Send a file through the echo server using TCP and diff the reply against the original
-[
-    arg('input-file', short='f', long, help='File to send'),
-    arg('echo-file', short, long, help='Output location for echoed data'),
-    arg('timeout-secs', short='s', long, help='Number of seconds to wait for echo')
-]
-throughput input-file=justfile() echo-file=f'/tmp/{{ project-name }}-out' timeout-secs='60':
-    nc -Nnvw {{ timeout-secs }} {{ server-addr }} {{ server-port }} \
-        < {{ input-file }} > {{ echo-file }}
+# Time echoing a text file through the server using TCP and diff the reply against the original
+[arg('input-file', short='f', long, help='File to send')]
+text input-file=justfile():
+    time nc -Nnv {{ server-addr }} {{ server-port }} \
+        < '{{ input-file }}' > '/tmp/{{ project-name }}-text-out'
 
     if command -v delta >/dev/null 2>&1; then \
-        delta --paging never {{ input-file }} {{ echo-file }}; \
+        delta --paging never '{{ input-file }}' '/tmp/{{ project-name }}-text-out'; \
     else \
-        diff {{ input-file }} {{ echo-file }}; \
+        diff '{{ input-file }}' '/tmp/{{ project-name }}-text-out'; \
     fi
 
-    echo 'Echoed data matched input exactly'
+    @echo 'Echoed data matched input exactly'
 
 # Time echoing a random binary blob through the server using TCP and verify identical output bytes
 blob: blob-gen
