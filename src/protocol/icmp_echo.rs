@@ -83,7 +83,7 @@ impl<'a> IcmpEchoMsg<'a, Remote> {
 }
 
 impl Encode<Local> for IcmpEchoMsg<'_, Local> {
-    fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> {
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult {
         // Copy echo payload
         buf.try_get_mut(
             usize::from(ICMP_HDR_LEN)..usize::from(ICMP_HDR_LEN).try_add(self.payload.len())?,
@@ -103,20 +103,22 @@ impl Encode<Local> for IcmpEchoMsg<'_, Local> {
         buf.try_get_mut(6..8)?
             .copy_from_slice(&self.sequence.to_be_bytes());
 
-        // ICMP length: fixed ICMP header length (8 bytes) + length of echo payload
-        let icmp_len = ICMP_HDR_LEN.try_add(self.payload.len().try_into()?)?;
-
         // Calculate ICMP checksum (covers the entire ICMP message: header + payload)
-        let icmp_cksum = checksum::calculate(buf.try_get(..usize::from(icmp_len))?);
+        let icmp_cksum = checksum::calculate(buf.try_get(..self.proto_len()?.into())?);
         buf.try_get_mut(2..4)?
             .copy_from_slice(&icmp_cksum.to_be_bytes());
 
-        Ok(icmp_len)
+        Ok(())
     }
 
     fn proto(&self) -> Protocol { Protocol::Icmp }
 
     fn get_ip_pair(&self) -> Ipv4AddrPair<Local> { self.ip_pair }
+
+    fn proto_len(&self) -> TraceableResult<u16> {
+        // ICMP length: fixed ICMP header length (8 bytes) + length of echo payload
+        ICMP_HDR_LEN.try_add(self.payload.len().try_into()?)
+    }
 }
 
 impl<S: Endpoint> PrettyProtocol for IcmpEchoMsg<'_, S> {
@@ -263,7 +265,7 @@ mod tests {
         let msg = IcmpEchoMsg::parse(&REQUEST, REMOTE_TO_LOCAL_IP_PAIR)?;
         let mut reply_buf = [0u8; ETHERNET_MTU];
         let reply = msg.create_reply();
-        let icmp_len = reply.write_into(&mut reply_buf[20..])?;
+        reply.write_into(&mut reply_buf[20..])?;
 
         // IPs should be swapped
         assert_eq!(reply.get_ip_pair(), REMOTE_TO_LOCAL_IP_PAIR.swapped());
@@ -278,10 +280,10 @@ mod tests {
         assert_eq!(&reply_buf[28..33], b"Hello");
 
         // Verify ICMP length
-        assert_eq!(icmp_len, 8 + 5);
+        assert_eq!(reply.proto_len()?, 8 + 5);
 
         // Verify checksum is valid (checksum of ICMP message should be 0)
-        assert_eq!(checksum::calculate(reply_buf.try_get(20..20 + usize::from(icmp_len))?), 0);
+        assert_eq!(checksum::calculate(&reply_buf[20..33]), 0);
 
         Ok(())
     }

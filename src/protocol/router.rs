@@ -26,15 +26,17 @@ pub trait PrettyProtocol: fmt::Display {
 
 /// Pretty protocol-handling types that can also be encoded into a byte buffer.
 pub trait Encode<S: Endpoint>: PrettyProtocol {
-    /// Copies data from `self` to write the protocol-specific header and payload into `buf`,
-    /// returning the number of bytes written.
-    fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16>;
+    /// Copies data from `self` to write the protocol-specific header and payload into `buf`.
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult;
 
     /// Returns the protocol of `self`.
     fn proto(&self) -> Protocol;
 
     /// Returns the pair of IPv4 addresses of `self`.
     fn get_ip_pair(&self) -> Ipv4AddrPair<S>;
+
+    /// Returns the number of bytes in `self`, including the protocol-specific header and payload.
+    fn proto_len(&self) -> TraceableResult<u16>;
 }
 
 /// A pretty-printable IPv4 header and protocol-specific header/payload.
@@ -123,8 +125,8 @@ impl<'a> ProtocolRouter<'a, Local> {
         self,
         buf: &mut [u8; ETHERNET_MTU],
     ) -> TraceableResult<Ipv4Packet<'a, Local>> {
-        let proto_len = self.write_into(&mut buf[Ipv4Header::REPLY_HDR_LEN..])?;
-        let ipv4_hdr = Ipv4Header::try_new(self.proto(), self.get_ip_pair(), proto_len)?;
+        self.write_into(&mut buf[Ipv4Header::REPLY_HDR_LEN..])?;
+        let ipv4_hdr = Ipv4Header::try_new(self.proto(), self.get_ip_pair(), self.proto_len()?)?;
         ipv4_hdr.write_into(buf);
         Ok(Ipv4Packet { ipv4_hdr, router: self })
     }
@@ -156,9 +158,10 @@ macro_rules! static_dispatch {
 }
 
 impl Encode<Local> for ProtocolRouter<'_, Local> {
-    static_dispatch!(write_into(&self, &mut [u8]) -> TraceableResult<u16>);
+    static_dispatch!(write_into(&self, &mut [u8]) -> TraceableResult);
     static_dispatch!(proto(&self) -> Protocol);
     static_dispatch!(get_ip_pair(&self) -> Ipv4AddrPair<Local>);
+    static_dispatch!(proto_len(&self) -> TraceableResult<u16>);
 }
 
 impl<S: Endpoint> PrettyProtocol for ProtocolRouter<'_, S> {
