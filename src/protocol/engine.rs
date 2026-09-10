@@ -9,18 +9,12 @@ use {
     std::time::{Duration, Instant},
 };
 
-/// A parsed incoming IPv4 header and protocol-specific header and payload, ready to be logged.
-#[cfg_attr(test, derive(Debug))]
-pub struct IncomingExchange<'a> {
-    pub ipv4_hdr: Ipv4Header<Remote>,
-    pub router: ProtocolRouter<'a, Remote>,
-}
-
 /// The result of handling one incoming packet, including the packet itself parsed for logging and a
 /// reply if one is required.
 #[cfg_attr(test, derive(Debug))]
 pub struct PacketOutcome<'a> {
-    pub incoming: IncomingExchange<'a>,
+    pub ipv4_hdr: Ipv4Header<Remote>,
+    pub router: ProtocolRouter<'a, Remote>,
     pub reply: Option<ProtocolRouter<'a, Local>>,
 }
 
@@ -87,7 +81,7 @@ impl Engine {
             .create_reply(&mut self.tcp_connections)
             .map_err(|e| format!("Error creating reply: {e}"))?;
 
-        Ok(PacketOutcome { incoming: IncomingExchange { ipv4_hdr, router }, reply })
+        Ok(PacketOutcome { ipv4_hdr, router, reply })
     }
 
     /// Returns all segments due for retransmission, updating their retry counts and deadlines or
@@ -208,8 +202,9 @@ mod tests {
             assert_matches!(
                 test_engine(TcpConnections::default()).handle_packet(&bytes),
                 Ok(PacketOutcome {
-                    incoming: IncomingExchange { router: ProtocolRouter::Tcp(_), .. },
+                    router: ProtocolRouter::Tcp(_),
                     reply: Some(ProtocolRouter::Tcp(_)),
+                    ..
                 })
             );
 
@@ -222,10 +217,7 @@ mod tests {
 
             assert_matches!(
                 test_engine(TcpConnections::default().with_syn_rcv()).handle_packet(&bytes),
-                Ok(PacketOutcome {
-                    incoming: IncomingExchange { router: ProtocolRouter::Tcp(_), .. },
-                    reply: None,
-                })
+                Ok(PacketOutcome { router: ProtocolRouter::Tcp(_), reply: None, .. })
             );
 
             Ok(())
