@@ -1,6 +1,6 @@
 use {
     super::*,
-    crate::try_ops::TryGetMut as _,
+    crate::{endpoint::Remote, try_ops::TryGetMut as _},
     std::{collections::VecDeque, fs::File, os::fd::BorrowedFd},
 };
 

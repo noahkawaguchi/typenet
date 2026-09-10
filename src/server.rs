@@ -2,15 +2,16 @@ use {
     crate::{
         ETHERNET_MTU,
         config::Config,
-        endpoint::{Local, Remote},
+        endpoint::Local,
         error::TraceableResult,
         ipv4_header::Ipv4Header,
         logger::Logger,
         protocol::{
-            RtoConfig, TcpConnections, TcpSegment,
-            router::{Encode, ProtocolRouter},
+            RtoConfig,
+            engine::{Engine, ShutdownOutcome},
+            router::Encode,
         },
-        try_ops::{TryAdd as _, TryGet as _},
+        try_ops::TryGet as _,
     },
     std::{
         io::{self, Read, Write},
@@ -26,29 +27,6 @@ const TCP_RTO_MIN: Duration = Duration::from_millis(200);
 /// The maximum allowed TCP retransmission timeout (same as the Linux kernel as defined in
 /// `include/net/tcp.h`).
 const TCP_RTO_MAX: Duration = Duration::from_mins(2);
-
-/// The result of deciding how to react to a shutdown signal.
-#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-enum ShutdownDecision {
-    /// A previous interrupt already started draining, and there is `time_left` until the deadline.
-    AlreadyDraining { time_left: Duration },
-
-    /// This was the first interrupt, active close began, and at least one connection is still
-    /// closing.
-    BeganDraining { to_send: Vec<TcpSegment<Local>>, deadline: Instant },
-
-    /// This was the first interrupt, and no connection needs to finish closing, so shutdown can
-    /// happen immediately.
-    NoConnections,
-}
-
-/// A parsed incoming IPv4 header and protocol router along with a reply router if one is necessary.
-#[cfg_attr(test, derive(Debug))]
-struct ParsedExchange<'a> {
-    ipv4_hdr: Ipv4Header<Remote>,
-    incoming_router: ProtocolRouter<'a, Remote>,
-    reply_router: Option<ProtocolRouter<'a, Local>>,
-}
 
 /// Reads and writes IPv4 packets to and from `device`, maintaining TCP connection state and echoing
 /// payloads as necessary.
@@ -81,32 +59,26 @@ where
 
     Server {
         write_buf: [0u8; ETHERNET_MTU],
-        tcp_connections: TcpConnections::new(
+        engine: Engine::new(
             RtoConfig { initial: config.initial_rto, min: TCP_RTO_MIN, max: TCP_RTO_MAX },
             config.max_retries,
+            config.grace_period,
         ),
         logger,
         device,
         poll_readable,
         shutdown_check,
-        shutdown_grace_period: config.grace_period,
-        shutdown_deadline: None,
     }
     .run()
 }
 
 struct Server<'a, D, P, S> {
     write_buf: [u8; ETHERNET_MTU],
-    tcp_connections: TcpConnections,
+    engine: Engine,
     logger: Logger,
     device: &'a mut D,
     poll_readable: P,
     shutdown_check: S,
-    shutdown_grace_period: Duration,
-
-    /// Deadline that bounds how long to wait for established connections to finish closing before
-    /// exiting unconditionally. Set once a shutdown signal starts active close.
-    shutdown_deadline: Option<Instant>,
 }
 
 impl<D, P, S> Server<'_, D, P, S>
@@ -121,7 +93,7 @@ where
         self.logger.divider();
 
         loop {
-            match (self.poll_readable)(self.device, self.poll_timeout(Instant::now())) {
+            match (self.poll_readable)(self.device, self.engine.poll_timeout(Instant::now())) {
                 // If `poll()` was interrupted and returned `EINTR`, check if a shutdown signal has
                 // been received
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
@@ -133,11 +105,11 @@ where
 
                 Err(e) => break Err(e.into()),
 
-                Ok(false) if self.grace_period_elapsed(Instant::now()) => {
+                Ok(false) if self.engine.grace_period_elapsed(Instant::now()) => {
                     self.logger.server_newline();
                     self.logger.server_info(format_args!(
                         "Grace period elapsed with {} remaining connection(s), exiting",
-                        self.tcp_connections.len()
+                        self.engine.connection_count()
                     ));
 
                     break Ok(());
@@ -145,7 +117,7 @@ where
 
                 // A retransmit deadline elapsed -> retransmit all expired segments
                 Ok(false) => {
-                    for tcp_seg in self.tcp_connections.make_retransmissions() {
+                    for tcp_seg in self.engine.make_retransmissions() {
                         self.logger
                             .pkt_extra(" ==== Packet sent (retransmission) ====");
 
@@ -174,15 +146,14 @@ where
                         Ok(n) => n,
                     };
 
-                    match self.parse_incoming(read_buf.try_get(..bytes_read)?) {
+                    match self.engine.handle_packet(read_buf.try_get(..bytes_read)?) {
                         Err(e) => self.logger.pkt_err(e),
 
-                        Ok(exchange) => {
+                        Ok(outcome) => {
                             self.logger.pkt_extra(" ==== Packet received ====");
-                            self.logger
-                                .pkt_io(&exchange.ipv4_hdr, &exchange.incoming_router)?;
+                            self.logger.pkt_io(&outcome.ipv4_hdr, &outcome.router)?;
 
-                            match exchange.reply_router {
+                            match outcome.reply {
                                 None => self.logger.pkt_extra("\n<no reply>"),
 
                                 Some(reply) => {
@@ -195,7 +166,7 @@ where
 
                     self.logger.divider();
 
-                    if self.shutting_down_and_no_connections_closing() {
+                    if self.engine.draining_complete() {
                         self.logger.server_newline();
                         self.logger
                             .server_info("All connections closed within grace period, exiting");
@@ -212,8 +183,8 @@ where
     fn handle_shutdown_interrupt(&mut self, now: Instant) -> TraceableResult<bool> {
         self.logger.server_newline(); // Because ^C is probably in the terminal
 
-        Ok(match self.decide_shutdown(now)? {
-            ShutdownDecision::AlreadyDraining { time_left } => {
+        Ok(match self.engine.handle_shutdown(now)? {
+            ShutdownOutcome::AlreadyDraining { time_left } => {
                 self.logger.server_info(format_args!(
                     "Draining connections, {}.{:03}s left",
                     time_left.as_secs(),
@@ -223,7 +194,7 @@ where
                 false
             }
 
-            ShutdownDecision::BeganDraining { to_send, deadline } => {
+            ShutdownOutcome::BeganDraining { to_send } => {
                 self.logger
                     .server_info("Shutdown signal received, closing established connections...");
 
@@ -235,11 +206,10 @@ where
                 }
 
                 self.logger.divider();
-                self.shutdown_deadline = Some(deadline);
                 false
             }
 
-            ShutdownDecision::NoConnections => {
+            ShutdownOutcome::NoConnections => {
                 self.logger.server_info(
                     "Shutdown signal received with no established connections, exiting",
                 );
@@ -267,70 +237,8 @@ where
     }
 }
 
-impl<D, P, S> Server<'_, D, P, S> {
-    /// Computes how long to block when polling, which is the time remaining until the earlier of
-    /// the shutdown deadline and the next pending retransmission, or if nether is set, returns
-    /// `None` to block indefinitely.
-    fn poll_timeout(&self, now: Instant) -> Option<Duration> {
-        [self.shutdown_deadline, self.tcp_connections.next_retransmit_deadline()]
-            .into_iter()
-            .flatten()
-            .min()
-            .map(|deadline| deadline.saturating_duration_since(now))
-    }
-
-    /// Returns whether `now` has reached or passed the shutdown deadline if there is one, or
-    /// `false` if there is no deadline.
-    fn grace_period_elapsed(&self, now: Instant) -> bool {
-        self.shutdown_deadline
-            .is_some_and(|deadline| deadline <= now)
-    }
-
-    /// Returns whether a shutdown is in progress and there are no connections currently mid-close.
-    fn shutting_down_and_no_connections_closing(&self) -> bool {
-        self.shutdown_deadline.is_some() && !self.tcp_connections.closing_in_progress()
-    }
-
-    /// Decides how to react to a shutdown signal. If not already draining, initiates active close.
-    fn decide_shutdown(&mut self, now: Instant) -> TraceableResult<ShutdownDecision> {
-        Ok(if let Some(deadline) = self.shutdown_deadline {
-            ShutdownDecision::AlreadyDraining { time_left: deadline.saturating_duration_since(now) }
-        } else {
-            let to_send = self.tcp_connections.close_established();
-
-            if self.tcp_connections.closing_in_progress() {
-                ShutdownDecision::BeganDraining {
-                    to_send,
-                    deadline: now.try_add(self.shutdown_grace_period)?,
-                }
-            } else {
-                ShutdownDecision::NoConnections
-            }
-        })
-    }
-
-    /// Parses `data` as an IPv4 header and protocol-specific header and payload, returning the
-    /// incoming packet parsed into structs ready to be logged, and optionally a reply if one is
-    /// required.
-    fn parse_incoming<'a>(&mut self, data: &'a [u8]) -> TraceableResult<ParsedExchange<'a>> {
-        let (ipv4_hdr, ipv4_payload) =
-            Ipv4Header::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
-
-        let incoming_router =
-            ProtocolRouter::parse(ipv4_payload, ipv4_hdr.protocol, ipv4_hdr.ip_pair)
-                .map_err(|e| format!("Skipping packet: {e}"))?;
-
-        let reply_router = incoming_router
-            .create_reply(&mut self.tcp_connections)
-            .map_err(|e| format!("Error creating reply: {e}"))?;
-
-        Ok(ParsedExchange { ipv4_hdr, incoming_router, reply_router })
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    mod grace_period;
     mod interrupt;
     mod mocks;
     mod pkt_handling;
@@ -341,7 +249,10 @@ mod tests {
 
     use {
         super::*,
-        crate::logger::LogLevel,
+        crate::{
+            logger::LogLevel,
+            protocol::{TcpConnections, TcpSegment},
+        },
         mocks::*,
         pretty_assertions::assert_matches,
         std::cell::{Cell, RefCell},
@@ -368,30 +279,12 @@ mod tests {
     ) -> TraceableResult {
         Server {
             write_buf: [0u8; ETHERNET_MTU],
-            tcp_connections,
+            engine: Engine::test_new(tcp_connections, shutdown_grace_period),
             logger: Logger::new(LogLevel::Silent),
             device,
             poll_readable,
             shutdown_check,
-            shutdown_grace_period,
-            shutdown_deadline: None,
         }
         .run()
-    }
-
-    /// Creates a `Server` for tests of the decision-only methods to partially override using struct
-    /// update syntax. Has placeholder `()` for all the generics since those fields are not used.
-    fn decision_test_server() -> Server<'static, (), (), ()> {
-        Server {
-            write_buf: [0u8; ETHERNET_MTU],
-            tcp_connections: TcpConnections::default(),
-            logger: Logger::new(LogLevel::Silent),
-            // "Memory leak" of zero bytes, so no memory leak (or allocation)
-            device: Box::leak(Box::new(())),
-            poll_readable: (),
-            shutdown_check: (),
-            shutdown_grace_period: ONE_YEAR_GRACE_PERIOD,
-            shutdown_deadline: None,
-        }
     }
 }
