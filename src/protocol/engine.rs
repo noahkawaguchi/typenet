@@ -3,18 +3,20 @@ use {
         endpoint::{Local, Remote},
         error::TraceableResult,
         ipv4_header::Ipv4Header,
-        protocol::{TcpConnections, router::ProtocolRouter},
+        protocol::{
+            TcpConnections,
+            router::{Ipv4Packet, ProtocolRouter},
+        },
         try_ops::TryAdd as _,
     },
     std::time::{Duration, Instant},
 };
 
-/// The result of handling one incoming packet, including the packet itself parsed for logging and a
+/// The result of handling one incoming packet, including the parsed packet ready to be logged and a
 /// reply if one is required.
 #[cfg_attr(test, derive(Debug))]
 pub struct PacketOutcome<'a> {
-    pub ipv4_hdr: Ipv4Header<Remote>,
-    pub router: ProtocolRouter<'a, Remote>,
+    pub incoming: Ipv4Packet<'a, Remote>,
     pub reply: Option<ProtocolRouter<'a, Local>>,
 }
 
@@ -81,7 +83,7 @@ impl Engine {
             .create_reply(&mut self.tcp_connections)
             .map_err(|e| format!("Error creating reply: {e}"))?;
 
-        Ok(PacketOutcome { ipv4_hdr, router, reply })
+        Ok(PacketOutcome { incoming: Ipv4Packet::new(ipv4_hdr, router), reply })
     }
 
     /// Returns all segments due for retransmission, updating their retry counts and deadlines or
@@ -214,11 +216,7 @@ mod tests {
 
             assert_matches!(
                 test_engine(TcpConnections::default()).handle_packet(&bytes),
-                Ok(PacketOutcome {
-                    router: ProtocolRouter::Tcp(_),
-                    reply: Some(ProtocolRouter::Tcp(_)),
-                    ..
-                })
+                Ok(PacketOutcome { reply: Some(ProtocolRouter::Tcp(_)), .. })
             );
 
             Ok(())
@@ -230,7 +228,7 @@ mod tests {
 
             assert_matches!(
                 test_engine(TcpConnections::default().with_syn_rcv()).handle_packet(&bytes),
-                Ok(PacketOutcome { router: ProtocolRouter::Tcp(_), reply: None, .. })
+                Ok(PacketOutcome { reply: None, .. })
             );
 
             Ok(())

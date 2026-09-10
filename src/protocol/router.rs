@@ -1,8 +1,10 @@
 use {
     crate::{
+        ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
         endpoint::{Endpoint, Local, Remote},
         error::TraceableResult,
+        ipv4_header::Ipv4Header,
         protocol::{
             Protocol,
             display::PrettyPayload,
@@ -33,6 +35,39 @@ pub trait Encode<S: Endpoint>: PrettyProtocol {
 
     /// Returns the pair of IPv4 addresses of `self`.
     fn get_ip_pair(&self) -> Ipv4AddrPair<S>;
+}
+
+/// A pretty-printable IPv4 header and protocol-specific header/payload.
+#[cfg_attr(test, derive(Debug))]
+pub struct Ipv4Packet<'a, S: Endpoint> {
+    ipv4_hdr: Ipv4Header<S>,
+    router: ProtocolRouter<'a, S>,
+}
+
+impl<'a> Ipv4Packet<'a, Remote> {
+    pub(crate) const fn new(
+        ipv4_hdr: Ipv4Header<Remote>,
+        router: ProtocolRouter<'a, Remote>,
+    ) -> Self {
+        Self { ipv4_hdr, router }
+    }
+}
+
+impl Ipv4Packet<'_, Local> {
+    /// The length of the entire IPv4 packet.
+    pub const fn total_len(&self) -> u16 { self.ipv4_hdr.total_len }
+}
+
+impl<S: Endpoint> PrettyProtocol for Ipv4Packet<'_, S> {
+    fn pretty_payload(&self, include_content: bool) -> PrettyPayload<'_> {
+        self.router.pretty_payload(include_content)
+    }
+}
+
+impl<S: Endpoint> fmt::Display for Ipv4Packet<'_, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}\n{}", self.ipv4_hdr, self.router)
+    }
 }
 
 /// Enum for static dispatch over the supported protocol-specific structs. Sent from `S`.
@@ -73,6 +108,21 @@ impl<'a> ProtocolRouter<'a, Remote> {
 
             Self::Udp(dgram) => Some(ProtocolRouter::<Local>::Udp(dgram.create_reply())),
         })
+    }
+}
+
+impl<'a> ProtocolRouter<'a, Local> {
+    /// Writes the IPv4 header and protocol-specific header/payload of `self` into `buf`, returning
+    /// a pretty-printable `Ipv4Packet` bundling the two together (which also allows the caller to
+    /// know the total length written).
+    pub fn write_full_packet(
+        self,
+        buf: &mut [u8; ETHERNET_MTU],
+    ) -> TraceableResult<Ipv4Packet<'a, Local>> {
+        let proto_len = self.write_into(&mut buf[Ipv4Header::REPLY_HDR_LEN..])?;
+        let ipv4_hdr = Ipv4Header::try_new(self.proto(), self.get_ip_pair(), proto_len)?;
+        ipv4_hdr.write_into(buf);
+        Ok(Ipv4Packet { ipv4_hdr, router: self })
     }
 }
 

@@ -1,6 +1,9 @@
 use {
     super::*,
-    crate::{endpoint::Remote, try_ops::TryGetMut as _},
+    crate::{
+        endpoint::Remote, ipv4_header::Ipv4Header, protocol::router::Encode as _,
+        try_ops::TryGetMut as _,
+    },
     std::{collections::VecDeque, fs::File, os::fd::BorrowedFd},
 };
 
