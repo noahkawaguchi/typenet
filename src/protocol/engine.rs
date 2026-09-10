@@ -61,6 +61,16 @@ impl Engine {
         }
     }
 
+    /// Builds a `Self` directly from `tcp_connections`, bypassing regular construction so tests
+    /// (including those outside this module) can use seeded connections.
+    #[cfg(test)]
+    pub(crate) const fn test_new(
+        tcp_connections: TcpConnections,
+        shutdown_grace_period: Duration,
+    ) -> Self {
+        Self { tcp_connections, shutdown_grace_period, shutdown_deadline: None }
+    }
+
     /// The number of tracked connections (currently TCP is the only protocol with tracked state).
     pub fn connection_count(&self) -> usize { self.tcp_connections.len() }
 
@@ -141,14 +151,10 @@ mod tests {
     /// two nearby `Instant::now()` calls.
     const ONE_YEAR_GRACE_PERIOD: Duration = Duration::from_hours(24 * 365);
 
-    /// Builds an `Engine` directly from `tcp_connections`, bypassing regular construction so tests
-    /// can seed pre-established connections.
+    /// Builds an `Engine` from `tcp_connections` with a one-year grace period for tests that don't
+    /// care about shutdown timing.
     fn test_engine(tcp_connections: TcpConnections) -> Engine {
-        Engine {
-            tcp_connections,
-            shutdown_grace_period: ONE_YEAR_GRACE_PERIOD,
-            shutdown_deadline: None,
-        }
+        Engine::test_new(tcp_connections, ONE_YEAR_GRACE_PERIOD)
     }
 
     /// Encodes `seg` into a full IPv4 packet so it can be handed to `handle_packet` as raw bytes.
