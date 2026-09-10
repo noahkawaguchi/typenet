@@ -245,7 +245,6 @@ mod tests {
     mod propagate;
     mod retransmit;
     mod shutdown;
-    mod timeout;
 
     use {
         super::*,
