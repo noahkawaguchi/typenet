@@ -1,6 +1,7 @@
 pub mod engine;
 pub mod router;
 
+#[cfg(test)]
 pub use tcp::TcpConnections;
 #[cfg(test)]
 pub use tcp::TcpSegment;

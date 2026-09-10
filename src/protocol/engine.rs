@@ -3,8 +3,8 @@ use {
         endpoint::{Local, Remote},
         error::TraceableResult,
         protocol::{
-            TcpConnections,
             router::{Ipv4Packet, ProtocolRouter},
+            tcp::TcpConnections,
         },
         try_ops::TryAdd as _,
     },
@@ -163,17 +163,6 @@ mod tests {
         Engine::test_new(tcp_connections, ONE_YEAR_GRACE_PERIOD)
     }
 
-    /// Encodes `seg` into a full IPv4 packet so it can be handed to `handle_packet` as raw bytes.
-    fn encode_pkt(seg: &TcpSegment<Remote>) -> TraceableResult<Vec<u8>> {
-        let mut buf = [0u8; ETHERNET_MTU];
-        let proto_len = seg.write_into(&mut buf[Ipv4Header::REPLY_HDR_LEN..])?;
-
-        let ipv4_hdr = Ipv4Header::test_try_new_remote(seg.proto(), seg.get_ip_pair(), proto_len)?;
-        ipv4_hdr.test_write_into_remote(&mut buf);
-
-        Ok(buf.try_get(..ipv4_hdr.total_len.into())?.to_vec())
-    }
-
     mod handle_packet {
         use super::*;
 
@@ -209,7 +198,7 @@ mod tests {
 
         #[test]
         fn syn_parses_and_produces_a_reply() -> TraceableResult {
-            let bytes = encode_pkt(&TcpSegment::CLIENT_SYN)?;
+            let bytes = TcpSegment::CLIENT_SYN.encode_test_pkt()?;
 
             assert_matches!(
                 test_engine(TcpConnections::default()).handle_packet(&bytes),
@@ -221,7 +210,7 @@ mod tests {
 
         #[test]
         fn handshake_ack_parses_and_produces_no_reply() -> TraceableResult {
-            let bytes = encode_pkt(&TcpSegment::CLIENT_ACK_COMPLETING_HANDSHAKE)?;
+            let bytes = TcpSegment::CLIENT_ACK_COMPLETING_HANDSHAKE.encode_test_pkt()?;
 
             assert_matches!(
                 test_engine(TcpConnections::default().with_syn_rcv()).handle_packet(&bytes),

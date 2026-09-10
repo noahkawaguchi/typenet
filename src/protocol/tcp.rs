@@ -335,6 +335,21 @@ mod tests {
             flags: TcpFlags::FinAck,
             ..CLIENT_PKT
         };
+
+        /// Encodes `self` into a full IPv4 packet for testing purposes.
+        ///
+        /// This is test only because a segment from the remote endpoint would never be encoded into
+        /// bytes in production.
+        pub(crate) fn encode_test_pkt(&self) -> TraceableResult<Vec<u8>> {
+            let mut buf = [0u8; ETHERNET_MTU];
+            let proto_len = self.write_into(&mut buf[Ipv4Header::REPLY_HDR_LEN..])?;
+
+            let ipv4_hdr =
+                Ipv4Header::test_try_new_remote(self.proto(), self.get_ip_pair(), proto_len)?;
+            ipv4_hdr.test_write_into_remote(&mut buf);
+
+            Ok(buf.try_get(..ipv4_hdr.total_len.into())?.to_vec())
+        }
     }
 
     impl Encode<Remote> for TcpSegment<Remote> {
@@ -371,16 +386,14 @@ mod tests {
             ..SERVER_REPLY
         };
 
-        /// Parses `data` as a TCP header and payload in the local to remote direction for testing
-        /// purposes only.
+        /// Decodes a full IPv4 packet in the local to remote direction into a `TcpSegment` so tests
+        /// can assert on structs instead of raw bytes.
         ///
-        /// This is a test-only version because a segment created locally would never be parsed from
-        /// bytes in production.
-        pub(crate) fn test_parse_local(
-            data: &[u8],
-            ip_pair: Ipv4AddrPair<Local>,
-        ) -> TraceableResult<Self> {
-            Self::inner_parse(data, ip_pair)
+        /// This is test only because a segment created locally would never be parsed from bytes in
+        /// production.
+        pub fn decode_test_pkt(bytes: &[u8]) -> TraceableResult<Self> {
+            let (ipv4_hdr, payload) = Ipv4Header::test_parse_local(bytes)?;
+            Self::inner_parse(payload, ipv4_hdr.ip_pair)
         }
     }
 }

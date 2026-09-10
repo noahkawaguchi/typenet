@@ -30,7 +30,7 @@ fn malformed_pkt_is_skipped_without_propagating_or_writing() -> TraceableResult 
 fn valid_syn_producing_a_reply_is_sent() -> TraceableResult {
     let poll = MockPoll::with_results([Ok(true), Err(io::ErrorKind::Interrupted.into())]);
     let mut device =
-        MockDevice::with_read_results([Ok(encode_mock_pkt(&TcpSegment::CLIENT_SYN)?)])?;
+        MockDevice::with_read_results([Ok(TcpSegment::CLIENT_SYN.encode_test_pkt()?)])?;
 
     run_test_server(
         TcpConnections::default(),
@@ -55,9 +55,9 @@ fn valid_ack_completing_handshake_produces_no_reply() -> TraceableResult {
     const MESSAGE: &str = "boom from poll, unrelated to the ACK just processed";
 
     let poll = MockPoll::with_results([Ok(true), Err(io::Error::other(MESSAGE))]);
-    let mut device = MockDevice::with_read_results([Ok(encode_mock_pkt(
-        &TcpSegment::CLIENT_ACK_COMPLETING_HANDSHAKE,
-    )?)])?;
+    let mut device = MockDevice::with_read_results([Ok(
+        TcpSegment::CLIENT_ACK_COMPLETING_HANDSHAKE.encode_test_pkt()?,
+    )])?;
 
     assert_matches!(
         run_test_server(

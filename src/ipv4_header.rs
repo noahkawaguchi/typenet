@@ -157,7 +157,7 @@ mod tests {
         ///
         /// This is a test-only version because a header created locally would never be parsed from
         /// bytes in production.
-        pub fn test_parse_local(data: &[u8]) -> TraceableResult<(Self, &[u8])> {
+        pub(crate) fn test_parse_local(data: &[u8]) -> TraceableResult<(Self, &[u8])> {
             Self::inner_parse(data)
         }
     }
@@ -172,7 +172,7 @@ mod tests {
         /// # Errors
         ///
         /// Returns `Err` if adding `proto_len` to the IPv4 header length overflows `u16`.
-        pub fn test_try_new_remote(
+        pub(crate) fn test_try_new_remote(
             protocol: Protocol,
             ip_pair: Ipv4AddrPair<Remote>,
             proto_len: u16,
@@ -185,7 +185,7 @@ mod tests {
         ///
         /// This is a test-only version because a header from the remote endpoint would never be
         /// encoded into bytes in production.
-        pub fn test_write_into_remote(&self, buf: &mut [u8; ETHERNET_MTU]) {
+        pub(crate) fn test_write_into_remote(&self, buf: &mut [u8; ETHERNET_MTU]) {
             self.inner_write_into(buf);
         }
     }

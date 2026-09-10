@@ -36,7 +36,7 @@ fn poll_timeout_reflects_shutdown_deadline_across_a_real_run() -> TraceableResul
 
     let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
 
-    assert_eq!(decode_mock_pkt(write)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
+    assert_eq!(TcpSegment::decode_test_pkt(write)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
 
     Ok(())
 }
@@ -50,9 +50,9 @@ fn exits_once_connections_finish_closing() -> TraceableResult {
 
     let poll_calls = Cell::new(0u8);
     let poll = MockPoll::with_results([Err(io::ErrorKind::Interrupted.into()), Ok(true)]);
-    let mut device = MockDevice::with_read_results([Ok(encode_mock_pkt(
-        &TcpSegment::CLIENT_FIN_ACK_COMPLETING_CLOSE,
-    )?)])?;
+    let mut device = MockDevice::with_read_results([Ok(
+        TcpSegment::CLIENT_FIN_ACK_COMPLETING_CLOSE.encode_test_pkt()?,
+    )])?;
 
     run_test_server(
         TcpConnections::default().after_handshake(),
@@ -73,8 +73,12 @@ fn exits_once_connections_finish_closing() -> TraceableResult {
         );
     };
 
-    assert_eq!(decode_mock_pkt(fin_ack)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
-    assert_eq!(decode_mock_pkt(final_ack)?, TcpSegment::SERVER_FINAL_ACK_COMPLETING_CLOSE);
+    assert_eq!(TcpSegment::decode_test_pkt(fin_ack)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
+
+    assert_eq!(
+        TcpSegment::decode_test_pkt(final_ack)?,
+        TcpSegment::SERVER_FINAL_ACK_COMPLETING_CLOSE
+    );
 
     Ok(())
 }
