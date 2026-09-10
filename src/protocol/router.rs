@@ -36,7 +36,7 @@ pub trait Encode<S: Endpoint>: PrettyProtocol {
 }
 
 /// Enum for static dispatch over the supported protocol-specific structs. Sent from `S`.
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub enum ProtocolRouter<'a, S: Endpoint> {
     Icmp(IcmpEchoMsg<'a, S>),
     Tcp(TcpSegment<S>),

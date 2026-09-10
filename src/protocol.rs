@@ -1,7 +1,9 @@
 pub mod engine;
 pub mod router;
 
-pub use tcp::{TcpConnections, TcpSegment};
+pub use tcp::TcpConnections;
+#[cfg(test)]
+pub use tcp::TcpSegment;
 
 mod display;
 mod icmp_echo;

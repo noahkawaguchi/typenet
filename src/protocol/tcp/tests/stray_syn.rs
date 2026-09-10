@@ -75,7 +75,7 @@ fn stray_syn_in_fin_wait_1_gets_challenge_ack() -> TraceableResult {
     // listed there, not just ESTABLISHED.
 
     let mut connections = TcpConnections::default().after_handshake(); // rcv_nxt=CLIENT_ISN+1
-    connections.close_established(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
+    connections.close_established().for_each(drop); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
 
     let initial_state = connections.try_get()?.clone();
     assert_matches!(initial_state.tcp_state, TcpState::FinWait1(_));

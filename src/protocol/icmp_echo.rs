@@ -18,7 +18,7 @@ use {
 const ICMP_HDR_LEN: u16 = 8;
 
 /// Manages ICMP Echo Request/Reply headers, data, and reply logic. Sent from `S`.
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub struct IcmpEchoMsg<'a, S: Endpoint> {
     /// Not a part of the ICMP header or checksum, but used for addressing replies and to stay
     /// parallel to TCP and UDP.

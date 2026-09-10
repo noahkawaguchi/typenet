@@ -1,8 +1,8 @@
 /// One of the communicating parties, either local or remote.
 #[expect(private_bounds, reason = "Sealed trait so this module owns all implementations")]
-pub trait Endpoint: sealed::Sealed {
+pub trait Endpoint: std::fmt::Debug + PartialEq + Eq + sealed::Sealed {
     /// The party that this endpoint is communicating with.
-    type Peer: Endpoint + std::fmt::Debug;
+    type Peer: Endpoint;
 
     /// Character representing the direction of traffic from this endpoint.
     const INDICATOR: char;

@@ -183,35 +183,32 @@ impl TcpConnections {
 
     /// Initiates active close (RFC 9293 "CLOSE" call) for every connection currently ESTABLISHED,
     /// transitioning each to FIN-WAIT-1 and returning a FIN-ACK reply for it.
-    pub fn close_established(&mut self) -> Vec<TcpSegment<Local>> {
+    pub fn close_established(&mut self) -> impl Iterator<Item = TcpSegment<Local>> {
         let now = Instant::now();
 
-        self.table
-            .iter_mut()
-            .filter_map(|(key, conn)| {
-                let TcpState::Established(established) = conn.tcp_state else {
-                    return None;
-                };
+        self.table.iter_mut().filter_map(move |(key, conn)| {
+            let TcpState::Established(established) = conn.tcp_state else {
+                return None;
+            };
 
-                let send_info = SendInfo {
-                    seq_num: conn.snd_nxt,
-                    ack_num: conn.rcv_nxt,
-                    flags: TcpFlags::FinAck,
-                    payload: None,
-                };
+            let send_info = SendInfo {
+                seq_num: conn.snd_nxt,
+                ack_num: conn.rcv_nxt,
+                flags: TcpFlags::FinAck,
+                payload: None,
+            };
 
-                conn.tcp_state = TcpState::FinWait1(established.close());
-                conn.snd_nxt += LOCAL_FIN_BYTE;
-                conn.pending
-                    .push(PendingSegment::new(send_info.clone(), now));
+            conn.tcp_state = TcpState::FinWait1(established.close());
+            conn.snd_nxt += LOCAL_FIN_BYTE;
+            conn.pending
+                .push(PendingSegment::new(send_info.clone(), now));
 
-                Some(TcpSegment::from_pairs_and_info(
-                    Ipv4AddrPair::new(key.server_ip, key.client_ip),
-                    PortPair::new(key.server_port, key.client_port),
-                    send_info,
-                ))
-            })
-            .collect()
+            Some(TcpSegment::from_pairs_and_info(
+                Ipv4AddrPair::new(key.server_ip, key.client_ip),
+                PortPair::new(key.server_port, key.client_port),
+                send_info,
+            ))
+        })
     }
 
     /// Attempts to retrieve the connection in the table under `KEY`, returning `Err` if not

@@ -18,7 +18,7 @@ use {
 const UDP_HDR_LEN: u16 = 8;
 
 /// Manages UDP headers, data, and reply logic. Sent from `S`.
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub struct UdpDatagram<'a, S: Endpoint> {
     /// Not a part of the UDP header, but required for checksum calculation.
     ip_pair: Ipv4AddrPair<S>,

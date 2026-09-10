@@ -3,7 +3,7 @@ use {
         endpoint::{Local, Remote},
         error::TraceableResult,
         ipv4_header::Ipv4Header,
-        protocol::{TcpConnections, TcpSegment, router::ProtocolRouter},
+        protocol::{TcpConnections, router::ProtocolRouter},
         try_ops::TryAdd as _,
     },
     std::time::{Duration, Instant},
@@ -26,7 +26,7 @@ pub enum ShutdownOutcome {
 
     /// This was the first call to result in active close, and at least one connection is still
     /// closing.
-    BeganDraining { to_send: Vec<TcpSegment<Local>> },
+    BeganDraining { to_send: Vec<ProtocolRouter<'static, Local>> },
 
     /// This was the first call to result in active close, but no connection needed to finish
     /// closing.
@@ -86,8 +86,13 @@ impl Engine {
 
     /// Returns all segments due for retransmission, updating their retry counts and deadlines or
     /// dropping the connection entirely if retries are exhausted.
-    pub fn make_retransmissions(&mut self) -> Vec<TcpSegment<Local>> {
-        self.tcp_connections.make_retransmissions()
+    pub fn make_retransmissions(
+        &mut self,
+    ) -> impl Iterator<Item = ProtocolRouter<'static, Local>> + use<> {
+        self.tcp_connections
+            .make_retransmissions()
+            .into_iter()
+            .map(ProtocolRouter::Tcp)
     }
 
     /// Decides how to react to a shutdown signal at time `now`. If not already draining, initiates
@@ -99,7 +104,11 @@ impl Engine {
             });
         }
 
-        let to_send = self.tcp_connections.close_established();
+        let to_send = self
+            .tcp_connections
+            .close_established()
+            .map(ProtocolRouter::Tcp)
+            .collect::<Vec<_>>();
 
         Ok(if self.tcp_connections.closing_in_progress() {
             self.shutdown_deadline = Some(now.try_add(self.shutdown_grace_period)?);
@@ -137,7 +146,11 @@ impl Engine {
 mod tests {
     use {
         super::*,
-        crate::{ETHERNET_MTU, protocol::router::Encode as _, try_ops::TryGet as _},
+        crate::{
+            ETHERNET_MTU,
+            protocol::{TcpSegment, router::Encode as _},
+            try_ops::TryGet as _,
+        },
         pretty_assertions::assert_matches,
     };
 
@@ -232,7 +245,10 @@ mod tests {
             let mut engine =
                 test_engine(TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv());
 
-            assert_eq!(engine.make_retransmissions(), vec![TcpSegment::SERVER_SYN_ACK]);
+            assert_eq!(
+                engine.make_retransmissions().collect::<Vec<_>>(),
+                vec![ProtocolRouter::Tcp(TcpSegment::SERVER_SYN_ACK)]
+            );
         }
     }
 
@@ -257,7 +273,7 @@ mod tests {
             assert_eq!(
                 engine.handle_shutdown(now)?,
                 ShutdownOutcome::BeganDraining {
-                    to_send: vec![TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE]
+                    to_send: vec![ProtocolRouter::Tcp(TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE)]
                 }
             );
 
@@ -443,14 +459,14 @@ mod tests {
         #[test]
         fn false_with_no_deadline_but_something_closing() {
             let mut tcp_connections = TcpConnections::default().after_handshake();
-            tcp_connections.close_established();
+            tcp_connections.close_established().for_each(drop);
             assert!(!test_engine(tcp_connections).draining_complete());
         }
 
         #[test]
         fn false_with_deadline_but_still_closing() {
             let mut tcp_connections = TcpConnections::default().after_handshake();
-            tcp_connections.close_established();
+            tcp_connections.close_established().for_each(drop);
 
             let mut engine = test_engine(tcp_connections);
             engine.shutdown_deadline = Some(Instant::now());

@@ -84,7 +84,7 @@ fn data_echo_is_resent_unchanged() -> TraceableResult {
 #[test]
 fn fin_ack_is_resent_unchanged() -> TraceableResult {
     let mut connections = TcpConnections::test_new(Duration::ZERO, 5).after_handshake();
-    connections.close_established();
+    connections.close_established().for_each(drop);
 
     let mut resent = connections.make_retransmissions();
     let reply = resent.pop().ok_or("Expected one retransmitted segment")?;

@@ -8,7 +8,7 @@ use {
         logger::Logger,
         protocol::{
             engine::{Engine, ShutdownOutcome},
-            router::Encode,
+            router::{Encode as _, ProtocolRouter},
         },
         try_ops::TryGet as _,
     },
@@ -104,11 +104,11 @@ where
 
                 // A retransmit deadline elapsed -> retransmit all expired segments
                 Ok(false) => {
-                    for tcp_seg in self.engine.make_retransmissions() {
+                    for retransmission in self.engine.make_retransmissions() {
                         self.logger
                             .pkt_extra(" ==== Packet sent (retransmission) ====");
 
-                        self.send_pkt(&tcp_seg)?;
+                        self.send_pkt(&retransmission)?;
                         self.logger.divider();
                     }
                 }
@@ -187,9 +187,9 @@ where
 
                 self.logger.divider();
 
-                for tcp_seg in to_send {
+                for pkt in to_send {
                     self.logger.pkt_extra(" ==== Packet sent ====");
-                    self.send_pkt(&tcp_seg)?;
+                    self.send_pkt(&pkt)?;
                 }
 
                 self.logger.divider();
@@ -209,7 +209,7 @@ where
     /// Writes the protocol-specific header and payload of `outgoing` into the write buffer,
     /// prefixed with an IPv4 header, then writes the resulting packet to the device and logs its
     /// transmission.
-    fn send_pkt(&mut self, outgoing: &impl Encode<Local>) -> TraceableResult {
+    fn send_pkt(&mut self, outgoing: &ProtocolRouter<Local>) -> TraceableResult {
         let proto_len = outgoing.write_into(&mut self.write_buf[Ipv4Header::REPLY_HDR_LEN..])?;
 
         let ipv4_hdr = Ipv4Header::try_new(outgoing.proto(), outgoing.get_ip_pair(), proto_len)?;
