@@ -18,6 +18,8 @@ logs-dir := justfile_dir() / 'logs'
 log-file := logs-dir / project-name + '_' + datetime('%F_%T') + '.log'
 pcap-dir := justfile_dir() / 'pcap'
 pcap-file := pcap-dir / project-name + '_' + datetime('%F_%T') + '.pcap'
+blob-dir := justfile_dir() / 'blob'
+blob-file := blob-dir / 'random.bin'
 
 tshark-cmd := 'tshark -n --print' \
     + ' -o ip.check_checksum:true -o tcp.check_checksum:true -o udp.check_checksum:true'
@@ -63,7 +65,7 @@ tun-del:
     sudo ip link del {{ tun-name }}
 
 ####################################################################################################
-# Connecting as a client
+# Connecting as a client (interactive)
 ####################################################################################################
 
 # Connect to the server using TCP (telnet)
@@ -84,7 +86,83 @@ icmp:
     ping {{ server-addr }}
 
 ####################################################################################################
-# Observation and stress testing
+# File throughput
+####################################################################################################
+
+# Time echoing a text file through the server using TCP and diff the reply against the original
+[arg('input-file', short='f', long, help='File to send')]
+text input-file=justfile():
+    time nc -Nnv {{ server-addr }} {{ server-port }} \
+        < '{{ input-file }}' > '/tmp/{{ project-name }}-text-out'
+
+    if command -v delta >/dev/null 2>&1; then \
+        delta --paging never '{{ input-file }}' '/tmp/{{ project-name }}-text-out'; \
+    else \
+        diff '{{ input-file }}' '/tmp/{{ project-name }}-text-out'; \
+    fi
+
+    @echo 'Echoed data matched input exactly'
+
+# Time echoing a random binary blob through the server using TCP and verify identical output bytes
+blob: blob-gen
+    time nc -Nnv {{ server-addr }} {{ server-port }} \
+        < '{{ blob-file }}' > '/tmp/{{ project-name }}-blob-out'
+
+    cmp '{{ blob-file }}' '/tmp/{{ project-name }}-blob-out'
+    @echo "$(wc -c < '{{ blob-file }}' | numfmt --to=iec) blob echo matched byte for byte"
+
+# Generate the random binary blob if it doesn't already exist
+[private]
+blob-gen size='1M':
+    @mkdir -p '{{ blob-dir }}'
+    @if [ ! -f '{{ blob-file }}' ]; then \
+        head -c {{ size }} /dev/urandom > '{{ blob-file }}'; \
+        echo 'Generated {{ size }} blob at {{ blob-file }}'; \
+    fi
+
+# Remove the generated binary blob
+blob-clean:
+    rm -rf '{{ blob-dir }}'
+
+####################################################################################################
+# Network emulation
+####################################################################################################
+
+# Add emulation of real-world networks to the TUN device (uses sudo)
+[
+    arg('delay', short, long),
+    arg('loss', short, long),
+    arg('corrupt', short, long),
+    arg('duplicate', short='u', long),
+    arg('reorder', short, long)
+]
+netem delay='1ms' loss='0%' corrupt='0%' duplicate='0%' reorder='0%': tun
+    sudo tc qdisc replace dev {{ tun-name }} root netem \
+        delay {{ delay }} 20ms 25% distribution paretonormal \
+        loss random {{ loss }} 25% \
+        corrupt {{ corrupt }} 25% \
+        duplicate {{ duplicate }} 25% \
+        reorder {{ reorder }} 25%
+
+# Apply jittery delay but no impairment
+netem-jitter: (netem '1ms' '0%' '0%' '0%' '0%')
+# Apply typical WAN/cross-region conditions
+netem-wan: (netem '75ms' '0.3%' '0%' '0%' '0.1%')
+# Apply poor mobile/Wi-Fi conditions
+netem-mobile: (netem '150ms' '2%' '0.1%' '1%' '1%')
+# Apply extreme conditions to stress test correctness
+netem-abuse: (netem '100ms' '20%' '3%' '15%' '15%')
+
+# Show current network emulation and packet counters
+netem-show:
+    tc -stats qdisc show dev {{ tun-name }}
+
+# Remove emulated network conditions (uses sudo)
+netem-clear:
+    sudo tc qdisc del dev {{ tun-name }} root
+
+####################################################################################################
+# Observation (TShark and PCAP files)
 ####################################################################################################
 
 # Capture and print TUN device traffic and save to PCAP
@@ -117,48 +195,6 @@ most-recent-pcap:
 # Remove the `pcap` directory
 sniff-clean:
     rm -rf '{{ pcap-dir }}'
-
-# Send a file through the echo server using TCP and diff the reply against the original
-[
-    arg('input-file', short='f', long, help='File to send'),
-    arg('echo-file', short, long, help='Output location for echoed data'),
-    arg('timeout-secs', short='s', long, help='Number of seconds to wait for echo')
-]
-throughput input-file=justfile() echo-file=f'/tmp/{{ project-name }}-out' timeout-secs='60':
-    nc -Nnvw {{ timeout-secs }} {{ server-addr }} {{ server-port }} \
-        < {{ input-file }} > {{ echo-file }}
-
-    if command -v delta >/dev/null 2>&1; then \
-        delta --paging never {{ input-file }} {{ echo-file }}; \
-    else \
-        diff {{ input-file }} {{ echo-file }}; \
-    fi
-
-    echo 'Echoed data matched input exactly'
-
-# Add emulation of real-world networks to the TUN device (uses sudo)
-[
-    arg('delay', short, long),
-    arg('loss', short, long),
-    arg('corrupt', short, long),
-    arg('duplicate', short='u', long),
-    arg('reorder', short, long)
-]
-netem delay='1ms' loss='0%' corrupt='0%' duplicate='0%' reorder='0%': tun
-    sudo tc qdisc replace dev {{ tun-name }} root netem \
-        delay {{ delay }} 20ms 25% distribution paretonormal \
-        loss random {{ loss }} 25% \
-        corrupt {{ corrupt }} 25% \
-        duplicate {{ duplicate }} 25% \
-        reorder {{ reorder }} 25%
-
-# Show current network emulation and packet counters
-netem-show:
-    tc -stats qdisc show dev {{ tun-name }}
-
-# Remove emulated network conditions (uses sudo)
-netem-clear:
-    sudo tc qdisc del dev {{ tun-name }} root
 
 ####################################################################################################
 # Testing and quality

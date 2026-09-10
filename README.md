@@ -192,16 +192,21 @@ just udp
 just icmp
 ```
 
-### File Transfer
+### File Transfer Throughput
 
-To send a file through the echo server using TCP and diff the echoed reply against the original:
+To send a random binary blob through the echo server using TCP and verify byte-identical output:
 
 ```sh
-just throughput                # Defaults to the justfile
-just throughput -f Cargo.toml  # Send Cargo.toml instead
+just blob
+just blob-clean  # Remove the generated `blob` directory
 ```
 
-See `just --usage throughput` for further options.
+To send a text file through the echo server using TCP and diff the echoed reply against the original:
+
+```sh
+just text                # Defaults to the `justfile`
+just text -f Cargo.toml  # Send `Cargo.toml` instead
+```
 
 ### Network Emulation
 
@@ -211,6 +216,12 @@ To emulate real-world networks with delay/loss/corruption/duplication/reordering
 just netem -d 100ms -l 5%  # Add 100 ms delay and 5% packet loss to the device (uses sudo)
 just netem-show            # Show current network emulation and packet counters
 just netem-clear           # Remove emulated network conditions (uses sudo)
+
+# Presets (least to most degradation)
+just netem-jitter  # Jittery delay, no impairment
+just netem-wan     # WAN/cross-region conditions
+just netem-mobile  # Poor mobile/Wi-Fi conditions
+just netem-abuse   # Extreme conditions to stress test correctness
 ```
 
 See `just --usage netem` for further options.
@@ -550,7 +561,7 @@ This example includes:
 <!--
 Commands used here for future reference:
   just netem --delay 100ms --loss 50% --corrupt 25% --duplicate 50% --reorder 1%
-  just throughput --input-file Cargo.toml
+  just text --input-file Cargo.toml
 -->
 
 ```log
