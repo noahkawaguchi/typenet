@@ -284,6 +284,17 @@ mod tests {
 
             Ok(())
         }
+
+        #[test]
+        fn overflowing_deadline_errors_instead_of_panicking() {
+            let mut engine =
+                Engine::test_new(TcpConnections::default().after_handshake(), Duration::MAX);
+
+            assert_matches!(
+                engine.handle_shutdown(Instant::now()),
+                Err(e) if e.to_string().contains("Overflowed")
+            );
+        }
     }
 
     mod poll_timeout {
