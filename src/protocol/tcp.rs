@@ -1,4 +1,4 @@
-pub use connections::{RtoConfig, TcpConnections};
+pub use connections::TcpConnections;
 
 mod connections;
 mod flags;

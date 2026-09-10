@@ -18,26 +18,25 @@ use {
     },
 };
 
-/// Key identifying a TCP connection.
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub(super) struct ConnKey {
-    pub(super) client_ip: Ipv4Addr,
-    pub(super) client_port: u16,
-    pub(super) server_ip: Ipv4Addr,
-    pub(super) server_port: u16,
-}
+/// The minimum allowed TCP retransmission timeout (same as the Linux kernel as defined in
+/// `include/net/tcp.h`).
+const TCP_RTO_MIN: Duration = Duration::from_millis(200);
+
+/// The maximum allowed TCP retransmission timeout (same as the Linux kernel as defined in
+/// `include/net/tcp.h`).
+const TCP_RTO_MAX: Duration = Duration::from_mins(2);
 
 /// The initial, minimum, and maximum retransmission timeouts.
-pub struct RtoConfig {
+pub(super) struct RtoConfig {
     /// The initial RTO, i.e. how long to wait before retransmitting an unacked segment the first
     /// time before exponential backoff.
-    pub initial: Duration,
+    pub(super) initial: Duration,
 
     /// The minimum allowed RTO, primarily used if the initial RTO is too small.
-    pub min: Duration,
+    pub(super) min: Duration,
 
     /// The maximum allowed RTO, primarily used after many rounds of exponential backoff.
-    pub max: Duration,
+    pub(super) max: Duration,
 }
 
 #[cfg(test)]
@@ -47,6 +46,15 @@ impl Default for RtoConfig {
     fn default() -> Self {
         Self { initial: Duration::ZERO, min: Duration::ZERO, max: Duration::MAX }
     }
+}
+
+/// Key identifying a TCP connection.
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub(super) struct ConnKey {
+    pub(super) client_ip: Ipv4Addr,
+    pub(super) client_port: u16,
+    pub(super) server_ip: Ipv4Addr,
+    pub(super) server_port: u16,
 }
 
 /// Tracks per-connection state keyed by the 4-tuple.
@@ -63,8 +71,23 @@ pub struct TcpConnections {
 }
 
 impl TcpConnections {
-    pub fn new(rto_config: RtoConfig, max_retries: u8) -> Self {
-        Self { table: HashMap::new(), rto_config, max_retries }
+    pub fn new(initial_rto: Duration, max_retries: u8) -> Self {
+        Self {
+            table: HashMap::new(),
+            rto_config: RtoConfig { initial: initial_rto, min: TCP_RTO_MIN, max: TCP_RTO_MAX },
+            max_retries,
+        }
+    }
+
+    /// Same as production `Self::new`, except the minimum and maximum RTOs are `Duration::ZERO` and
+    /// `Duration::MAX`.
+    #[cfg(test)]
+    pub fn test_new(initial_rto: Duration, max_retries: u8) -> Self {
+        Self {
+            table: HashMap::new(),
+            rto_config: RtoConfig { initial: initial_rto, min: Duration::ZERO, max: Duration::MAX },
+            max_retries,
+        }
     }
 
     pub fn len(&self) -> usize { self.table.len() }

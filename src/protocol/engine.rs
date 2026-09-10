@@ -3,7 +3,7 @@ use {
         endpoint::{Local, Remote},
         error::TraceableResult,
         ipv4_header::Ipv4Header,
-        protocol::{RtoConfig, TcpConnections, TcpSegment, router::ProtocolRouter},
+        protocol::{TcpConnections, TcpSegment, router::ProtocolRouter},
         try_ops::TryAdd as _,
     },
     std::time::{Duration, Instant},
@@ -47,9 +47,9 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(rto_config: RtoConfig, max_retries: u8, shutdown_grace_period: Duration) -> Self {
+    pub fn new(initial_rto: Duration, max_retries: u8, shutdown_grace_period: Duration) -> Self {
         Self {
-            tcp_connections: TcpConnections::new(rto_config, max_retries),
+            tcp_connections: TcpConnections::new(initial_rto, max_retries),
             shutdown_grace_period,
             shutdown_deadline: None,
         }
@@ -230,7 +230,7 @@ mod tests {
         #[test]
         fn forwards_due_segments_from_tcp_connections() {
             let mut engine =
-                test_engine(TcpConnections::new(RtoConfig::default(), 5).with_syn_rcv());
+                test_engine(TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv());
 
             assert_eq!(engine.make_retransmissions(), vec![TcpSegment::SERVER_SYN_ACK]);
         }
@@ -325,8 +325,7 @@ mod tests {
             let now = Instant::now();
 
             let engine = test_engine(
-                TcpConnections::new(RtoConfig { initial: INITIAL_RTO, ..Default::default() }, 5)
-                    .with_syn_rcv_and_pkt_last_sent(now),
+                TcpConnections::test_new(INITIAL_RTO, 5).with_syn_rcv_and_pkt_last_sent(now),
             );
 
             assert_eq!(engine.poll_timeout(now), Some(INITIAL_RTO));
@@ -339,8 +338,7 @@ mod tests {
             let now = Instant::now();
 
             let mut engine = test_engine(
-                TcpConnections::new(RtoConfig { initial: INITIAL_RTO, ..Default::default() }, 5)
-                    .with_syn_rcv_and_pkt_last_sent(now),
+                TcpConnections::test_new(INITIAL_RTO, 5).with_syn_rcv_and_pkt_last_sent(now),
             );
             engine.shutdown_deadline = Some(now.try_add(Duration::from_secs(30))?);
 
@@ -360,13 +358,8 @@ mod tests {
 
             let now = Instant::now();
 
-            let mut engine = test_engine(
-                TcpConnections::new(
-                    RtoConfig { initial: Duration::from_secs(30), ..Default::default() },
-                    5,
-                )
-                .with_syn_rcv(),
-            );
+            let mut engine =
+                test_engine(TcpConnections::test_new(Duration::from_secs(30), 5).with_syn_rcv());
             engine.shutdown_deadline = Some(now.try_add(GRACE_PERIOD)?);
 
             assert_eq!(

@@ -11,7 +11,7 @@ fn due_retransmission_is_sent_as_real_io() -> TraceableResult {
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
-        TcpConnections::new(RtoConfig::default(), 5).with_syn_rcv(),
+        TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv(),
         &mut device,
         |_, _| poll.next(),
         || true,
@@ -36,7 +36,7 @@ fn retransmission_does_not_drop_the_connection() -> TraceableResult {
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
-        TcpConnections::new(RtoConfig::default(), 5).with_syn_rcv(),
+        TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv(),
         &mut device,
         |_, _| poll.next(),
         || true,
@@ -76,7 +76,7 @@ fn gives_up_and_drops_connection_after_max_retries() -> TraceableResult {
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
-        TcpConnections::new(RtoConfig::default(), 2).with_syn_rcv(),
+        TcpConnections::test_new(Duration::ZERO, 2).with_syn_rcv(),
         &mut device,
         |_, _| poll.next(),
         || true,

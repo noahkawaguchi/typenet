@@ -1,7 +1,7 @@
 pub mod engine;
 pub mod router;
 
-pub use tcp::{RtoConfig, TcpConnections, TcpSegment};
+pub use tcp::{TcpConnections, TcpSegment};
 
 mod display;
 mod icmp_echo;

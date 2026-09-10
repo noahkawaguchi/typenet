@@ -2,7 +2,7 @@ use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn syn_ack_is_resent_while_due() -> TraceableResult {
-    let mut connections = TcpConnections::new(RtoConfig::default(), 5);
+    let mut connections = TcpConnections::test_new(Duration::ZERO, 5);
 
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
         .create_reply(&mut connections)?;
@@ -29,7 +29,7 @@ fn syn_ack_is_resent_while_due() -> TraceableResult {
 
 #[test]
 fn pending_segment_is_cleared_once_acked() -> TraceableResult {
-    let mut connections = TcpConnections::new(RtoConfig::default(), 5);
+    let mut connections = TcpConnections::test_new(Duration::ZERO, 5);
 
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
         .create_reply(&mut connections)?;
@@ -54,7 +54,7 @@ fn pending_segment_is_cleared_once_acked() -> TraceableResult {
 
 #[test]
 fn data_echo_is_resent_unchanged() -> TraceableResult {
-    let mut connections = TcpConnections::new(RtoConfig::default(), 5).after_handshake();
+    let mut connections = TcpConnections::test_new(Duration::ZERO, 5).after_handshake();
 
     TcpSegment {
         seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -83,7 +83,7 @@ fn data_echo_is_resent_unchanged() -> TraceableResult {
 
 #[test]
 fn fin_ack_is_resent_unchanged() -> TraceableResult {
-    let mut connections = TcpConnections::new(RtoConfig::default(), 5).after_handshake();
+    let mut connections = TcpConnections::test_new(Duration::ZERO, 5).after_handshake();
     connections.close_established();
 
     let mut resent = connections.make_retransmissions();
@@ -108,7 +108,7 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
     // If the client pipelines multiple segments before acking the first, the server must keep
     // retransmitting every unacked segment, not just the most recently sent one.
 
-    let mut connections = TcpConnections::new(RtoConfig::default(), 5).after_handshake();
+    let mut connections = TcpConnections::test_new(Duration::ZERO, 5).after_handshake();
 
     // First data packet: "Hello" (5 bytes), ack=SERVER_ISN+1 -> echoed, pending segment
     // seq=SERVER_ISN+1..SERVER_ISN+6
@@ -162,7 +162,7 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
 fn gives_up_after_max_retransmits() -> TraceableResult {
     const MAX_RETRIES: u8 = 3;
 
-    let mut connections = TcpConnections::new(RtoConfig::default(), MAX_RETRIES);
+    let mut connections = TcpConnections::test_new(Duration::ZERO, MAX_RETRIES);
 
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
         .create_reply(&mut connections)?;
@@ -185,11 +185,7 @@ fn gives_up_after_max_retransmits() -> TraceableResult {
 
 #[test]
 fn retransmissions_back_off_exponentially() -> TraceableResult {
-    let mut connections = TcpConnections::new(
-        RtoConfig { initial: Duration::from_millis(10), ..Default::default() },
-        3,
-    )
-    .after_handshake();
+    let mut connections = TcpConnections::test_new(Duration::from_millis(10), 3).after_handshake();
 
     TcpSegment {
         seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
