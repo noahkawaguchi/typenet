@@ -2,7 +2,6 @@ use {
     crate::{
         endpoint::{Local, Remote},
         error::TraceableResult,
-        ipv4_header::Ipv4Header,
         protocol::{
             TcpConnections,
             router::{Ipv4Packet, ProtocolRouter},
@@ -73,17 +72,14 @@ impl Engine {
     /// Parses `data` as an IPv4 header and protocol-specific header and payload, returning the
     /// incoming packet parsed into structs ready to be logged, and a reply if one is required.
     pub fn handle_packet<'a>(&mut self, data: &'a [u8]) -> TraceableResult<PacketOutcome<'a>> {
-        let (ipv4_hdr, ipv4_payload) =
-            Ipv4Header::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
+        let incoming = Ipv4Packet::parse(data)?;
 
-        let router = ProtocolRouter::parse(ipv4_payload, ipv4_hdr.protocol, ipv4_hdr.ip_pair)
-            .map_err(|e| format!("Skipping packet: {e}"))?;
-
-        let reply = router
+        let reply = incoming
+            .router
             .create_reply(&mut self.tcp_connections)
             .map_err(|e| format!("Error creating reply: {e}"))?;
 
-        Ok(PacketOutcome { incoming: Ipv4Packet::new(ipv4_hdr, router), reply })
+        Ok(PacketOutcome { incoming, reply })
     }
 
     /// Returns all segments due for retransmission, updating their retry counts and deadlines or
@@ -150,6 +146,7 @@ mod tests {
         super::*,
         crate::{
             ETHERNET_MTU,
+            ipv4_header::Ipv4Header,
             protocol::{TcpSegment, router::Encode as _},
             try_ops::TryGet as _,
         },

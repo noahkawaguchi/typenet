@@ -41,15 +41,19 @@ pub trait Encode<S: Endpoint>: PrettyProtocol {
 #[cfg_attr(test, derive(Debug))]
 pub struct Ipv4Packet<'a, S: Endpoint> {
     ipv4_hdr: Ipv4Header<S>,
-    router: ProtocolRouter<'a, S>,
+    pub(super) router: ProtocolRouter<'a, S>,
 }
 
 impl<'a> Ipv4Packet<'a, Remote> {
-    pub(crate) const fn new(
-        ipv4_hdr: Ipv4Header<Remote>,
-        router: ProtocolRouter<'a, Remote>,
-    ) -> Self {
-        Self { ipv4_hdr, router }
+    /// Parses `data` as an IPv4 header followed by a protocol-specific header and payload.
+    pub(super) fn parse(data: &'a [u8]) -> TraceableResult<Self> {
+        let (ipv4_hdr, ipv4_payload) =
+            Ipv4Header::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
+
+        let router = ProtocolRouter::parse(ipv4_payload, ipv4_hdr.protocol, ipv4_hdr.ip_pair)
+            .map_err(|e| format!("Skipping packet: {e}"))?;
+
+        Ok(Self { ipv4_hdr, router })
     }
 }
 
@@ -80,7 +84,7 @@ pub enum ProtocolRouter<'a, S: Endpoint> {
 
 impl<'a> ProtocolRouter<'a, Remote> {
     /// Parses `data` as the header and payload of a packet of protocol type `protocol`.
-    pub fn parse(
+    fn parse(
         data: &'a [u8],
         protocol: Protocol,
         ip_pair: Ipv4AddrPair<Remote>,
