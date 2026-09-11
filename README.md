@@ -49,9 +49,31 @@ Although the TCP implementation is not complete, it covers a significant portion
 
 ## Design
 
-### Encoding Domain Logic in the Type System
+### Three-Crate Workspace
 
-A driving force throughout the codebase is the use of domain types to create and uphold static guarantees that make invalid operations unrepresentable. As just one example, the sealed trait `Endpoint` and its zero-sized implementers `Local` and `Remote` turn classes of logic bugs, such as arithmetic between `RCV.NXT` and `SND.UNA` or packets with the source and destination addresses flipped, into compile errors.
+The project's code is organized as a Cargo workspace with three members.
+
+- `typenet-stack`: core protocol implementations, no I/O
+- `typenet-server`: TUN device echo server
+- `typenet-utils`: general-purpose utilities outside the other crates' domains
+
+`typenet-server` is the only crate with an external dependency, `libc`. Arrows point from dependent to dependency.
+
+```
+╭──────────────────────────────────╮
+│          typenet-server          │
+╰───┬────────────┬─────────┬───────╯
+    │            │         │
+    ▼            ▼         │
+┌──────┐ ╭───────────────╮ │
+│ libc │ │ typenet-stack │ │
+└──────┘ ╰───────┬───────╯ │
+                 │         │
+                 ▼         ▼
+         ╭─────────────────────────╮
+         │      typenet-utils      │
+         ╰─────────────────────────╯
+```
 
 ### Static Dispatch Architecture
 
@@ -93,6 +115,10 @@ Each variant wraps a protocol-specific struct responsible for:
 - Parsing headers and payloads from raw bytes
 - Determining the packets to send to clients
 - Encoding appropriate reply packets into raw bytes
+
+### Encoding Domain Logic in the Type System
+
+A driving force throughout the codebase is the use of domain types to create and uphold static guarantees that make invalid operations unrepresentable. As just one example, the sealed trait `Endpoint` and its zero-sized implementers `Local` and `Remote` turn classes of logic bugs, such as arithmetic between `RCV.NXT` and `SND.UNA` or packets with the source and destination addresses flipped, into compile errors.
 
 ## Prerequisites
 
