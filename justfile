@@ -21,6 +21,7 @@ pcap-file := pcap-dir / project-name + '_' + datetime('%F_%T') + '.pcap'
 blob-dir := justfile_dir() / 'blob'
 blob-file := blob-dir / 'random.bin'
 
+everything-flags := '--workspace --all-targets --all-features'
 tshark-cmd := 'tshark -n --print' \
     + ' -o ip.check_checksum:true -o tcp.check_checksum:true -o udp.check_checksum:true'
 
@@ -205,22 +206,22 @@ ci-checks: (test '--quiet') lint fmt-check spell-check
 
 # Run tests, including ignored
 test *ARGS: tun
-    cargo test --workspace --all-targets --all-features {{ ARGS }} -- --include-ignored
+    cargo test {{ everything-flags }} {{ ARGS }} -- --include-ignored
 
 # Generate test coverage report and print summary (includes ignored tests)
 cov *ARGS: tun
-    cargo llvm-cov {{ ARGS }} -- --include-ignored
+    cargo llvm-cov {{ everything-flags }} {{ ARGS }} -- --include-ignored
 
 # Generate HTML test coverage report (in `target/llvm-cov/html`) and open in browser
 cov-open: (cov '--open')
 
 # Run benchmarks (generates HTML in `target/criterion`)
 bench:
-    cargo bench --features bench-internals
+    cargo bench {{ everything-flags }}
 
 # Lint with Clippy, denying warnings
 lint:
-    cargo clippy --workspace --all-targets --all-features -- --deny warnings
+    cargo clippy {{ everything-flags }} -- --deny warnings
 
 # Check formatting
 fmt-check:

@@ -49,37 +49,65 @@ Although the TCP implementation is not complete, it covers a significant portion
 
 ## Design
 
-### Encoding Domain Logic in the Type System
+### Three-Crate Workspace
 
-A driving force throughout the codebase is the use of domain types to create and uphold static guarantees that make invalid operations unrepresentable. As just one example, the sealed trait `Endpoint` and its zero-sized implementers `Local` and `Remote` turn classes of logic bugs, such as arithmetic between `RCV.NXT` and `SND.UNA` or packets with the source and destination addresses flipped, into compile errors.
+The project's code is organized as a Cargo workspace with three members.
+
+- `typenet-stack`: core protocol implementations, no I/O
+- `typenet-server`: TUN device echo server
+- `typenet-utils`: general-purpose utilities outside the other crates' domains
+
+`typenet-server` is the only crate with an external dependency, `libc`. Arrows point from dependent to dependency.
+
+```
+╭──────────────────────────────────╮
+│          typenet-server          │
+╰───┬────────────┬─────────┬───────╯
+    │            │         │
+    ▼            ▼         │
+┌──────┐ ╭───────────────╮ │
+│ libc │ │ typenet-stack │ │
+└──────┘ ╰───────┬───────╯ │
+                 │         │
+                 ▼         ▼
+         ╭─────────────────────────╮
+         │      typenet-utils      │
+         ╰─────────────────────────╯
+```
 
 ### Static Dispatch Architecture
 
-The server separates IPv4 handling from ICMP/TCP/UDP-specific logic using a `ProtocolRouter` enum with variants for each supported protocol.
+The project separates IPv4 handling from ICMP/TCP/UDP-specific logic using an `Ipv4Packet` struct and a `ProtocolRouter` enum with variants for each supported protocol.
 
 ```
-╭──────────────────────────────╮
-│    TUN device, main loop,    │
-│      shutdown signals        │
-╰──────────────┬───────────────╯
+╭──────────────────────────────╮   ╮
+│    TUN device, main loop,    │   ├ typenet-server crate
+│      shutdown signals        │   │
+╰──────────────┬───────────────╯   ╯
                │
                ▼
-╭──────────────────────────────╮
-│         IPv4 header          │
-│       parsing/writing        │
-╰──────────────┬───────────────╯
-               │
-               ▼
-╭──────────────────────────────╮
-│     ProtocolRouter enum      │
-│      (static dispatch)       │
-╰────┬─────────┬──────────┬────╯
-     │         │          │
-     ▼         ▼          ▼
-╭────────╮ ╭────────╮ ╭────────╮
-│  ICMP  │ │  TCP   │ │  UDP   │
-│ module │ │ module │ │ module │
-╰────────╯ ╰────────╯ ╰────────╯
+╭──────────────────────────────╮   ╮
+│         Ipv4Packet           │   │
+│           struct             │   │
+╰───────┬──────────────┬───────╯   │
+        │              │           │
+        ▼              │           │
+╭─────────────────╮    │           │
+│   IPv4 header   │    │           │
+│ parsing/writing │    │           │
+╰─────────────────╯    │           │
+                       │           ├ typenet-stack crate
+                       ▼           │
+╭──────────────────────────────╮   │
+│     ProtocolRouter enum      │   │
+│      (static dispatch)       │   │
+╰────┬─────────┬──────────┬────╯   │
+     │         │          │        │
+     ▼         ▼          ▼        │
+╭────────╮ ╭────────╮ ╭────────╮   │
+│  ICMP  │ │  TCP   │ │  UDP   │   │
+│ module │ │ module │ │ module │   │
+╰────────╯ ╰────────╯ ╰────────╯   ╯
 ```
 
 Each variant wraps a protocol-specific struct responsible for:
@@ -87,6 +115,10 @@ Each variant wraps a protocol-specific struct responsible for:
 - Parsing headers and payloads from raw bytes
 - Determining the packets to send to clients
 - Encoding appropriate reply packets into raw bytes
+
+### Encoding Domain Logic in the Type System
+
+A driving force throughout the codebase is the use of domain types to create and uphold static guarantees that make invalid operations unrepresentable. As just one example, the sealed trait `Endpoint` and its zero-sized implementers `Local` and `Remote` turn classes of logic bugs, such as arithmetic between `RCV.NXT` and `SND.UNA` or packets with the source and destination addresses flipped, into compile errors.
 
 ## Prerequisites
 

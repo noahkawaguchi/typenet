@@ -520,11 +520,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "typenet"
+name = "typenet-server"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "pretty_assertions",
+ "typenet-stack",
+ "typenet-utils",
+]
+
+[[package]]
+name = "typenet-stack"
 version = "0.1.0"
 dependencies = [
  "criterion",
- "libc",
+ "pretty_assertions",
+ "typenet-utils",
+]
+
+[[package]]
+name = "typenet-utils"
+version = "0.1.0"
+dependencies = [
  "pretty_assertions",
 ]
 
