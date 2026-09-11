@@ -2,6 +2,7 @@ use {
     crate::{
         ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
+        application::Application,
         display::{PrettyPayload, PrettyProtocol},
         endpoint::{Endpoint, Local, Remote},
         ipv4_header::Ipv4Header,
@@ -46,6 +47,7 @@ impl<'a> Ipv4Packet<'a, Remote> {
     /// Creates a packet for replying to `self`, or returns `Ok(None)` for no reply.
     pub(crate) fn create_reply(
         &self,
+        app: &mut impl Application,
         tcp_connections: &mut TcpConnections,
     ) -> TraceableResult<Option<Ipv4Packet<'a, Local>>> {
         match &self.router {

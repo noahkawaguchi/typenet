@@ -1,5 +1,5 @@
 use {
-    crate::{config::Config, logger::Logger},
+    crate::{config::Config, echo::EchoApp, logger::Logger},
     std::{
         io::{self, Read, Write},
         os::fd::AsFd,
@@ -45,7 +45,7 @@ where
 
     Server {
         write_buf: [0u8; ETHERNET_MTU],
-        engine: Engine::new(config.initial_rto, config.max_retries, config.grace_period),
+        engine: Engine::new(EchoApp, config.initial_rto, config.max_retries, config.grace_period),
         logger,
         device,
         poll_readable,
@@ -56,7 +56,7 @@ where
 
 struct Server<'a, D, P, S> {
     write_buf: [u8; ETHERNET_MTU],
-    engine: Engine,
+    engine: Engine<EchoApp>,
     logger: Logger,
     device: &'a mut D,
     poll_readable: P,
@@ -253,7 +253,7 @@ mod tests {
     ) -> TraceableResult {
         Server {
             write_buf: [0u8; ETHERNET_MTU],
-            engine: Engine::test_new(tcp_connections, shutdown_grace_period),
+            engine: Engine::test_new(EchoApp, tcp_connections, shutdown_grace_period),
             logger: Logger::new(LogLevel::Silent),
             device,
             poll_readable,

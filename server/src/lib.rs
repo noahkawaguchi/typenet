@@ -12,4 +12,5 @@ pub mod sys {
     mod shutdown_signal;
 }
 
+mod echo;
 mod logger;
