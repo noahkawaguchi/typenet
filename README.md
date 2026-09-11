@@ -55,31 +55,37 @@ A driving force throughout the codebase is the use of domain types to create and
 
 ### Static Dispatch Architecture
 
-The server separates IPv4 handling from ICMP/TCP/UDP-specific logic using a `ProtocolRouter` enum with variants for each supported protocol.
+The project separates IPv4 handling from ICMP/TCP/UDP-specific logic using an `Ipv4Packet` struct and a `ProtocolRouter` enum with variants for each supported protocol.
 
 ```
-╭──────────────────────────────╮
-│    TUN device, main loop,    │
-│      shutdown signals        │
-╰──────────────┬───────────────╯
+╭──────────────────────────────╮   ╮
+│    TUN device, main loop,    │   ├ typenet-server crate
+│      shutdown signals        │   │
+╰──────────────┬───────────────╯   ╯
                │
                ▼
-╭──────────────────────────────╮
-│         IPv4 header          │
-│       parsing/writing        │
-╰──────────────┬───────────────╯
-               │
-               ▼
-╭──────────────────────────────╮
-│     ProtocolRouter enum      │
-│      (static dispatch)       │
-╰────┬─────────┬──────────┬────╯
-     │         │          │
-     ▼         ▼          ▼
-╭────────╮ ╭────────╮ ╭────────╮
-│  ICMP  │ │  TCP   │ │  UDP   │
-│ module │ │ module │ │ module │
-╰────────╯ ╰────────╯ ╰────────╯
+╭──────────────────────────────╮   ╮
+│         Ipv4Packet           │   │
+│           struct             │   │
+╰───────┬──────────────┬───────╯   │
+        │              │           │
+        ▼              │           │
+╭─────────────────╮    │           │
+│   IPv4 header   │    │           │
+│ parsing/writing │    │           │
+╰─────────────────╯    │           │
+                       │           ├ typenet-stack crate
+                       ▼           │
+╭──────────────────────────────╮   │
+│     ProtocolRouter enum      │   │
+│      (static dispatch)       │   │
+╰────┬─────────┬──────────┬────╯   │
+     │         │          │        │
+     ▼         ▼          ▼        │
+╭────────╮ ╭────────╮ ╭────────╮   │
+│  ICMP  │ │  TCP   │ │  UDP   │   │
+│ module │ │ module │ │ module │   │
+╰────────╯ ╰────────╯ ╰────────╯   ╯
 ```
 
 Each variant wraps a protocol-specific struct responsible for:
