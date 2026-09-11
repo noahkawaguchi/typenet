@@ -2,10 +2,7 @@ use {
     crate::{
         endpoint::{Local, Remote},
         error::TraceableResult,
-        protocol::{
-            router::{Ipv4Packet, ProtocolRouter},
-            tcp::TcpConnections,
-        },
+        protocol::{router::Ipv4Packet, tcp::TcpConnections},
         try_ops::TryAdd as _,
     },
     std::time::{Duration, Instant},
@@ -16,7 +13,7 @@ use {
 #[cfg_attr(test, derive(Debug))]
 pub struct PacketOutcome<'a> {
     pub incoming: Ipv4Packet<'a, Remote>,
-    pub reply: Option<ProtocolRouter<'a, Local>>,
+    pub reply: Option<Ipv4Packet<'a, Local>>,
 }
 
 /// The result of deciding how to react to a shutdown signal.
@@ -27,7 +24,7 @@ pub enum ShutdownOutcome {
 
     /// This was the first call to result in active close, and at least one connection is still
     /// closing.
-    BeganDraining { to_send: Vec<ProtocolRouter<'static, Local>> },
+    BeganDraining { to_send: Vec<Ipv4Packet<'static, Local>> },
 
     /// This was the first call to result in active close, but no connection needed to finish
     /// closing.
@@ -72,10 +69,9 @@ impl Engine {
     /// Parses `data` as an IPv4 header and protocol-specific header and payload, returning the
     /// incoming packet parsed into structs ready to be logged, and a reply if one is required.
     pub fn handle_packet<'a>(&mut self, data: &'a [u8]) -> TraceableResult<PacketOutcome<'a>> {
-        let incoming = Ipv4Packet::parse(data)?;
+        let incoming = Ipv4Packet::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
 
         let reply = incoming
-            .router
             .create_reply(&mut self.tcp_connections)
             .map_err(|e| format!("Error creating reply: {e}"))?;
 
@@ -86,33 +82,31 @@ impl Engine {
     /// dropping the connection entirely if retries are exhausted.
     pub fn make_retransmissions(
         &mut self,
-    ) -> impl Iterator<Item = ProtocolRouter<'static, Local>> + use<> {
+    ) -> impl Iterator<Item = TraceableResult<Ipv4Packet<'static, Local>>> + use<> {
         self.tcp_connections
             .make_retransmissions()
             .into_iter()
-            .map(ProtocolRouter::Tcp)
+            .map(TryFrom::try_from)
     }
 
     /// Decides how to react to a shutdown signal at time `now`. If not already draining, initiates
     /// active close of all established connections.
     pub fn handle_shutdown(&mut self, now: Instant) -> TraceableResult<ShutdownOutcome> {
-        if let Some(deadline) = self.shutdown_deadline {
-            return Ok(ShutdownOutcome::AlreadyDraining {
-                time_left: deadline.saturating_duration_since(now),
-            });
-        }
-
-        let to_send = self
-            .tcp_connections
-            .close_established()
-            .map(ProtocolRouter::Tcp)
-            .collect::<Vec<_>>();
-
-        Ok(if self.tcp_connections.closing_in_progress() {
-            self.shutdown_deadline = Some(now.try_add(self.shutdown_grace_period)?);
-            ShutdownOutcome::BeganDraining { to_send }
+        Ok(if let Some(deadline) = self.shutdown_deadline {
+            ShutdownOutcome::AlreadyDraining { time_left: deadline.saturating_duration_since(now) }
         } else {
-            ShutdownOutcome::NoConnections
+            let to_send = self
+                .tcp_connections
+                .close_established()
+                .map(TryFrom::try_from)
+                .collect::<TraceableResult<_>>()?;
+
+            if self.tcp_connections.closing_in_progress() {
+                self.shutdown_deadline = Some(now.try_add(self.shutdown_grace_period)?);
+                ShutdownOutcome::BeganDraining { to_send }
+            } else {
+                ShutdownOutcome::NoConnections
+            }
         })
     }
 
@@ -202,7 +196,7 @@ mod tests {
 
             assert_matches!(
                 test_engine(TcpConnections::default()).handle_packet(&bytes),
-                Ok(PacketOutcome { reply: Some(ProtocolRouter::Tcp(_)), .. })
+                Ok(PacketOutcome { reply: Some(_), .. })
             );
 
             Ok(())
@@ -225,14 +219,18 @@ mod tests {
         use {super::*, pretty_assertions::assert_eq};
 
         #[test]
-        fn forwards_due_segments_from_tcp_connections() {
+        fn forwards_due_segments_from_tcp_connections() -> TraceableResult {
             let mut engine =
                 test_engine(TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv());
 
             assert_eq!(
-                engine.make_retransmissions().collect::<Vec<_>>(),
-                vec![ProtocolRouter::Tcp(TcpSegment::SERVER_SYN_ACK)]
+                engine
+                    .make_retransmissions()
+                    .collect::<TraceableResult<Vec<_>>>()?,
+                vec![TcpSegment::SERVER_SYN_ACK.try_into()?]
             );
+
+            Ok(())
         }
     }
 
@@ -257,7 +255,7 @@ mod tests {
             assert_eq!(
                 engine.handle_shutdown(now)?,
                 ShutdownOutcome::BeganDraining {
-                    to_send: vec![ProtocolRouter::Tcp(TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE)]
+                    to_send: vec![TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE.try_into()?]
                 }
             );
 

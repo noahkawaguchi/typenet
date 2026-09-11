@@ -3,7 +3,7 @@ use {
         ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
         endpoint::{Endpoint, Local, Remote},
-        error::TraceableResult,
+        error::{TraceableError, TraceableResult},
         ipv4_header::Ipv4Header,
         protocol::{
             Protocol,
@@ -40,28 +40,87 @@ pub trait Encode<S: Endpoint>: PrettyProtocol {
 }
 
 /// A pretty-printable IPv4 header and protocol-specific header/payload.
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub struct Ipv4Packet<'a, S: Endpoint> {
     ipv4_hdr: Ipv4Header<S>,
-    pub(super) router: ProtocolRouter<'a, S>,
+    router: ProtocolRouter<'a, S>,
 }
 
 impl<'a> Ipv4Packet<'a, Remote> {
     /// Parses `data` as an IPv4 header followed by a protocol-specific header and payload.
     pub(super) fn parse(data: &'a [u8]) -> TraceableResult<Self> {
-        let (ipv4_hdr, ipv4_payload) =
-            Ipv4Header::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
+        let (ipv4_hdr, ipv4_payload) = Ipv4Header::parse(data)?;
 
-        let router = ProtocolRouter::parse(ipv4_payload, ipv4_hdr.protocol, ipv4_hdr.ip_pair)
-            .map_err(|e| format!("Skipping packet: {e}"))?;
+        let router = match ipv4_hdr.protocol {
+            Protocol::Icmp => {
+                ProtocolRouter::Icmp(IcmpEchoMsg::parse(ipv4_payload, ipv4_hdr.ip_pair)?)
+            }
+            Protocol::Tcp => {
+                ProtocolRouter::Tcp(TcpSegment::parse(ipv4_payload, ipv4_hdr.ip_pair)?)
+            }
+            Protocol::Udp => {
+                ProtocolRouter::Udp(UdpDatagram::parse(ipv4_payload, ipv4_hdr.ip_pair)?)
+            }
+        };
 
         Ok(Self { ipv4_hdr, router })
+    }
+
+    /// Creates a packet for replying to `self`, or returns `Ok(None)` for no reply.
+    pub(super) fn create_reply(
+        &self,
+        tcp_connections: &mut TcpConnections,
+    ) -> TraceableResult<Option<Ipv4Packet<'a, Local>>> {
+        match &self.router {
+            ProtocolRouter::Icmp(msg) => Some(ProtocolRouter::Icmp(msg.create_reply())),
+            // TCP is the only one that's actually optional or fallible
+            ProtocolRouter::Tcp(seg) => seg.create_reply(tcp_connections)?.map(ProtocolRouter::Tcp),
+            ProtocolRouter::Udp(dgram) => Some(ProtocolRouter::Udp(dgram.create_reply())),
+        }
+        .map(|router| {
+            Ok(Ipv4Packet {
+                ipv4_hdr: Ipv4Header::try_new(
+                    router.proto(),
+                    router.get_ip_pair(),
+                    router.proto_len()?,
+                )?,
+                router,
+            })
+        })
+        .transpose()
     }
 }
 
 impl Ipv4Packet<'_, Local> {
-    /// The length of the entire IPv4 packet.
+    /// Writes the IPv4 header and protocol-specific header/payload into `buf`.
+    pub fn write_into(&self, buf: &mut [u8; ETHERNET_MTU]) -> TraceableResult {
+        self.router
+            .write_into(&mut buf[Ipv4Header::REPLY_HDR_LEN..])?;
+
+        let ipv4_hdr = Ipv4Header::try_new(
+            self.router.proto(),
+            self.router.get_ip_pair(),
+            self.router.proto_len()?,
+        )?;
+
+        ipv4_hdr.write_into(buf);
+
+        Ok(())
+    }
+
+    /// Returns the length of the entire IPv4 packet.
     pub const fn total_len(&self) -> u16 { self.ipv4_hdr.total_len }
+}
+
+impl TryFrom<TcpSegment<Local>> for Ipv4Packet<'_, Local> {
+    type Error = TraceableError;
+
+    fn try_from(value: TcpSegment<Local>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            ipv4_hdr: Ipv4Header::try_new(value.proto(), value.get_ip_pair(), value.proto_len()?)?,
+            router: ProtocolRouter::Tcp(value),
+        })
+    }
 }
 
 impl<S: Endpoint> PrettyProtocol for Ipv4Packet<'_, S> {
@@ -78,58 +137,10 @@ impl<S: Endpoint> fmt::Display for Ipv4Packet<'_, S> {
 
 /// Enum for static dispatch over the supported protocol-specific structs. Sent from `S`.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-pub enum ProtocolRouter<'a, S: Endpoint> {
+enum ProtocolRouter<'a, S: Endpoint> {
     Icmp(IcmpEchoMsg<'a, S>),
     Tcp(TcpSegment<S>),
     Udp(UdpDatagram<'a, S>),
-}
-
-impl<'a> ProtocolRouter<'a, Remote> {
-    /// Parses `data` as the header and payload of a packet of protocol type `protocol`.
-    fn parse(
-        data: &'a [u8],
-        protocol: Protocol,
-        ip_pair: Ipv4AddrPair<Remote>,
-    ) -> TraceableResult<Self> {
-        match protocol {
-            Protocol::Icmp => IcmpEchoMsg::parse(data, ip_pair).map(Self::Icmp),
-            Protocol::Tcp => TcpSegment::parse(data, ip_pair).map(Self::Tcp),
-            Protocol::Udp => UdpDatagram::parse(data, ip_pair).map(Self::Udp),
-        }
-    }
-
-    /// Creates a protocol-specific header and payload for replying to `self`, or returns `Ok(None)`
-    /// for no reply.
-    pub fn create_reply(
-        &self,
-        tcp_connections: &mut TcpConnections,
-    ) -> TraceableResult<Option<ProtocolRouter<'a, Local>>> {
-        Ok(match self {
-            Self::Icmp(msg) => Some(ProtocolRouter::<Local>::Icmp(msg.create_reply())),
-
-            // TCP is the only one that's actually optional or fallible
-            Self::Tcp(seg) => seg
-                .create_reply(tcp_connections)?
-                .map(ProtocolRouter::<Local>::Tcp),
-
-            Self::Udp(dgram) => Some(ProtocolRouter::<Local>::Udp(dgram.create_reply())),
-        })
-    }
-}
-
-impl<'a> ProtocolRouter<'a, Local> {
-    /// Writes the IPv4 header and protocol-specific header/payload of `self` into `buf`, returning
-    /// a pretty-printable `Ipv4Packet` bundling the two together (which also allows the caller to
-    /// know the total length written).
-    pub fn write_full_packet(
-        self,
-        buf: &mut [u8; ETHERNET_MTU],
-    ) -> TraceableResult<Ipv4Packet<'a, Local>> {
-        self.write_into(&mut buf[Ipv4Header::REPLY_HDR_LEN..])?;
-        let ipv4_hdr = Ipv4Header::try_new(self.proto(), self.get_ip_pair(), self.proto_len()?)?;
-        ipv4_hdr.write_into(buf);
-        Ok(Ipv4Packet { ipv4_hdr, router: self })
-    }
 }
 
 /// Generates a function for a trait implementation, matching on the variant of `self` and calling

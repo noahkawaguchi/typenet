@@ -18,7 +18,7 @@ const IPV4_HDR_MIN_LEN_U8: u8 = 20;
 const IPV4_HDR_MIN_LEN_USIZE: usize = IPV4_HDR_MIN_LEN_U8 as usize;
 
 /// Manages IPv4 header fields for a packet sent from `S`.
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub struct Ipv4Header<S: Endpoint> {
     pub total_len: u16,
     pub protocol: Protocol,

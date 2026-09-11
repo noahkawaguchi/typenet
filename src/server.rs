@@ -7,7 +7,7 @@ use {
         logger::Logger,
         protocol::{
             engine::{Engine, ShutdownOutcome},
-            router::ProtocolRouter,
+            router::Ipv4Packet,
         },
         try_ops::TryGet as _,
     },
@@ -107,7 +107,7 @@ where
                         self.logger
                             .pkt_extra(" ==== Packet sent (retransmission) ====");
 
-                        self.send_pkt(retransmission)?;
+                        self.send_pkt(&retransmission?)?;
                         self.logger.divider();
                     }
                 }
@@ -144,7 +144,7 @@ where
 
                                 Some(reply) => {
                                     self.logger.pkt_extra("\n ==== Packet sent ====");
-                                    self.send_pkt(reply)?;
+                                    self.send_pkt(&reply)?;
                                 }
                             }
                         }
@@ -188,7 +188,7 @@ where
 
                 for pkt in to_send {
                     self.logger.pkt_extra(" ==== Packet sent ====");
-                    self.send_pkt(pkt)?;
+                    self.send_pkt(&pkt)?;
                 }
 
                 self.logger.divider();
@@ -208,13 +208,13 @@ where
     /// Writes the protocol-specific header and payload of `outgoing` into the write buffer,
     /// prefixed with an IPv4 header, then writes the resulting packet to the device and logs its
     /// transmission.
-    fn send_pkt(&mut self, outgoing: ProtocolRouter<Local>) -> TraceableResult {
-        let pkt = outgoing.write_full_packet(&mut self.write_buf)?;
+    fn send_pkt(&mut self, outgoing: &Ipv4Packet<Local>) -> TraceableResult {
+        outgoing.write_into(&mut self.write_buf)?;
 
         self.device
-            .write_all(self.write_buf.try_get(..pkt.total_len().into())?)?;
+            .write_all(self.write_buf.try_get(..outgoing.total_len().into())?)?;
 
-        self.logger.pkt_io(&pkt)
+        self.logger.pkt_io(outgoing)
     }
 }
 
