@@ -290,8 +290,8 @@ mod tests {
         super::*,
         crate::{
             ETHERNET_MTU,
-            ipv4_header::Ipv4Header,
             protocol::{
+                ipv4_header::Ipv4Header,
                 tcp::{
                     connections::ConnKey,
                     reassembly::TcpReassembly,

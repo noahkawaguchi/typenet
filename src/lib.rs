@@ -14,7 +14,6 @@ mod checksum;
 
 mod addr_pairs;
 mod endpoint;
-mod ipv4_header;
 mod logger;
 mod protocol;
 mod try_ops;

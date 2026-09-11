@@ -140,8 +140,7 @@ mod tests {
         super::*,
         crate::{
             ETHERNET_MTU,
-            ipv4_header::Ipv4Header,
-            protocol::{TcpSegment, ipv4_packet::Encode as _},
+            protocol::{TcpSegment, ipv4_header::Ipv4Header, ipv4_packet::Encode as _},
             try_ops::TryGet as _,
         },
         pretty_assertions::assert_matches,

@@ -4,11 +4,11 @@ use {
         addr_pairs::Ipv4AddrPair,
         endpoint::{Endpoint, Local, Remote},
         error::{TraceableError, TraceableResult},
-        ipv4_header::Ipv4Header,
         protocol::{
             Protocol,
             display::PrettyPayload,
             icmp_echo::IcmpEchoMsg,
+            ipv4_header::Ipv4Header,
             tcp::{TcpConnections, TcpSegment},
             udp::UdpDatagram,
         },

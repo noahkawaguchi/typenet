@@ -8,6 +8,7 @@ pub use tcp::TcpSegment;
 
 mod display;
 mod icmp_echo;
+mod ipv4_header;
 mod tcp;
 mod udp;
 
