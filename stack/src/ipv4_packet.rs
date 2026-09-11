@@ -51,9 +51,14 @@ impl<'a> Ipv4Packet<'a, Remote> {
         tcp_connections: &mut TcpConnections,
     ) -> TraceableResult<Option<Ipv4Packet<'a, Local>>> {
         match &self.router {
+            // ICMP Echo Request/Reply always echoes, so there's no app to pass
             ProtocolRouter::Icmp(msg) => Some(ProtocolRouter::Icmp(msg.create_reply())),
+
             // TCP is the only one that's actually optional or fallible
-            ProtocolRouter::Tcp(seg) => seg.create_reply(tcp_connections)?.map(ProtocolRouter::Tcp),
+            ProtocolRouter::Tcp(seg) => seg
+                .create_reply(app, tcp_connections)?
+                .map(ProtocolRouter::Tcp),
+
             ProtocolRouter::Udp(dgram) => Some(ProtocolRouter::Udp(dgram.create_reply(app))),
         }
         .map(|router| {

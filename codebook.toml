@@ -22,6 +22,7 @@ words = [
     "acked",
     "acking",
     "acks",
+    "backpressure",
     "cksum",
     "clippy",
     "cov",

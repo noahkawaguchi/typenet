@@ -14,7 +14,7 @@ fn stray_syn_out_of_window_gets_challenge_ack() -> TraceableResult {
     // sequence number"
     let reply =
         TcpSegment { seq_num: CLIENT_ISN - SeqOffset::new(20), flags: TcpFlags::Syn, ..CLIENT_PKT }
-            .create_reply(&mut connections)?;
+            .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -48,7 +48,7 @@ fn stray_syn_in_window_gets_challenge_ack() -> TraceableResult {
     // seq=CLIENT_ISN+1 == rcv_nxt, inside the receive window, reaches "Fourth, check the SYN bit"
     let reply =
         TcpSegment { seq_num: CLIENT_ISN + REMOTE_SYN_BYTE, flags: TcpFlags::Syn, ..CLIENT_PKT }
-            .create_reply(&mut connections)?;
+            .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -83,7 +83,7 @@ fn stray_syn_in_fin_wait_1_gets_challenge_ack() -> TraceableResult {
     // seq=CLIENT_ISN+1 == rcv_nxt, inside the receive window, reaches "Fourth, check the SYN bit"
     let reply =
         TcpSegment { seq_num: CLIENT_ISN + REMOTE_SYN_BYTE, flags: TcpFlags::Syn, ..CLIENT_PKT }
-            .create_reply(&mut connections)?;
+            .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -122,7 +122,7 @@ fn stray_syn_ack_gets_challenge_ack() -> TraceableResult {
         flags: TcpFlags::SynAck,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,

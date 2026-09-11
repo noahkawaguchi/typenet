@@ -15,6 +15,7 @@ mod test_utils;
 use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
+        application::Application,
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
         endpoint::{Endpoint, Local, Remote},
         protocol::{
@@ -96,9 +97,10 @@ impl TcpSegment<Remote> {
     /// updating connection state accordingly.
     pub(crate) fn create_reply(
         &self,
+        app: &mut impl Application,
         connections: &mut TcpConnections,
     ) -> TraceableResult<Option<TcpSegment<Local>>> {
-        SendInfo::decide_reply(self, connections).map(|maybe_send_info| {
+        SendInfo::decide_reply(app, self, connections).map(|maybe_send_info| {
             maybe_send_info.map(|send_info| {
                 TcpSegment::<Local>::from_pairs_and_info(
                     self.ip_pair.swapped(),
@@ -108,6 +110,17 @@ impl TcpSegment<Remote> {
             })
         })
     }
+
+    /// Calls `create_reply` with `TestApp` and `connections`.
+    #[cfg(test)]
+    fn create_test_reply(
+        &self,
+        connections: &mut TcpConnections,
+    ) -> TraceableResult<Option<TcpSegment<Local>>> {
+        use crate::application::TestApp;
+
+        self.create_reply(&mut TestApp, connections)
+    }
 }
 
 impl TcpSegment<Local> {
@@ -115,10 +128,11 @@ impl TcpSegment<Local> {
     /// receive... segments overlapping the range RCV.NXT to RCV.NXT + RCV.WND - 1 carry acceptable
     /// data or control" (RFC 9293, Section 4).
     ///
-    /// Currently left at max for simplicity because as an echo server, there's no application to
-    /// wait for. However, RCV.WND could be used in the future to bound the growth of the reassembly
-    /// and send buffers, for example throttling the peer's sending rate if they keep sending more
-    /// data than they are willing to receive.
+    /// Currently left at max for simplicity, since backpressure tied to how fast the application
+    /// actually consumes data is unimplemented. However, RCV.WND could be used in the future to
+    /// bound the growth of the reassembly and send buffers, for example throttling the peer's
+    /// sending rate if they keep sending more data than they are willing to receive in an echo
+    /// application.
     const RCV_WND: SeqOffset<u16, Remote> = SeqOffset::new(u16::MAX);
 
     fn from_pairs_and_info(
@@ -224,7 +238,7 @@ impl<S: Endpoint> TcpSegment<S> {
         // Urgent pointer
         buf.try_get_mut(18..20)?.copy_from_slice(&[0x00, 0x00]);
 
-        // Copy payload into reply if echoing
+        // Copy the application's payload into the reply, if any
         let tcp_len = self.inner_proto_len()?;
         if let Some(payload) = &self.payload {
             buf.try_get_mut(TCP_HDR_MIN_LEN.into()..tcp_len.into())?
@@ -294,6 +308,7 @@ mod tests {
         super::*,
         crate::{
             ETHERNET_MTU,
+            application::ShoutingTestApp,
             ipv4_header::Ipv4Header,
             protocol::{
                 tcp::state::{ConnState, SynReceived, SyncedState, TcpState, WindowState},
