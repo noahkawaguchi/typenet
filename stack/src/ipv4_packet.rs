@@ -6,7 +6,7 @@ use {
         endpoint::{Endpoint, Local, Remote},
         ipv4_header::Ipv4Header,
         protocol::{
-            Protocol,
+            Encode, Protocol,
             icmp_echo::IcmpEchoMsg,
             tcp::{TcpConnections, TcpSegment},
             udp::UdpDatagram,
@@ -15,29 +15,6 @@ use {
     std::fmt,
     typenet_utils::error::{TraceableError, TraceableResult},
 };
-
-/// Pretty protocol-handling types that can also be encoded into a byte buffer.
-pub trait Encode<S: Endpoint>: PrettyProtocol {
-    /// Copies data from `self` to write the protocol-specific header and payload into `buf`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if `buf` is not long enough or arithmetic overflow occurs.
-    fn write_into(&self, buf: &mut [u8]) -> TraceableResult;
-
-    /// Returns the protocol of `self`.
-    fn proto(&self) -> Protocol;
-
-    /// Returns the pair of IPv4 addresses of `self`.
-    fn get_ip_pair(&self) -> Ipv4AddrPair<S>;
-
-    /// Returns the number of bytes in `self`, including the protocol-specific header and payload.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if arithmetic overflow occurs.
-    fn proto_len(&self) -> TraceableResult<u16>;
-}
 
 /// A pretty-printable IPv4 header and protocol-specific header/payload.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]

@@ -3,8 +3,7 @@ use {
         addr_pairs::{Ipv4AddrPair, PortPair},
         display::{PrettyPayload, PrettyProtocol},
         endpoint::{Endpoint, Local, Remote},
-        ipv4_packet::Encode,
-        protocol::{Protocol, pseudo_hdr_cksum},
+        protocol::{Encode, Protocol, pseudo_hdr_cksum},
     },
     std::fmt,
     typenet_utils::{

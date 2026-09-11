@@ -17,9 +17,8 @@ use {
         addr_pairs::{Ipv4AddrPair, PortPair},
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
         endpoint::{Endpoint, Local, Remote},
-        ipv4_packet::Encode,
         protocol::{
-            Protocol, pseudo_hdr_cksum,
+            Encode, Protocol, pseudo_hdr_cksum,
             tcp::{
                 flags::TcpFlags,
                 payload::{LenOrDefault as _, TcpPayload},

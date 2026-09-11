@@ -155,8 +155,9 @@ mod tests {
     use {
         super::*,
         crate::{
-            ETHERNET_MTU, ipv4_header::Ipv4Header, ipv4_packet::Encode as _,
-            protocol::tcp::TcpSegment,
+            ETHERNET_MTU,
+            ipv4_header::Ipv4Header,
+            protocol::{Encode as _, tcp::TcpSegment},
         },
         pretty_assertions::assert_matches,
         typenet_utils::try_ops::TryGet as _,

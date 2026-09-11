@@ -4,8 +4,7 @@ use {
         checksum,
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
         endpoint::{Endpoint, Local, Remote},
-        ipv4_packet::Encode,
-        protocol::Protocol,
+        protocol::{Encode, Protocol},
     },
     std::fmt,
     typenet_utils::{

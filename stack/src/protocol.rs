@@ -3,13 +3,39 @@ pub mod tcp;
 pub mod udp;
 
 use {
-    crate::{ETHERNET_MTU, addr_pairs::Ipv4AddrPair, checksum, endpoint::Endpoint},
+    crate::{
+        ETHERNET_MTU, addr_pairs::Ipv4AddrPair, checksum, display::PrettyProtocol,
+        endpoint::Endpoint,
+    },
     std::fmt,
     typenet_utils::{
         error::{TraceableError, TraceableResult},
         try_ops::{TryGet as _, TryGetMut as _},
     },
 };
+
+/// Pretty protocol-handling types that can also be encoded into a byte buffer.
+pub trait Encode<S: Endpoint>: PrettyProtocol {
+    /// Copies data from `self` to write the protocol-specific header and payload into `buf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if `buf` is not long enough or arithmetic overflow occurs.
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult;
+
+    /// Returns the protocol of `self`.
+    fn proto(&self) -> Protocol;
+
+    /// Returns the pair of IPv4 addresses of `self`.
+    fn get_ip_pair(&self) -> Ipv4AddrPair<S>;
+
+    /// Returns the number of bytes in `self`, including the protocol-specific header and payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if arithmetic overflow occurs.
+    fn proto_len(&self) -> TraceableResult<u16>;
+}
 
 /// Calculates the TCP/UDP checksum of the pseudo-header + `data`. `data` should cover the TCP/UDP
 /// header and payload. Does not zero out the checksum field inside the header of `data` before
