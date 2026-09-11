@@ -293,7 +293,7 @@ impl<S: Endpoint> fmt::Display for TcpSegment<S> {
 #[cfg(test)]
 mod tests {
     mod abort;
-    mod echo;
+    mod data;
     mod establish;
     mod flow_control;
     mod parse;
