@@ -7,7 +7,7 @@ use {
         logger::Logger,
         protocol::{
             engine::{Engine, ShutdownOutcome},
-            router::Ipv4Packet,
+            ipv4_packet::Ipv4Packet,
         },
         try_ops::TryGet as _,
     },

@@ -6,8 +6,8 @@ use {
         protocol::{
             Protocol,
             display::PrettyPayload,
+            ipv4_packet::{Encode, PrettyProtocol},
             pseudo_hdr_cksum,
-            router::{Encode, PrettyProtocol},
         },
         try_ops::{TryAdd as _, TryGet as _, TryGetMut as _},
     },

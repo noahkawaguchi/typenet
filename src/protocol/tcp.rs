@@ -17,8 +17,8 @@ use {
         protocol::{
             Protocol,
             display::{PrettyPayload, WithThousandsSeparators as _},
+            ipv4_packet::{Encode, PrettyProtocol},
             pseudo_hdr_cksum,
-            router::{Encode, PrettyProtocol},
             tcp::{
                 flags::TcpFlags,
                 payload::{LenOrDefault as _, TcpPayload},

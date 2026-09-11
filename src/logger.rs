@@ -2,7 +2,7 @@ use {
     crate::{
         endpoint::Endpoint,
         error::{TraceableError, TraceableResult},
-        protocol::router::{Ipv4Packet, PrettyProtocol as _},
+        protocol::ipv4_packet::{Ipv4Packet, PrettyProtocol as _},
     },
     std::{
         fmt,
