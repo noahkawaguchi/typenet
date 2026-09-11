@@ -2,19 +2,16 @@ use {
     crate::{
         endpoint::{Local, Remote},
         error::TraceableResult,
-        protocol::{
-            TcpConnections, TcpSegment,
-            tcp::{
-                LOCAL_FIN_BYTE, REMOTE_FIN_BYTE, REMOTE_SYN_BYTE,
-                connections::ConnKey,
-                flags::TcpFlags,
-                payload::{LenOrDefault as _, TcpPayload},
-                pending_segment::PendingSegment,
-                seq_space::SeqPoint,
-                state::{
-                    CloseWait, Closing, ConnState, Established, FinWait1, FinWait2, LastAck,
-                    SynReceived, SyncedState, TcpState,
-                },
+        protocol::tcp::{
+            LOCAL_FIN_BYTE, REMOTE_FIN_BYTE, REMOTE_SYN_BYTE, TcpSegment,
+            connections::{ConnKey, TcpConnections},
+            flags::TcpFlags,
+            payload::{LenOrDefault as _, TcpPayload},
+            pending_segment::PendingSegment,
+            seq_space::SeqPoint,
+            state::{
+                CloseWait, Closing, ConnState, Established, FinWait1, FinWait2, LastAck,
+                SynReceived, SyncedState, TcpState,
             },
         },
         sys,

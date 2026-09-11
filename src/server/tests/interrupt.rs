@@ -1,65 +1,6 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn already_draining_reports_time_left() -> TraceableResult {
-    const GRACE_PERIOD: Duration = Duration::from_secs(10);
-
-    let now = Instant::now();
-
-    assert_eq!(
-        Server { shutdown_deadline: Some(now.try_add(GRACE_PERIOD)?), ..decision_test_server() }
-            .decide_shutdown(now)?,
-        ShutdownDecision::AlreadyDraining { time_left: GRACE_PERIOD }
-    );
-
-    Ok(())
-}
-
-#[test]
-fn established_connection_begins_draining_with_fin_ack_and_deadline() -> TraceableResult {
-    const GRACE_PERIOD: Duration = Duration::from_secs(10);
-
-    let now = Instant::now();
-
-    assert_matches!(
-        Server {
-            tcp_connections: TcpConnections::default().after_handshake(),
-            shutdown_grace_period: GRACE_PERIOD,
-            ..decision_test_server()
-        }
-        .decide_shutdown(now)?,
-        ShutdownDecision::BeganDraining { to_send, deadline }
-            if to_send.len() == 1 && deadline == now.try_add(GRACE_PERIOD)?
-    );
-
-    Ok(())
-}
-
-#[test]
-fn no_established_connections_reports_no_connections() -> TraceableResult {
-    assert_eq!(
-        Server { tcp_connections: TcpConnections::default(), ..decision_test_server() }
-            .decide_shutdown(Instant::now())?,
-        ShutdownDecision::NoConnections
-    );
-
-    Ok(())
-}
-
-#[test]
-fn overflowing_deadline_errors_instead_of_panicking() {
-    assert_matches!(
-        Server {
-            tcp_connections: TcpConnections::default().after_handshake(),
-            shutdown_grace_period: Duration::MAX,
-            ..decision_test_server()
-        }
-        .decide_shutdown(Instant::now()),
-        Err(e) if e.to_string().contains("Overflowed")
-    );
-}
-
-#[test]
 fn first_interrupt_with_established_connection_sends_fin_ack_and_continues() -> TraceableResult {
     // The first poll call simulates the shutdown signal, then the second lets the (already-elapsed)
     // grace period end the loop instead of running forever. Proves that the loop sends the packets
@@ -78,7 +19,7 @@ fn first_interrupt_with_established_connection_sends_fin_ack_and_continues() -> 
 
     let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
 
-    assert_eq!(decode_mock_pkt(write)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
+    assert_eq!(TcpSegment::decode_test_pkt(write)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
 
     Ok(())
 }
@@ -120,7 +61,7 @@ fn second_interrupt_while_draining_does_not_resend_or_exit() -> TraceableResult 
     let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
 
     assert_eq!(
-        decode_mock_pkt(write)?,
+        TcpSegment::decode_test_pkt(write)?,
         TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE,
         "Should be the original FIN-ACK, not a resend of a different segment"
     );

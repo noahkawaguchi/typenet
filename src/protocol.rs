@@ -1,9 +1,14 @@
-pub mod router;
+pub mod engine;
+pub mod ipv4_packet;
 
-pub use tcp::{RtoConfig, TcpConnections, TcpSegment};
+#[cfg(test)]
+pub use tcp::TcpConnections;
+#[cfg(test)]
+pub use tcp::TcpSegment;
 
 mod display;
 mod icmp_echo;
+mod ipv4_header;
 mod tcp;
 mod udp;
 

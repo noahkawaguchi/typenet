@@ -1,51 +1,44 @@
 use {super::*, pretty_assertions::assert_eq};
 
 #[test]
-fn no_deadline_no_closing() {
-    let server = decision_test_server();
-    assert!(server.shutdown_deadline.is_none());
-    assert!(!server.tcp_connections.closing_in_progress());
-    assert!(!server.shutting_down_and_no_connections_closing());
-}
+fn poll_timeout_reflects_shutdown_deadline_across_a_real_run() -> TraceableResult {
+    // Showing here that the loop actually uses the computed timeout when polling, and that the
+    // grace period being elapsed actually ends the loop.
+    //
+    // Even though the exact `Duration` values come from `Instant::now()` calls, the grace period
+    // and initial RTO are both `Duration::ZERO`, so the duration since a slightly later
+    // `Instant::now()` call saturates to `Duration::ZERO` for the second timeout.
 
-#[test]
-fn no_deadline_some_closing() {
-    let mut tcp_connections = TcpConnections::default().after_handshake();
-    tcp_connections.close_established();
-    let server = Server { tcp_connections, ..decision_test_server() };
+    let observed_timeouts = RefCell::new(Vec::new());
+    let poll = MockPoll::with_results([Err(io::ErrorKind::Interrupted.into()), Ok(false)]);
+    let mut device = MockDevice::with_read_results([])?;
 
-    assert!(server.shutdown_deadline.is_none());
-    assert!(server.tcp_connections.closing_in_progress());
-    assert!(!server.shutting_down_and_no_connections_closing());
-}
+    run_test_server(
+        TcpConnections::default().after_handshake(),
+        &mut device,
+        |_, timeout| {
+            observed_timeouts
+                .try_borrow_mut()
+                .map_err(io::Error::other)?
+                .push(timeout);
 
-#[test]
-fn some_deadline_some_closing() {
-    let mut tcp_connections = TcpConnections::default().after_handshake();
-    tcp_connections.close_established();
+            poll.next()
+        },
+        || true,
+        IMMEDIATE_GRACE_PERIOD,
+    )?;
 
-    let server = Server {
-        tcp_connections,
-        shutdown_deadline: Some(Instant::now()),
-        ..decision_test_server()
-    };
+    assert_eq!(
+        observed_timeouts.into_inner().as_slice(),
+        [None, Some(Duration::ZERO)],
+        "No timeout before the interrupt, then a zero timeout once draining begins"
+    );
 
-    assert!(server.shutdown_deadline.is_some());
-    assert!(server.tcp_connections.closing_in_progress());
-    assert!(!server.shutting_down_and_no_connections_closing());
-}
+    let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
 
-#[test]
-fn some_deadline_no_closing() {
-    let server = Server {
-        tcp_connections: TcpConnections::default(),
-        shutdown_deadline: Some(Instant::now()),
-        ..decision_test_server()
-    };
+    assert_eq!(TcpSegment::decode_test_pkt(write)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
 
-    assert!(server.shutdown_deadline.is_some());
-    assert!(!server.tcp_connections.closing_in_progress());
-    assert!(server.shutting_down_and_no_connections_closing());
+    Ok(())
 }
 
 #[test]
@@ -57,9 +50,9 @@ fn exits_once_connections_finish_closing() -> TraceableResult {
 
     let poll_calls = Cell::new(0u8);
     let poll = MockPoll::with_results([Err(io::ErrorKind::Interrupted.into()), Ok(true)]);
-    let mut device = MockDevice::with_read_results([Ok(encode_mock_pkt(
-        &TcpSegment::CLIENT_FIN_ACK_COMPLETING_CLOSE,
-    )?)])?;
+    let mut device = MockDevice::with_read_results([Ok(
+        TcpSegment::CLIENT_FIN_ACK_COMPLETING_CLOSE.encode_test_pkt()?,
+    )])?;
 
     run_test_server(
         TcpConnections::default().after_handshake(),
@@ -80,8 +73,12 @@ fn exits_once_connections_finish_closing() -> TraceableResult {
         );
     };
 
-    assert_eq!(decode_mock_pkt(fin_ack)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
-    assert_eq!(decode_mock_pkt(final_ack)?, TcpSegment::SERVER_FINAL_ACK_COMPLETING_CLOSE);
+    assert_eq!(TcpSegment::decode_test_pkt(fin_ack)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
+
+    assert_eq!(
+        TcpSegment::decode_test_pkt(final_ack)?,
+        TcpSegment::SERVER_FINAL_ACK_COMPLETING_CLOSE
+    );
 
     Ok(())
 }

@@ -11,7 +11,7 @@ fn due_retransmission_is_sent_as_real_io() -> TraceableResult {
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
-        TcpConnections::new(RtoConfig::default(), 5).with_syn_rcv(),
+        TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv(),
         &mut device,
         |_, _| poll.next(),
         || true,
@@ -20,7 +20,7 @@ fn due_retransmission_is_sent_as_real_io() -> TraceableResult {
 
     let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
 
-    assert_eq!(decode_mock_pkt(write)?, TcpSegment::SERVER_SYN_ACK);
+    assert_eq!(TcpSegment::decode_test_pkt(write)?, TcpSegment::SERVER_SYN_ACK);
 
     Ok(())
 }
@@ -36,7 +36,7 @@ fn retransmission_does_not_drop_the_connection() -> TraceableResult {
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
-        TcpConnections::new(RtoConfig::default(), 5).with_syn_rcv(),
+        TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv(),
         &mut device,
         |_, _| poll.next(),
         || true,
@@ -51,7 +51,7 @@ fn retransmission_does_not_drop_the_connection() -> TraceableResult {
 
     for write in [first, second] {
         assert_eq!(
-            decode_mock_pkt(write)?,
+            TcpSegment::decode_test_pkt(write)?,
             TcpSegment::SERVER_SYN_ACK,
             "Every retransmission should resend the same unacked SYN-ACK unchanged"
         );
@@ -76,7 +76,7 @@ fn gives_up_and_drops_connection_after_max_retries() -> TraceableResult {
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
-        TcpConnections::new(RtoConfig::default(), 2).with_syn_rcv(),
+        TcpConnections::test_new(Duration::ZERO, 2).with_syn_rcv(),
         &mut device,
         |_, _| poll.next(),
         || true,
@@ -89,7 +89,7 @@ fn gives_up_and_drops_connection_after_max_retries() -> TraceableResult {
 
     for write in [first, second] {
         assert_eq!(
-            decode_mock_pkt(write)?,
+            TcpSegment::decode_test_pkt(write)?,
             TcpSegment::SERVER_SYN_ACK,
             "Every retransmission should resend the same unacked SYN-ACK unchanged"
         );

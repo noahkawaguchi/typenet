@@ -14,9 +14,9 @@ fn write_into_produces_correct_bytes_with_no_payload() -> TraceableResult {
     };
 
     let mut reply = [0u8; ETHERNET_MTU];
-    let tcp_len = seg.write_into(&mut reply[20..])?;
+    seg.write_into(&mut reply[20..])?;
 
-    assert_eq!(tcp_len, 20, "no payload, so length is just the header");
+    assert_eq!(seg.proto_len()?, 20, "no payload, so length is just the header");
 
     assert_eq!(&reply[20..22], &[0x00, 0x50]); // Source port: 80
     assert_eq!(&reply[22..24], &[0x04, 0xD2]); // Dest port: 1234
@@ -46,9 +46,9 @@ fn write_into_produces_correct_bytes_with_payload() -> TraceableResult {
     };
 
     let mut reply = [0u8; ETHERNET_MTU];
-    let tcp_len = seg.write_into(&mut reply[20..])?;
+    seg.write_into(&mut reply[20..])?;
 
-    assert_eq!(tcp_len, 25, "header (20 bytes) + payload (5 bytes)");
+    assert_eq!(seg.proto_len()?, 25, "header (20 bytes) + payload (5 bytes)");
 
     // Payload copied immediately after the 20-byte header
     assert_eq!(&reply[40..45], b"Hello");

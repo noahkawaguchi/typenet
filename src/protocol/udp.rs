@@ -6,8 +6,8 @@ use {
         protocol::{
             Protocol,
             display::PrettyPayload,
+            ipv4_packet::{Encode, PrettyProtocol},
             pseudo_hdr_cksum,
-            router::{Encode, PrettyProtocol},
         },
         try_ops::{TryAdd as _, TryGet as _, TryGetMut as _},
     },
@@ -18,7 +18,7 @@ use {
 const UDP_HDR_LEN: u16 = 8;
 
 /// Manages UDP headers, data, and reply logic. Sent from `S`.
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub struct UdpDatagram<'a, S: Endpoint> {
     /// Not a part of the UDP header, but required for checksum calculation.
     ip_pair: Ipv4AddrPair<S>,
@@ -63,43 +63,45 @@ impl<'a> UdpDatagram<'a, Remote> {
 }
 
 impl Encode<Local> for UdpDatagram<'_, Local> {
-    fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> {
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult {
         // Source and destination ports
         buf.try_get_mut(..2)?
             .copy_from_slice(&self.ports.src.to_be_bytes());
         buf.try_get_mut(2..4)?
             .copy_from_slice(&self.ports.dst.to_be_bytes());
 
-        // UDP length: fixed UDP header length (8 bytes) + length of echo payload
-        let udp_len = UDP_HDR_LEN.try_add(self.payload.len().try_into()?)?;
+        let udp_len = self.proto_len()?;
         buf.try_get_mut(4..6)?
             .copy_from_slice(&udp_len.to_be_bytes());
 
         // Checksum at bytes 6-7 calculated later with pseudo-header
 
         // Copy payload for echo
-        buf.try_get_mut(
-            usize::from(UDP_HDR_LEN)..usize::from(UDP_HDR_LEN).try_add(self.payload.len())?,
-        )?
-        .copy_from_slice(self.payload);
+        buf.try_get_mut(UDP_HDR_LEN.into()..udp_len.into())?
+            .copy_from_slice(self.payload);
 
         // Zero out checksum field before calculating checksum
         buf.try_get_mut(6..8)?.copy_from_slice(&[0x00, 0x00]);
 
         let udp_cksum =
-            pseudo_hdr_cksum(buf.try_get(..usize::from(udp_len))?, self.ip_pair, self.proto())?;
+            pseudo_hdr_cksum(buf.try_get(..udp_len.into())?, self.ip_pair, self.proto())?;
 
         // A computed checksum of 0 must be transmitted as 0xFFFF because a checksum field of all
         // zeros means the sender chose not to compute one (RFC 768, RFC 1122, Section 4.1.3.4).
         buf.try_get_mut(6..8)?
             .copy_from_slice(&if udp_cksum == 0 { 0xFFFF } else { udp_cksum }.to_be_bytes());
 
-        Ok(udp_len)
+        Ok(())
     }
 
     fn proto(&self) -> Protocol { Protocol::Udp }
 
     fn get_ip_pair(&self) -> Ipv4AddrPair<Local> { self.ip_pair }
+
+    fn proto_len(&self) -> TraceableResult<u16> {
+        // UDP length: fixed UDP header length (8 bytes) + length of echo payload
+        UDP_HDR_LEN.try_add(self.payload.len().try_into()?)
+    }
 }
 
 impl<S: Endpoint> PrettyProtocol for UdpDatagram<'_, S> {
@@ -261,7 +263,7 @@ mod tests {
         let dgram = UdpDatagram::parse(&REQUEST, REMOTE_TO_LOCAL_IP_PAIR)?;
         let mut reply_buf = [0u8; ETHERNET_MTU];
         let reply = dgram.create_reply();
-        let udp_len = reply.write_into(&mut reply_buf[20..])?;
+        reply.write_into(&mut reply_buf[20..])?;
 
         // IPs should be swapped
         assert_eq!(reply.get_ip_pair(), REMOTE_TO_LOCAL_IP_PAIR.swapped());
@@ -275,7 +277,7 @@ mod tests {
         assert_eq!(&reply_buf[28..36], b"Hello!!!");
 
         // Verify UDP length
-        assert_eq!(udp_len, 8 + 8);
+        assert_eq!(reply.proto_len()?, 8 + 8);
 
         // Verify checksum
         assert_eq!(

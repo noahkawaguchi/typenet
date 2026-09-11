@@ -1,4 +1,4 @@
-pub use connections::{RtoConfig, TcpConnections};
+pub use connections::TcpConnections;
 
 mod connections;
 mod flags;
@@ -17,11 +17,11 @@ use {
         protocol::{
             Protocol,
             display::{PrettyPayload, WithThousandsSeparators as _},
+            ipv4_packet::{Encode, PrettyProtocol},
             pseudo_hdr_cksum,
-            router::{Encode, PrettyProtocol},
             tcp::{
                 flags::TcpFlags,
-                payload::TcpPayload,
+                payload::{LenOrDefault as _, TcpPayload},
                 send_info::SendInfo,
                 seq_space::{SeqOffset, SeqPoint},
             },
@@ -135,9 +135,10 @@ impl TcpSegment<Local> {
 }
 
 impl Encode<Local> for TcpSegment<Local> {
-    fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> { self.inner_write_into(buf) }
+    fn write_into(&self, buf: &mut [u8]) -> TraceableResult { self.inner_write_into(buf) }
     fn proto(&self) -> Protocol { Protocol::Tcp }
     fn get_ip_pair(&self) -> Ipv4AddrPair<Local> { self.ip_pair }
+    fn proto_len(&self) -> TraceableResult<u16> { self.inner_proto_len() }
 }
 
 impl<S: Endpoint> TcpSegment<S> {
@@ -188,7 +189,7 @@ impl<S: Endpoint> TcpSegment<S> {
     ///
     /// The remote to local direction is for tests only. Only the local to remote direction
     /// should be exposed in production code.
-    fn inner_write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> {
+    fn inner_write_into(&self, buf: &mut [u8]) -> TraceableResult {
         // Source and destination ports
         buf.try_get_mut(..2)?
             .copy_from_slice(&self.ports.src.to_be_bytes());
@@ -218,39 +219,28 @@ impl<S: Endpoint> TcpSegment<S> {
         // Urgent pointer
         buf.try_get_mut(18..20)?.copy_from_slice(&[0x00, 0x00]);
 
-        // Copy payload into reply if echoing and determine segment length
-        // TCP segment length = minimum TCP header length (20 bytes) + payload length (0+ bytes)
-        let tcp_seg_len = u16::from(TCP_HDR_MIN_LEN).try_add(
-            self.payload
-                .as_ref()
-                .map(|payload| -> TraceableResult<u16> {
-                    let payload_len = payload.len().get();
-
-                    buf.try_get_mut(
-                        usize::from(TCP_HDR_MIN_LEN)
-                            ..usize::from(TCP_HDR_MIN_LEN).try_add(usize::from(payload_len))?,
-                    )?
-                    .copy_from_slice(payload.as_bytes());
-
-                    Ok(payload_len)
-                })
-                .transpose()?
-                .unwrap_or_default(),
-        )?;
+        // Copy payload into reply if echoing
+        let tcp_len = self.inner_proto_len()?;
+        if let Some(payload) = &self.payload {
+            buf.try_get_mut(TCP_HDR_MIN_LEN.into()..tcp_len.into())?
+                .copy_from_slice(payload.as_bytes());
+        }
 
         // Zero out checksum field before calculating checksum
         buf.try_get_mut(16..18)?.copy_from_slice(&[0x00, 0x00]);
 
-        let tcp_cksum = pseudo_hdr_cksum(
-            buf.try_get(..usize::from(tcp_seg_len))?,
-            self.ip_pair,
-            Protocol::Tcp,
-        )?;
+        let tcp_cksum =
+            pseudo_hdr_cksum(buf.try_get(..tcp_len.into())?, self.ip_pair, Protocol::Tcp)?;
 
         buf.try_get_mut(16..18)?
             .copy_from_slice(&tcp_cksum.to_be_bytes());
 
-        Ok(tcp_seg_len)
+        Ok(())
+    }
+
+    fn inner_proto_len(&self) -> TraceableResult<u16> {
+        // TCP segment length = minimum TCP header length (20 bytes) + payload length (0+ bytes)
+        u16::from(TCP_HDR_MIN_LEN).try_add(self.payload.len_or_default())
     }
 }
 
@@ -300,8 +290,8 @@ mod tests {
         super::*,
         crate::{
             ETHERNET_MTU,
-            ipv4_header::Ipv4Header,
             protocol::{
+                ipv4_header::Ipv4Header,
                 tcp::{
                     connections::ConnKey,
                     reassembly::TcpReassembly,
@@ -335,12 +325,32 @@ mod tests {
             flags: TcpFlags::FinAck,
             ..CLIENT_PKT
         };
+
+        /// Encodes `self` into a full IPv4 packet for testing purposes.
+        ///
+        /// This is test only because a segment from the remote endpoint would never be encoded into
+        /// bytes in production.
+        pub(crate) fn encode_test_pkt(&self) -> TraceableResult<Vec<u8>> {
+            let mut buf = [0u8; ETHERNET_MTU];
+            self.write_into(&mut buf[Ipv4Header::REPLY_HDR_LEN..])?;
+
+            let ipv4_hdr = Ipv4Header::test_try_new_remote(
+                self.proto(),
+                self.get_ip_pair(),
+                self.proto_len()?,
+            )?;
+
+            ipv4_hdr.test_write_into_remote(&mut buf);
+
+            Ok(buf.try_get(..ipv4_hdr.total_len.into())?.to_vec())
+        }
     }
 
     impl Encode<Remote> for TcpSegment<Remote> {
-        fn write_into(&self, buf: &mut [u8]) -> TraceableResult<u16> { self.inner_write_into(buf) }
+        fn write_into(&self, buf: &mut [u8]) -> TraceableResult { self.inner_write_into(buf) }
         fn proto(&self) -> Protocol { Protocol::Tcp }
         fn get_ip_pair(&self) -> Ipv4AddrPair<Remote> { self.ip_pair }
+        fn proto_len(&self) -> TraceableResult<u16> { self.inner_proto_len() }
     }
 
     impl TcpSegment<Local> {
@@ -371,16 +381,14 @@ mod tests {
             ..SERVER_REPLY
         };
 
-        /// Parses `data` as a TCP header and payload in the local to remote direction for testing
-        /// purposes only.
+        /// Decodes a full IPv4 packet in the local to remote direction into a `TcpSegment` so tests
+        /// can assert on structs instead of raw bytes.
         ///
-        /// This is a test-only version because a segment created locally would never be parsed from
-        /// bytes in production.
-        pub(crate) fn test_parse_local(
-            data: &[u8],
-            ip_pair: Ipv4AddrPair<Local>,
-        ) -> TraceableResult<Self> {
-            Self::inner_parse(data, ip_pair)
+        /// This is test only because a segment created locally would never be parsed from bytes in
+        /// production.
+        pub fn decode_test_pkt(bytes: &[u8]) -> TraceableResult<Self> {
+            let (ipv4_hdr, payload) = Ipv4Header::test_parse_local(bytes)?;
+            Self::inner_parse(payload, ipv4_hdr.ip_pair)
         }
     }
 }

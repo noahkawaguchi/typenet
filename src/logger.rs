@@ -2,8 +2,7 @@ use {
     crate::{
         endpoint::Endpoint,
         error::{TraceableError, TraceableResult},
-        ipv4_header::Ipv4Header,
-        protocol::router::PrettyProtocol,
+        protocol::ipv4_packet::{Ipv4Packet, PrettyProtocol as _},
     },
     std::{
         fmt,
@@ -104,11 +103,7 @@ impl Logger {
     }
 
     /// Logs receipt or transmission of a packet to stdout if and how the log level allows.
-    pub(crate) fn pkt_io<S: Endpoint>(
-        &self,
-        ipv4_hdr: &Ipv4Header<S>,
-        pretty_proto: &impl PrettyProtocol,
-    ) -> TraceableResult {
+    pub(crate) fn pkt_io<S: Endpoint>(&self, pkt: &Ipv4Packet<'_, S>) -> TraceableResult {
         match self.level {
             LogLevel::Silent | LogLevel::ServerInfo => {}
 
@@ -119,9 +114,9 @@ impl Logger {
 
             level @ (LogLevel::PktDetails | LogLevel::PktFull) => {
                 println!(
-                    "{}\n{ipv4_hdr}\n{pretty_proto}\n{}",
+                    "{}\n{pkt}\n{}",
                     Timestamp(self.birth),
-                    pretty_proto.pretty_payload(level == LogLevel::PktFull)
+                    pkt.pretty_payload(level == LogLevel::PktFull)
                 );
             }
         }
