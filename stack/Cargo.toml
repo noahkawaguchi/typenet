@@ -1,0 +1,24 @@
+[package]
+name    = "typenet-stack"
+version = "0.1.0"
+edition = "2024"
+
+[[bench]]
+harness           = false
+name              = "checksum"
+required-features = ["bench-internals"]
+
+[dependencies]
+typenet-utils.path = "../utils"
+
+[dev-dependencies]
+criterion.workspace         = true
+pretty_assertions.workspace = true
+typenet-utils               = { path = "../utils", features = ["test-utils"] }
+
+[features]
+bench-internals = [] # Used for compiling/exposing some internals only in benchmarks
+test-utils      = []
+
+[lints]
+workspace = true

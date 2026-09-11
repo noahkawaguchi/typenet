@@ -1,0 +1,16 @@
+[package]
+name    = "typenet-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libc.workspace     = true
+typenet-stack.path = "../stack"
+typenet-utils.path = "../utils"
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+typenet-stack               = { path = "../stack", features = ["test-utils"] }
+
+[lints]
+workspace = true
