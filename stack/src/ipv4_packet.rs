@@ -2,11 +2,11 @@ use {
     crate::{
         ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
+        display::PrettyPayload,
         endpoint::{Endpoint, Local, Remote},
         ipv4_header::Ipv4Header,
         protocol::{
             Protocol,
-            display::PrettyPayload,
             icmp_echo::IcmpEchoMsg,
             tcp::{TcpConnections, TcpSegment},
             udp::UdpDatagram,

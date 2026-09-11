@@ -1,4 +1,3 @@
-pub mod display;
 pub mod icmp_echo;
 pub mod tcp;
 pub mod udp;

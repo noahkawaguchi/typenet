@@ -3,8 +3,8 @@ use std::fmt::{self, Write as _};
 /// Wrapper implementing `Display` to convert the raw bytes of a payload into a printable
 /// representation of its length, whether it is UTF-8, and optionally its content.
 pub struct PrettyPayload<'a> {
-    pub(super) data: &'a [u8],
-    pub(super) include_content: bool,
+    pub(crate) data: &'a [u8],
+    pub(crate) include_content: bool,
 }
 
 impl fmt::Display for PrettyPayload<'_> {
@@ -43,9 +43,9 @@ impl fmt::Display for PrettyPayload<'_> {
 }
 
 /// Wrapper implementing `Display` for thousands-separator formatting.
-pub(super) struct ThousandsSeparated<T>(pub(super) T);
+pub struct ThousandsSeparated<T>(pub(crate) T);
 
-pub(super) trait WithThousandsSeparators: Sized
+pub trait WithThousandsSeparators: Sized
 where
     ThousandsSeparated<Self>: fmt::Display,
 {

@@ -17,6 +17,7 @@ pub mod checksum;
 mod checksum;
 
 mod addr_pairs;
+mod display;
 mod ipv4_header;
 mod protocol;
 

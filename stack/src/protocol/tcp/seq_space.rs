@@ -1,5 +1,5 @@
 use {
-    crate::protocol::display::ThousandsSeparated,
+    crate::display::ThousandsSeparated,
     std::{
         fmt,
         marker::PhantomData,

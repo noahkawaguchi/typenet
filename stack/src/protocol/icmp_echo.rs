@@ -2,12 +2,10 @@ use {
     crate::{
         addr_pairs::Ipv4AddrPair,
         checksum,
+        display::{PrettyPayload, WithThousandsSeparators as _},
         endpoint::{Endpoint, Local, Remote},
         ipv4_packet::{Encode, PrettyProtocol},
-        protocol::{
-            Protocol,
-            display::{PrettyPayload, WithThousandsSeparators as _},
-        },
+        protocol::Protocol,
     },
     std::fmt,
     typenet_utils::{
