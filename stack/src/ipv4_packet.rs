@@ -2,7 +2,7 @@ use {
     crate::{
         ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
-        display::PrettyPayload,
+        display::{PrettyPayload, PrettyProtocol},
         endpoint::{Endpoint, Local, Remote},
         ipv4_header::Ipv4Header,
         protocol::{
@@ -15,14 +15,6 @@ use {
     std::fmt,
     typenet_utils::error::{TraceableError, TraceableResult},
 };
-
-/// Protocol-handling types that can be displayed as a string and can have their payload pretty
-/// printed.
-pub trait PrettyProtocol: fmt::Display {
-    /// Wraps raw payload bytes that may be UTF-8, non-UTF-8, or empty in a `PrettyPayload` for
-    /// pretty printing. If `include_content` is `false`, prints length only.
-    fn pretty_payload(&self, include_content: bool) -> PrettyPayload<'_>;
-}
 
 /// Pretty protocol-handling types that can also be encoded into a byte buffer.
 pub trait Encode<S: Endpoint>: PrettyProtocol {

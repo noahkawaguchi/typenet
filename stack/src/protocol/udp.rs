@@ -1,9 +1,9 @@
 use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
-        display::PrettyPayload,
+        display::{PrettyPayload, PrettyProtocol},
         endpoint::{Endpoint, Local, Remote},
-        ipv4_packet::{Encode, PrettyProtocol},
+        ipv4_packet::Encode,
         protocol::{Protocol, pseudo_hdr_cksum},
     },
     std::fmt,

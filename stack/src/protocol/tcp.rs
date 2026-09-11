@@ -15,9 +15,9 @@ mod test_utils;
 use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
-        display::{PrettyPayload, WithThousandsSeparators as _},
+        display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
         endpoint::{Endpoint, Local, Remote},
-        ipv4_packet::{Encode, PrettyProtocol},
+        ipv4_packet::Encode,
         protocol::{
             Protocol, pseudo_hdr_cksum,
             tcp::{

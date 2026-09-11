@@ -5,10 +5,7 @@ use {
         str::FromStr,
         time::Instant,
     },
-    typenet_stack::{
-        endpoint::Endpoint,
-        ipv4_packet::{Ipv4Packet, PrettyProtocol as _},
-    },
+    typenet_stack::{display::PrettyProtocol as _, endpoint::Endpoint, ipv4_packet::Ipv4Packet},
     typenet_utils::error::{TraceableError, TraceableResult},
 };
 

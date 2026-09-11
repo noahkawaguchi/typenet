@@ -1,5 +1,13 @@
 use std::fmt::{self, Write as _};
 
+/// Protocol-handling types that can be displayed as a string and can have their payload pretty
+/// printed.
+pub trait PrettyProtocol: fmt::Display {
+    /// Wraps raw payload bytes that may be UTF-8, non-UTF-8, or empty in a `PrettyPayload` for
+    /// pretty printing. If `include_content` is `false`, prints length only.
+    fn pretty_payload(&self, include_content: bool) -> PrettyPayload<'_>;
+}
+
 /// Wrapper implementing `Display` to convert the raw bytes of a payload into a printable
 /// representation of its length, whether it is UTF-8, and optionally its content.
 pub struct PrettyPayload<'a> {
@@ -43,9 +51,9 @@ impl fmt::Display for PrettyPayload<'_> {
 }
 
 /// Wrapper implementing `Display` for thousands-separator formatting.
-pub struct ThousandsSeparated<T>(pub(crate) T);
+pub(crate) struct ThousandsSeparated<T>(pub(crate) T);
 
-pub trait WithThousandsSeparators: Sized
+pub(crate) trait WithThousandsSeparators: Sized
 where
     ThousandsSeparated<Self>: fmt::Display,
 {

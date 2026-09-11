@@ -6,6 +6,7 @@
 #[cfg(feature = "test-utils")]
 pub use protocol::tcp::{TcpConnections, TcpSegment};
 
+pub mod display;
 pub mod endpoint;
 pub mod engine;
 pub mod ipv4_packet;
@@ -17,7 +18,6 @@ pub mod checksum;
 mod checksum;
 
 mod addr_pairs;
-mod display;
 mod ipv4_header;
 mod protocol;
 
