@@ -54,7 +54,7 @@ impl<'a> Ipv4Packet<'a, Remote> {
             ProtocolRouter::Icmp(msg) => Some(ProtocolRouter::Icmp(msg.create_reply())),
             // TCP is the only one that's actually optional or fallible
             ProtocolRouter::Tcp(seg) => seg.create_reply(tcp_connections)?.map(ProtocolRouter::Tcp),
-            ProtocolRouter::Udp(dgram) => Some(ProtocolRouter::Udp(dgram.create_reply())),
+            ProtocolRouter::Udp(dgram) => Some(ProtocolRouter::Udp(dgram.create_reply(app))),
         }
         .map(|router| {
             Ok(Ipv4Packet {

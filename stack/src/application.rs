@@ -26,3 +26,19 @@ impl Application for TestApp {
         send_buffer.extend(data.iter().copied());
     }
 }
+
+/// An `Application` that capitalizes all ASCII. Used for tests that need to prove a reply's content
+/// actually came from the application, rather than merely happening to match a hardcoded echo.
+#[cfg(test)]
+pub(crate) struct ShoutingTestApp;
+
+#[cfg(test)]
+impl Application for ShoutingTestApp {
+    fn handle_udp<'a>(&mut self, payload: Cow<'a, [u8]>) -> Cow<'a, [u8]> {
+        Cow::Owned(payload.iter().map(u8::to_ascii_uppercase).collect())
+    }
+
+    fn handle_tcp(&mut self, data: &[u8], send_buffer: &mut impl Extend<u8>) {
+        send_buffer.extend(data.iter().map(u8::to_ascii_uppercase));
+    }
+}
