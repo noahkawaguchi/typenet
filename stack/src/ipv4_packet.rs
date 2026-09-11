@@ -25,7 +25,7 @@ pub struct Ipv4Packet<'a, S: Endpoint> {
 
 impl<'a> Ipv4Packet<'a, Remote> {
     /// Parses `data` as an IPv4 header followed by a protocol-specific header and payload.
-    pub(super) fn parse(data: &'a [u8]) -> TraceableResult<Self> {
+    pub(crate) fn parse(data: &'a [u8]) -> TraceableResult<Self> {
         let (ipv4_hdr, ipv4_payload) = Ipv4Header::parse(data)?;
 
         let router = match ipv4_hdr.protocol {
@@ -44,7 +44,7 @@ impl<'a> Ipv4Packet<'a, Remote> {
     }
 
     /// Creates a packet for replying to `self`, or returns `Ok(None)` for no reply.
-    pub(super) fn create_reply(
+    pub(crate) fn create_reply(
         &self,
         tcp_connections: &mut TcpConnections,
     ) -> TraceableResult<Option<Ipv4Packet<'a, Local>>> {
