@@ -1,7 +1,7 @@
 use {
     typenet_server::{
         config::Config,
-        echo::EchoApp,
+        application::EchoApp,
         server,
         sys::{ShutdownSignal, poll, tun},
     },

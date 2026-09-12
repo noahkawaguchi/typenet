@@ -229,7 +229,7 @@ mod tests {
 
     use {
         super::*,
-        crate::{echo::EchoApp, logger::LogLevel},
+        crate::{application::EchoApp, logger::LogLevel},
         mocks::*,
         pretty_assertions::assert_matches,
         std::cell::{Cell, RefCell},
