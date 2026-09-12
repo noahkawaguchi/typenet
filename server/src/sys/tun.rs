@@ -1,5 +1,5 @@
 use {
-    libc::{IFF_NO_PI, IFF_TUN, IFNAMSIZ, TUNSETIFF},
+    libc::{IFF_MULTI_QUEUE, IFF_NO_PI, IFF_TUN, IFNAMSIZ, TUNSETIFF},
     std::{
         ffi::CString,
         fs::{File, OpenOptions},
@@ -15,10 +15,12 @@ const TUN_DEVICE_FILE: &str = "/dev/net/tun";
 
 /// The flags to use for the interface request.
 ///
-/// `IFF_TUN`   - TUN device (no Ethernet headers) rather than TAP
-/// `IFF_NO_PI` - Do not prepend packet metadata (get IP packet only)
-#[expect(clippy::cast_possible_truncation, reason = "0x1 | 0x1000 fits in a short")]
-const IFRU_FLAGS: libc::c_short = (IFF_TUN | IFF_NO_PI) as libc::c_short;
+/// `IFF_TUN`         - TUN device (no Ethernet headers) rather than TAP
+/// `IFF_NO_PI`       - Do not prepend packet metadata (get IP packet only)
+/// `IFF_MULTI_QUEUE` - Attach as one queue of a multi-queue device (required if the interface
+///                     was created with multi-queue support)
+#[expect(clippy::cast_possible_truncation, reason = "0x1 | 0x1000 | 0x100 fits in a short")]
+const IFRU_FLAGS: libc::c_short = (IFF_TUN | IFF_NO_PI | IFF_MULTI_QUEUE) as libc::c_short;
 
 /// Attaches to the TUN device with name `device_name` as an opened `File`.
 ///
