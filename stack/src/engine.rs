@@ -253,7 +253,7 @@ mod tests {
                 engine
                     .make_retransmissions()
                     .collect::<TraceableResult<Vec<_>>>()?,
-                vec![TcpSegment::SERVER_SYN_ACK.try_into()?]
+                [TcpSegment::SERVER_SYN_ACK.try_into()?]
             );
 
             Ok(())
