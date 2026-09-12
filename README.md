@@ -54,7 +54,7 @@ Although the TCP implementation is not complete, it covers a significant portion
 The project's code is organized as a Cargo workspace with three members.
 
 - `typenet-stack`: core protocol implementations, no I/O
-- `typenet-server`: TUN device echo server
+- `typenet-server`: TUN device server with minimal application logic (echo or shout)
 - `typenet-utils`: general-purpose utilities outside the other crates' domains
 
 `typenet-server` is the only crate with an external dependency, `libc`. Arrows point from dependent to dependency.
@@ -175,6 +175,7 @@ The following environment variables can be used to configure the TUN device and 
 | ----------------------- | --------------------------------------------------------- | ----------- |
 | TYPENET_TUN_NAME        | Name of the TUN device to create and use                  | `tun0`      |
 | TYPENET_TUN_CIDR        | CIDR used when creating the TUN device                    | 10.0.0.1/24 |
+| TYPENET_APP             | Application to run, either `echo` or `shout`              | `echo`      |
 | TYPENET_INIT_RTO_MILLIS | Initial retransmission timeout before exponential backoff | 1000\*      |
 | TYPENET_MAX_RETRANSMITS | Number of retransmissions before giving up                | 15          |
 | TYPENET_GRACE_SECS      | Wait time before shutdown when draining connections       | 60\*\*      |
@@ -209,6 +210,13 @@ The [`justfile`](justfile) also includes recipes for saving logs to file.
 just serve-save     # Run and save log file to `logs` directory
 just serve-save -r  # Same but with a release build
 just log-clean      # Remove `logs` directory
+```
+
+The server crate also includes a "shout" app, verifying that the protocol stack crate respects application logic rather than hardcoding payload echo. With the environment variable `TYPENET_APP=shout`, TCP and UDP payloads will be returned with all ASCII letters capitalized. Note that the recipes that check for exact equality of the server's response (see [File Transfer Throughput](#file-transfer-throughput) below) are meant for the default echo app and will fail for the shout app.
+
+```sh
+TYPENET_APP=shout just serve
+TYPENET_APP=shout just serve -r
 ```
 
 ## Connecting as a Client
