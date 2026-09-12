@@ -11,7 +11,7 @@ pub(crate) enum ServerApp {
     #[default]
     Echo,
 
-    /// An `Application` that capitalizes all ASCII.
+    /// An `Application` that capitalizes all ASCII letters.
     Shout,
 }
 
