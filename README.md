@@ -40,7 +40,7 @@ Although the TCP implementation is not complete, it covers a significant portion
 
 - 4-tuple-keyed state machine
 - Three-way handshake (passive open)
-- Data receipt and transmission (currently echo only)
+- Data receipt and transmission using application-specified reply logic
 - Reassembly of out-of-order segments
 - Retransmissions with binary exponential backoff
 - Flow control (respects peer's window and buffers remaining bytes to send when the window opens)
@@ -226,14 +226,14 @@ just icmp
 
 ### File Transfer Throughput
 
-To send a random binary blob through the echo server using TCP and verify byte-identical output:
+To send a random binary blob through the server using TCP and verify byte-identical echo:
 
 ```sh
 just blob
 just blob-clean  # Remove the generated `blob` directory
 ```
 
-To send a text file through the echo server using TCP and diff the echoed reply against the original:
+To send a text file through the server using TCP and diff the reply against the original:
 
 ```sh
 just text                # Defaults to the `justfile`
