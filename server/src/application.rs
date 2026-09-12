@@ -21,12 +21,8 @@ impl FromStr for ServerApp {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_lowercase().as_str() {
             "echo" => Ok(Self::Echo),
-
             "shout" => Ok(Self::Shout),
-
-            other => {
-                Err(format!("Server app must be either `echo` or `shout`, got `{other}`").into())
-            }
+            _ => Err(format!("Server app must be either `echo` or `shout`, got `{s}`").into()),
         }
     }
 }
