@@ -1,12 +1,18 @@
 use {
     crate::{application::ServerApp, logger::LogLevel},
-    std::{any::type_name, env, fmt::Display, str::FromStr, time::Duration},
+    std::{
+        any::type_name, env, fmt::Display, num::NonZeroUsize, str::FromStr, thread, time::Duration,
+    },
     typenet_utils::error::TraceableResult,
 };
 
 pub struct Config {
     /// The name of the TUN device to attach to.
     pub tun_name: String,
+
+    /// The number of worker threads to run, each attached to its own queue of the same multi-queue
+    /// TUN device.
+    pub worker_count: NonZeroUsize,
 
     /// The application logic to use for the server.
     pub(crate) app: ServerApp,
@@ -37,6 +43,11 @@ impl Config {
         Ok(Self {
             // NOTE: "TYPENET_TUN_NAME" is also read in the `justfile` with a "tun0" fallback
             tun_name: Self::get_env_or_else(|| String::from("tun0"), "TYPENET_TUN_NAME")?,
+
+            worker_count: Self::get_env_or_else(
+                || thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+                "TYPENET_WORKER_COUNT",
+            )?,
 
             app: Self::get_env_or_else(Default::default, "TYPENET_APP")?,
 
