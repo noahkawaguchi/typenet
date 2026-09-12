@@ -28,13 +28,12 @@ Typenet is a userspace IPv4/ICMP/TCP/UDP implementation and echo server that ope
 
 ## Features
 
-- Depends only on Rust's standard library and `libc` (raw FFI to access platform C APIs), implementing all other logic from scratch
-- Performs low-level packet I/O using Linux TUN virtual network interfaces rather than sockets
-- Supports TCP connections, ICMP Echo Request/Reply, and UDP datagrams over IPv4
-- Allows configuration of key parameters at runtime, including a range of log levels (see [Environment Variables](#environment-variables) below)
-- Catches SIGINT, drains TCP connections with a timeout, and exits gracefully
+### Protocol Stack
 
-### TCP Implementation
+- Implements all logic from scratch, using no external dependencies
+- Supports TCP connections, ICMP Echo Request/Reply, and UDP datagrams over IPv4
+
+#### TCP Implementation
 
 Although the TCP implementation is not complete, it covers a significant portion of RFC 9293 and is capable of reliable transmission of data in degraded network conditions (see [Network Emulation](#network-emulation) below). Some highlights include:
 
@@ -47,6 +46,14 @@ Although the TCP implementation is not complete, it covers a significant portion
 - Active close, passive close, and simultaneous close
 - Handling of unknown and aborted connections
 
+### TUN Server
+
+- Implements all logic from scratch, using one external dependency containing only raw FFI bindings, `libc`
+- Performs low-level packet I/O using Linux TUN virtual network interfaces rather than sockets
+- Allows configuration of key parameters at runtime, including a range of log levels (see [Environment Variables](#environment-variables) below)
+- Includes a simple echo application and a shout (capitalization) application
+- Catches SIGINT, drains TCP connections with a timeout, and exits gracefully
+
 ## Design
 
 ### Three-Crate Workspace
@@ -54,10 +61,10 @@ Although the TCP implementation is not complete, it covers a significant portion
 The project's code is organized as a Cargo workspace with three members.
 
 - `typenet-stack`: core protocol implementations, no I/O
-- `typenet-server`: TUN device server with minimal application logic (echo or shout)
+- `typenet-server`: TUN device server, minimal application logic
 - `typenet-utils`: general-purpose utilities outside the other crates' domains
 
-`typenet-server` is the only crate with an external dependency, `libc`. Arrows point from dependent to dependency.
+The internal and external dependency relationships are as follows, with arrows pointing from dependent to dependency.
 
 ```
 ╭──────────────────────────────────╮
