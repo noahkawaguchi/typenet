@@ -297,7 +297,8 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
     // remembered.
     cloned_state
         .reassembly
-        .drain_contiguous(hello.seq_num + REMOTE_HELLO_LEN, &mut Vec::new());
+        .drain_contiguous(&mut (hello.seq_num + REMOTE_HELLO_LEN))
+        .for_each(drop);
 
     // The window state stays pinned to the FIN-ACK's values (not changing those of the "Hello") due
     // to the window update rules, even though "Hello" fills a gap in the data
@@ -1000,7 +1001,8 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
     // remembered
     expected_state
         .reassembly
-        .drain_contiguous(gap_filler.seq_num + gap_len, &mut Vec::new());
+        .drain_contiguous(&mut (gap_filler.seq_num + gap_len))
+        .for_each(drop);
 
     // The window state stays pinned to the out-of-order FIN-ACK's values (not the gap-filling
     // chunk's, which arrives with an earlier sequence number) due to the window update rules

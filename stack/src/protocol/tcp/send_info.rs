@@ -243,9 +243,9 @@ impl SendInfo {
                     app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
                 }
 
-                conn.rcv_nxt = conn
-                    .reassembly
-                    .drain_contiguous(conn.rcv_nxt, &mut conn.send_buffer);
+                for reassembled in conn.reassembly.drain_contiguous(&mut conn.rcv_nxt) {
+                    app.handle_tcp(reassembled.as_bytes(), &mut conn.send_buffer);
+                }
 
                 (
                     if conn.reassembly.fin_reached(conn.rcv_nxt) {
@@ -363,9 +363,9 @@ impl SendInfo {
                 conn.rcv_nxt += payload.len().into();
                 app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
 
-                conn.rcv_nxt = conn
-                    .reassembly
-                    .drain_contiguous(conn.rcv_nxt, &mut conn.send_buffer);
+                for reassembled in conn.reassembly.drain_contiguous(&mut conn.rcv_nxt) {
+                    app.handle_tcp(reassembled.as_bytes(), &mut conn.send_buffer);
+                }
 
                 (
                     Some(if conn.reassembly.fin_reached(conn.rcv_nxt) {

@@ -549,6 +549,50 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
 }
 
 #[test]
+fn out_of_order_reassembly_respects_app_logic() -> TraceableResult {
+    // "lo" arrives out of order first, then "hel" fills the gap before it. Both should be
+    // capitalized together according to the shouting app, as a single "HELLO".
+
+    let mut app = ShoutingTestApp;
+    let mut connections = TcpConnections::default().after_handshake();
+
+    TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(3),
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str("lo")?,
+        ..CLIENT_PKT
+    }
+    .create_reply(&mut app, &mut connections)?;
+
+    let reply = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str("hel")?,
+        ..CLIENT_PKT
+    }
+    .create_reply(&mut app, &mut connections)?;
+
+    assert_eq!(
+        reply,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            payload: TcpPayload::from_test_str("HELLO")?,
+            ..SERVER_REPLY
+        }),
+        "Both segments should be capitalized together once the gap closes"
+    );
+
+    assert_eq!(
+        connections.try_get()?.reassembly.len(),
+        0,
+        "The reassembly buffer should be empty after draining"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn seq_one_before_rcv_nxt_is_rejected() -> TraceableResult {
     // The receive window starts at RCV.NXT (RFC 9293, Section 3.10.7.4, "First, check sequence
     // number"), so a segment landing exactly one byte before it is the nearest possible byte still
