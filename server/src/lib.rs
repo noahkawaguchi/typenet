@@ -1,8 +1,8 @@
 #[cfg(not(target_os = "linux"))]
 compile_error!("This crate only supports Linux because it directly uses low-level Linux APIs");
 
+pub mod application;
 pub mod config;
-pub mod echo;
 pub mod server;
 
 pub mod sys {

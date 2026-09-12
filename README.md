@@ -28,13 +28,12 @@ Typenet is a userspace IPv4/ICMP/TCP/UDP implementation and echo server that ope
 
 ## Features
 
-- Depends only on Rust's standard library and `libc` (raw FFI to access platform C APIs), implementing all other logic from scratch
-- Performs low-level packet I/O using Linux TUN virtual network interfaces rather than sockets
-- Supports TCP connections, ICMP Echo Request/Reply, and UDP datagrams over IPv4
-- Allows configuration of key parameters at runtime, including a range of log levels (see [Environment Variables](#environment-variables) below)
-- Catches SIGINT, drains TCP connections with a timeout, and exits gracefully
+### Protocol Stack
 
-### TCP Implementation
+- Implements all logic from scratch, using no external dependencies
+- Supports TCP connections, ICMP Echo Request/Reply, and UDP datagrams over IPv4
+
+#### TCP Implementation
 
 Although the TCP implementation is not complete, it covers a significant portion of RFC 9293 and is capable of reliable transmission of data in degraded network conditions (see [Network Emulation](#network-emulation) below). Some highlights include:
 
@@ -47,6 +46,14 @@ Although the TCP implementation is not complete, it covers a significant portion
 - Active close, passive close, and simultaneous close
 - Handling of unknown and aborted connections
 
+### TUN Server
+
+- Implements all logic from scratch, using one external dependency containing only raw FFI bindings, `libc`
+- Performs low-level packet I/O using Linux TUN virtual network interfaces rather than sockets
+- Allows configuration of key parameters at runtime, including a range of log levels (see [Environment Variables](#environment-variables) below)
+- Includes a simple echo application and a shout (capitalization) application
+- Catches SIGINT, drains TCP connections with a timeout, and exits gracefully
+
 ## Design
 
 ### Three-Crate Workspace
@@ -54,10 +61,10 @@ Although the TCP implementation is not complete, it covers a significant portion
 The project's code is organized as a Cargo workspace with three members.
 
 - `typenet-stack`: core protocol implementations, no I/O
-- `typenet-server`: TUN device echo server
+- `typenet-server`: TUN device server, minimal application logic
 - `typenet-utils`: general-purpose utilities outside the other crates' domains
 
-`typenet-server` is the only crate with an external dependency, `libc`. Arrows point from dependent to dependency.
+The internal and external dependency relationships are as follows, with arrows pointing from dependent to dependency.
 
 ```
 ╭──────────────────────────────────╮
@@ -175,6 +182,7 @@ The following environment variables can be used to configure the TUN device and 
 | ----------------------- | --------------------------------------------------------- | ----------- |
 | TYPENET_TUN_NAME        | Name of the TUN device to create and use                  | `tun0`      |
 | TYPENET_TUN_CIDR        | CIDR used when creating the TUN device                    | 10.0.0.1/24 |
+| TYPENET_APP             | Application to run, either `echo` or `shout`              | `echo`      |
 | TYPENET_INIT_RTO_MILLIS | Initial retransmission timeout before exponential backoff | 1000\*      |
 | TYPENET_MAX_RETRANSMITS | Number of retransmissions before giving up                | 15          |
 | TYPENET_GRACE_SECS      | Wait time before shutdown when draining connections       | 60\*\*      |
@@ -209,6 +217,13 @@ The [`justfile`](justfile) also includes recipes for saving logs to file.
 just serve-save     # Run and save log file to `logs` directory
 just serve-save -r  # Same but with a release build
 just log-clean      # Remove `logs` directory
+```
+
+The server crate also includes a "shout" app, verifying that the protocol stack crate respects application logic rather than hardcoding payload echo. With the environment variable `TYPENET_APP=shout`, TCP and UDP payloads will be returned with all ASCII letters capitalized. Note that the recipes that check for exact equality of the server's response (see [File Transfer Throughput](#file-transfer-throughput) below) are meant for the default echo app and will fail for the shout app.
+
+```sh
+TYPENET_APP=shout just serve
+TYPENET_APP=shout just serve -r
 ```
 
 ## Connecting as a Client

@@ -1,5 +1,5 @@
 use {
-    crate::logger::LogLevel,
+    crate::{application::ServerApp, logger::LogLevel},
     std::{any::type_name, env, fmt::Display, str::FromStr, time::Duration},
     typenet_utils::error::TraceableResult,
 };
@@ -7,6 +7,9 @@ use {
 pub struct Config {
     /// The name of the TUN device to attach to.
     pub tun_name: String,
+
+    /// The application logic to use for the server.
+    pub(crate) app: ServerApp,
 
     /// The initial retransmission timeout, i.e. how long to wait before retransmitting an unacked
     /// TCP segment the first time before exponential backoff.
@@ -35,6 +38,8 @@ impl Config {
             // NOTE: "TYPENET_TUN_NAME" is also read in the `justfile` with a "tun0" fallback
             tun_name: Self::get_env_or_else(|| String::from("tun0"), "TYPENET_TUN_NAME")?,
 
+            app: Self::get_env_or_else(Default::default, "TYPENET_APP")?,
+
             initial_rto: Duration::from_millis(Self::get_env_or_else(
                 || if cfg!(debug_assertions) { 250 } else { 1000 },
                 "TYPENET_INIT_RTO_MILLIS",
@@ -47,7 +52,7 @@ impl Config {
                 "TYPENET_GRACE_SECS",
             )?),
 
-            log_level: Self::get_env_or_else(LogLevel::default, "TYPENET_LOG_LEVEL")?,
+            log_level: Self::get_env_or_else(Default::default, "TYPENET_LOG_LEVEL")?,
         })
     }
 

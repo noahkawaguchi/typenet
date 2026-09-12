@@ -27,8 +27,9 @@ impl Application for TestApp {
     }
 }
 
-/// An `Application` that capitalizes all ASCII. Used for tests that need to prove a reply's content
-/// actually came from the application, rather than merely happening to match a hardcoded echo.
+/// An `Application` that capitalizes all ASCII letters. Used for tests that need to prove a reply's
+/// content actually came from the application, rather than merely happening to match a hardcoded
+/// echo.
 #[cfg(test)]
 pub(crate) struct ShoutingTestApp;
 
