@@ -1,4 +1,34 @@
-use {std::borrow::Cow, typenet_stack::application::Application};
+use {
+    std::{borrow::Cow, str::FromStr},
+    typenet_stack::application::Application,
+    typenet_utils::error::TraceableError,
+};
+
+/// The set of applications that the server supports.
+pub enum ServerApp {
+    Echo(EchoApp),
+    Shout(ShoutApp),
+}
+
+impl Default for ServerApp {
+    fn default() -> Self { Self::Echo(EchoApp) }
+}
+
+impl FromStr for ServerApp {
+    type Err = TraceableError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().as_str() {
+            "echo" => Ok(Self::Echo(EchoApp)),
+
+            "shout" => Ok(Self::Shout(ShoutApp)),
+
+            other => {
+                Err(format!("Server app must be either `echo` or `shout`, got `{other}`").into())
+            }
+        }
+    }
+}
 
 /// A `Application` that echoes back exactly what it receives.
 pub struct EchoApp;
