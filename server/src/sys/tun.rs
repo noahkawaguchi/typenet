@@ -89,7 +89,11 @@ const fn u8_to_c_char(b: u8) -> libc::c_char { b as libc::c_char }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::config::Config, pretty_assertions::assert_matches};
+    use {
+        super::*,
+        crate::config::Config,
+        pretty_assertions::{assert_matches, assert_ne},
+    };
 
     #[test]
     fn errors_for_nonexistent_tun_with_valid_name() {
@@ -117,6 +121,19 @@ mod tests {
     #[ignore = "requires TUN setup"]
     fn successfully_attaches_to_existing_tun() -> TraceableResult {
         assert_matches!(attach(&Config::load()?.tun_name), Ok(_));
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires TUN setup"]
+    fn attaches_multiple_independent_queues_to_the_same_tun() -> TraceableResult {
+        let tun_name = Config::load()?.tun_name;
+
+        let first = attach(&tun_name)?;
+        let second = attach(&tun_name)?;
+
+        assert_ne!(first.as_raw_fd(), second.as_raw_fd());
+
         Ok(())
     }
 
