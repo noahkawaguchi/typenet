@@ -28,7 +28,7 @@ fn new_ack_adopts_window_from_segment() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     cloned_state.snd_nxt += LOCAL_HELLO_LEN;
     cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
@@ -43,7 +43,7 @@ fn new_ack_adopts_window_from_segment() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    assert_eq!(window_update.create_reply(&mut connections)?, None);
+    assert_eq!(window_update.create_test_reply(&mut connections)?, None);
 
     cloned_state.snd_una += LOCAL_HELLO_LEN;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
@@ -84,7 +84,7 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
     };
 
     assert_eq!(
-        out_of_order.create_reply(&mut connections)?,
+        out_of_order.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -122,7 +122,7 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
             window: SeqOffset::new(9999),
             ..CLIENT_PKT
         }
-        .create_reply(&mut connections)?,
+        .create_test_reply(&mut connections)?,
         None
     );
 
@@ -155,7 +155,7 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     cloned_state.snd_nxt += LOCAL_HELLO_LEN;
     cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
@@ -168,7 +168,7 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    hi_pkt.create_reply(&mut connections)?;
+    hi_pkt.create_test_reply(&mut connections)?;
 
     cloned_state.snd_nxt += LOCAL_HI_LEN;
     cloned_state.rcv_nxt += REMOTE_HI_LEN;
@@ -189,7 +189,7 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    assert_eq!(window_update_1.create_reply(&mut connections)?, None);
+    assert_eq!(window_update_1.create_test_reply(&mut connections)?, None);
 
     cloned_state.snd_una += LOCAL_HELLO_LEN;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
@@ -209,7 +209,7 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    assert_eq!(window_update_2.create_reply(&mut connections)?, None);
+    assert_eq!(window_update_2.create_test_reply(&mut connections)?, None);
 
     cloned_state.snd_una += LOCAL_HI_LEN;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
@@ -254,7 +254,7 @@ fn duplicate_ack_updates_window() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     cloned_state.snd_nxt += LOCAL_HELLO_LEN;
     cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
@@ -271,7 +271,7 @@ fn duplicate_ack_updates_window() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    assert_eq!(dup_ack_fresh_seq.create_reply(&mut connections)?, None);
+    assert_eq!(dup_ack_fresh_seq.create_test_reply(&mut connections)?, None);
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         dup_ack_fresh_seq.window,

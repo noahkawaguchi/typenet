@@ -6,6 +6,7 @@
 #[cfg(feature = "test-utils")]
 pub use protocol::tcp::{TcpConnections, TcpSegment};
 
+pub mod application;
 pub mod display;
 pub mod endpoint;
 pub mod engine;

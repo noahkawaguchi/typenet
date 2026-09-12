@@ -5,7 +5,7 @@ fn syn_ack_is_resent_while_due() -> TraceableResult {
     let mut connections = TcpConnections::test_new(Duration::ZERO, 5);
 
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
-        .create_reply(&mut connections)?;
+        .create_test_reply(&mut connections)?;
 
     let isn = connections.try_get()?.snd_una;
 
@@ -32,7 +32,7 @@ fn pending_segment_is_cleared_once_acked() -> TraceableResult {
     let mut connections = TcpConnections::test_new(Duration::ZERO, 5);
 
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
-        .create_reply(&mut connections)?;
+        .create_test_reply(&mut connections)?;
 
     let isn = connections.try_get()?.snd_una;
 
@@ -42,7 +42,7 @@ fn pending_segment_is_cleared_once_acked() -> TraceableResult {
         ack_num: isn + LOCAL_SYN_BYTE,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert!(
         connections.make_retransmissions().is_empty(),
@@ -62,7 +62,7 @@ fn data_echo_is_resent_unchanged() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     let mut resent = connections.make_retransmissions();
     let reply = resent.pop().ok_or("Expected one retransmitted segment")?;
@@ -118,7 +118,7 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     // Second data packet: "Hi" (2 bytes), still ack=SERVER_ISN+1 (hasn't acked the first echo yet)
     // -> echoed, pending segment seq=SERVER_ISN+6..SERVER_ISN+8
@@ -128,7 +128,7 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     let [hello, hi] = connections
         .make_retransmissions()
@@ -165,7 +165,7 @@ fn gives_up_after_max_retransmits() -> TraceableResult {
     let mut connections = TcpConnections::test_new(Duration::ZERO, MAX_RETRIES);
 
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
-        .create_reply(&mut connections)?;
+        .create_test_reply(&mut connections)?;
 
     for _ in 0..MAX_RETRIES {
         let resent = connections.make_retransmissions();
@@ -193,7 +193,7 @@ fn retransmissions_back_off_exponentially() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert!(connections.make_retransmissions().is_empty(), "Before first timeout");
 

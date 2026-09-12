@@ -35,7 +35,8 @@ pub(super) struct ConnState {
     /// Unacked segments sent by the server, kept for retransmission purposes.
     pub(super) pending: Vec<PendingSegment>,
 
-    /// Bytes received from the peer that are queued to be echoed once SND.WND has room for them.
+    /// Bytes received from the application that are queued to be sent once SND.WND has enough
+    /// room for them.
     pub(super) send_buffer: VecDeque<u8>,
 
     /// Segments received ahead of RCV.NXT, held until the gap before them closes.

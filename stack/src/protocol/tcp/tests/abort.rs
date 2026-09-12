@@ -9,7 +9,7 @@ fn rst_in_established_at_rcv_nxt_cleans_up_connection_and_returns_none() -> Trac
     // RFC 9293, Section 3.10.7.4, RST bit set, SEG.SEQ == RCV.NXT -> reset connection
 
     let mut connections = TcpConnections::default().after_handshake();
-    assert_eq!(client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_reply(&mut connections)?, None);
+    assert_eq!(client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_test_reply(&mut connections)?, None);
     assert_matches!(connections.try_get(), Err(_), "Connection should be removed after RST");
 
     Ok(())
@@ -26,7 +26,7 @@ fn rst_in_established_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> T
 
     // seq_num=CLIENT_ISN+4 is inside the receive window [CLIENT_ISN+1, CLIENT_ISN+1+RCV.WND), but
     // seq_num=CLIENT_ISN+4 != rcv_nxt=CLIENT_ISN+1
-    let reply = client_rst(CLIENT_ISN + SeqOffset::new(4)).create_reply(&mut connections)?;
+    let reply = client_rst(CLIENT_ISN + SeqOffset::new(4)).create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -59,7 +59,7 @@ fn rst_in_established_with_out_of_window_seq_is_silently_dropped() -> TraceableR
     // seq_num=CLIENT_ISN-10 is just below rcv_nxt=CLIENT_ISN+1, so this RST is outside the receive
     // window
     assert_eq!(
-        client_rst(CLIENT_ISN - SeqOffset::new(10)).create_reply(&mut connections)?,
+        client_rst(CLIENT_ISN - SeqOffset::new(10)).create_test_reply(&mut connections)?,
         None,
         "Out-of-window RST should be silently dropped"
     );
@@ -77,7 +77,7 @@ fn rst_in_established_with_out_of_window_seq_is_silently_dropped() -> TraceableR
 fn rst_in_syn_received_at_rcv_nxt_cleans_up_connection_and_returns_none() -> TraceableResult {
     let mut connections = TcpConnections::default().with_syn_rcv();
 
-    assert_eq!(client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_reply(&mut connections)?, None);
+    assert_eq!(client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_test_reply(&mut connections)?, None);
     assert_matches!(connections.try_get(), Err(_), "Connection should be removed after RST");
 
     Ok(())
@@ -95,7 +95,7 @@ fn rst_in_syn_received_with_out_of_window_seq_is_silently_dropped() -> Traceable
     // seq_num=CLIENT_ISN-10 is just below rcv_nxt=CLIENT_ISN+1, so this RST is outside the receive
     // window
     assert_eq!(
-        client_rst(CLIENT_ISN - SeqOffset::new(10)).create_reply(&mut connections)?,
+        client_rst(CLIENT_ISN - SeqOffset::new(10)).create_test_reply(&mut connections)?,
         None,
         "Out-of-window RST should be silently dropped"
     );
@@ -121,7 +121,7 @@ fn rst_in_syn_received_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> 
 
     // seq_num=CLIENT_ISN+4 is inside the receive window [CLIENT_ISN+1, CLIENT_ISN+1+RCV.WND), but
     // seq_num=CLIENT_ISN+4 != rcv_nxt=CLIENT_ISN+1
-    let reply = client_rst(CLIENT_ISN + SeqOffset::new(4)).create_reply(&mut connections)?;
+    let reply = client_rst(CLIENT_ISN + SeqOffset::new(4)).create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -147,7 +147,7 @@ fn rst_for_unknown_connection_is_silently_dropped() -> TraceableResult {
     let mut connections = TcpConnections::default();
 
     assert_eq!(
-        client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_reply(&mut connections)?,
+        client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_test_reply(&mut connections)?,
         None,
         "Unknown RST should be silently dropped"
     );

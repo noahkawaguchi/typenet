@@ -7,6 +7,7 @@ use {
     },
     typenet_stack::{
         ETHERNET_MTU,
+        application::Application,
         endpoint::Local,
         engine::{Engine, ShutdownOutcome},
         ipv4_packet::Ipv4Packet,
@@ -25,13 +26,15 @@ use {
 ///
 /// Returns `Err` for errors related to packet I/O, but logs and continues for errors related to
 /// parsing and replying to individual packets.
-pub fn run<D, P, S>(
+pub fn run<A, D, P, S>(
+    app: A,
     device: &mut D,
     poll_readable: P,
     shutdown_check: S,
     config: &Config,
 ) -> TraceableResult
 where
+    A: Application,
     D: Read + Write + AsFd,
     P: Fn(&D, Option<Duration>) -> io::Result<bool>,
     S: Fn() -> bool,
@@ -45,7 +48,7 @@ where
 
     Server {
         write_buf: [0u8; ETHERNET_MTU],
-        engine: Engine::new(config.initial_rto, config.max_retries, config.grace_period),
+        engine: Engine::new(app, config.initial_rto, config.max_retries, config.grace_period),
         logger,
         device,
         poll_readable,
@@ -54,17 +57,18 @@ where
     .run()
 }
 
-struct Server<'a, D, P, S> {
+struct Server<'a, A: Application, D, P, S> {
     write_buf: [u8; ETHERNET_MTU],
-    engine: Engine,
+    engine: Engine<A>,
     logger: Logger,
     device: &'a mut D,
     poll_readable: P,
     shutdown_check: S,
 }
 
-impl<D, P, S> Server<'_, D, P, S>
+impl<A, D, P, S> Server<'_, A, D, P, S>
 where
+    A: Application,
     D: Read + Write + AsFd,
     P: Fn(&D, Option<Duration>) -> io::Result<bool>,
     S: Fn() -> bool,
@@ -225,7 +229,7 @@ mod tests {
 
     use {
         super::*,
-        crate::logger::LogLevel,
+        crate::{echo::EchoApp, logger::LogLevel},
         mocks::*,
         pretty_assertions::assert_matches,
         std::cell::{Cell, RefCell},
@@ -253,7 +257,7 @@ mod tests {
     ) -> TraceableResult {
         Server {
             write_buf: [0u8; ETHERNET_MTU],
-            engine: Engine::test_new(tcp_connections, shutdown_grace_period),
+            engine: Engine::test_new(EchoApp, tcp_connections, shutdown_grace_period),
             logger: Logger::new(LogLevel::Silent),
             device,
             poll_readable,

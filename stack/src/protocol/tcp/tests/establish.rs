@@ -5,7 +5,7 @@ fn creates_valid_syn_ack() -> TraceableResult {
     let mut connections = TcpConnections::default();
 
     let reply = TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
-        .create_reply(&mut connections)?;
+        .create_test_reply(&mut connections)?;
 
     // seq_num is the random ISN that was stored in the connection table
     let stored_isn = connections.try_get()?.snd_una;
@@ -33,7 +33,7 @@ fn duplicate_syn_during_syn_received_resends_same_syn_ack() -> TraceableResult {
     let initial_state = connections.try_get()?.clone();
 
     let reply = TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
-        .create_reply(&mut connections)?;
+        .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -68,7 +68,7 @@ fn handshake_ack_without_data_establishes_connection_and_returns_none() -> Trace
         ..CLIENT_PKT
     };
 
-    assert_eq!(handshake_ack.create_reply(&mut connections)?, None);
+    assert_eq!(handshake_ack.create_test_reply(&mut connections)?, None);
 
     // Reproduce the state changes that should happen at connection establishment
     let window_state =
@@ -98,7 +98,7 @@ fn handshake_ack_with_data_establishes_and_echoes() -> TraceableResult {
     };
 
     assert_eq!(
-        handshake_ack_with_data.create_reply(&mut connections)?,
+        handshake_ack_with_data.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
@@ -142,7 +142,7 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
     };
 
     assert_eq!(
-        out_of_order.create_reply(&mut connections)?,
+        out_of_order.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -183,7 +183,7 @@ fn acceptable_seq_but_unacceptable_ack_in_syn_rcv_gets_rst() -> TraceableResult 
 
         // SEG.ACK doesn't acknowledge our SYN-ACK
         let reply = TcpSegment { seq_num: client_seq, ack_num: SERVER_ISN, ..CLIENT_PKT }
-            .create_reply(&mut connections)?;
+            .create_test_reply(&mut connections)?;
 
         assert_eq!(
             reply,
@@ -216,7 +216,7 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
     };
 
     assert_eq!(
-        out_of_order.create_reply(&mut connections)?,
+        out_of_order.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -262,7 +262,7 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
     };
 
     assert_eq!(
-        out_of_order.create_reply(&mut connections)?,
+        out_of_order.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -310,7 +310,7 @@ fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Traceabl
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         hi_reply,
@@ -329,7 +329,7 @@ fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Traceabl
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         hello_reply,

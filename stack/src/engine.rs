@@ -1,5 +1,6 @@
 use {
     crate::{
+        application::Application,
         endpoint::{Local, Remote},
         ipv4_packet::Ipv4Packet,
         protocol::tcp::TcpConnections,
@@ -37,7 +38,8 @@ pub enum ShutdownOutcome {
 /// Callers drive `Self` by feeding in incoming packets and timer/shutdown events, and are
 /// responsible for actually reading/writing bytes and tracking wall-clock deadlines against
 /// `poll_timeout`.
-pub struct Engine {
+pub struct Engine<A: Application> {
+    app: A,
     tcp_connections: TcpConnections,
     shutdown_grace_period: Duration,
 
@@ -46,10 +48,16 @@ pub struct Engine {
     shutdown_deadline: Option<Instant>,
 }
 
-impl Engine {
+impl<A: Application> Engine<A> {
     #[must_use]
-    pub fn new(initial_rto: Duration, max_retries: u8, shutdown_grace_period: Duration) -> Self {
+    pub fn new(
+        app: A,
+        initial_rto: Duration,
+        max_retries: u8,
+        shutdown_grace_period: Duration,
+    ) -> Self {
         Self {
+            app,
             tcp_connections: TcpConnections::new(initial_rto, max_retries),
             shutdown_grace_period,
             shutdown_deadline: None,
@@ -61,10 +69,11 @@ impl Engine {
     #[cfg(any(test, feature = "test-utils"))]
     #[must_use]
     pub const fn test_new(
+        app: A,
         tcp_connections: TcpConnections,
         shutdown_grace_period: Duration,
     ) -> Self {
-        Self { tcp_connections, shutdown_grace_period, shutdown_deadline: None }
+        Self { app, tcp_connections, shutdown_grace_period, shutdown_deadline: None }
     }
 
     /// The number of tracked connections (currently TCP is the only protocol with tracked state).
@@ -81,7 +90,7 @@ impl Engine {
         let incoming = Ipv4Packet::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
 
         let reply = incoming
-            .create_reply(&mut self.tcp_connections)
+            .create_reply(&mut self.app, &mut self.tcp_connections)
             .map_err(|e| format!("Error creating reply: {e}"))?;
 
         Ok(PacketOutcome { incoming, reply })
@@ -91,7 +100,7 @@ impl Engine {
     /// dropping the connection entirely if retries are exhausted.
     pub fn make_retransmissions(
         &mut self,
-    ) -> impl Iterator<Item = TraceableResult<Ipv4Packet<'static, Local>>> + use<> {
+    ) -> impl Iterator<Item = TraceableResult<Ipv4Packet<'static, Local>>> + use<A> {
         self.tcp_connections
             .make_retransmissions()
             .into_iter()
@@ -156,6 +165,7 @@ mod tests {
         super::*,
         crate::{
             ETHERNET_MTU,
+            application::TestApp,
             ipv4_header::Ipv4Header,
             protocol::{Encode as _, tcp::TcpSegment},
         },
@@ -169,8 +179,8 @@ mod tests {
 
     /// Builds an `Engine` from `tcp_connections` with a one-year grace period for tests that don't
     /// care about shutdown timing.
-    fn test_engine(tcp_connections: TcpConnections) -> Engine {
-        Engine::test_new(tcp_connections, ONE_YEAR_GRACE_PERIOD)
+    fn test_engine(tcp_connections: TcpConnections) -> Engine<TestApp> {
+        Engine::test_new(TestApp, tcp_connections, ONE_YEAR_GRACE_PERIOD)
     }
 
     mod handle_packet {
@@ -243,7 +253,7 @@ mod tests {
                 engine
                     .make_retransmissions()
                     .collect::<TraceableResult<Vec<_>>>()?,
-                vec![TcpSegment::SERVER_SYN_ACK.try_into()?]
+                [TcpSegment::SERVER_SYN_ACK.try_into()?]
             );
 
             Ok(())
@@ -301,8 +311,11 @@ mod tests {
 
         #[test]
         fn overflowing_deadline_errors_instead_of_panicking() {
-            let mut engine =
-                Engine::test_new(TcpConnections::default().after_handshake(), Duration::MAX);
+            let mut engine = Engine::test_new(
+                TestApp,
+                TcpConnections::default().after_handshake(),
+                Duration::MAX,
+            );
 
             assert_matches!(
                 engine.handle_shutdown(Instant::now()),

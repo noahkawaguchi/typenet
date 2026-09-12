@@ -1,6 +1,9 @@
-use crate::{
-    endpoint::Remote,
-    protocol::tcp::{payload::TcpPayload, seq_space::SeqPoint},
+use {
+    crate::{
+        endpoint::Remote,
+        protocol::tcp::{payload::TcpPayload, seq_space::SeqPoint},
+    },
+    std::iter,
 };
 
 /// Buffers segments that arrived ahead of RCV.NXT, releasing their bytes once the gap before them
@@ -48,28 +51,24 @@ impl TcpReassembly {
         }
     }
 
-    /// Advances `rcv_nxt` through any buffered segments that are now contiguous with it, appending
-    /// their bytes to `out` in order and returning the advanced `rcv_nxt`. Segments that start
-    /// before `rcv_nxt` are discarded without being appended.
+    /// Advances `rcv_nxt` through any buffered segments that are now contiguous with it, returning
+    /// an iterator over them. Segments that start before `rcv_nxt` are discarded without being
+    /// returned.
     pub(super) fn drain_contiguous(
         &mut self,
-        mut rcv_nxt: SeqPoint<Remote>,
-        out: &mut impl Extend<u8>,
-    ) -> SeqPoint<Remote> {
-        loop {
-            let Some((_, payload)) = self
+        rcv_nxt: &mut SeqPoint<Remote>,
+    ) -> impl Iterator<Item = TcpPayload> {
+        iter::from_fn(|| {
+            let (_, payload) = self
                 .segments
                 // Prune stale or exactly contiguous segments
-                .extract_if(.., |&mut (start, _)| start.precedes_or_eq(rcv_nxt))
+                .extract_if(.., |&mut (start, _)| start.precedes_or_eq(*rcv_nxt))
                 // Pick out the exactly contiguous one if it exists
-                .find(|&(start, _)| start == rcv_nxt)
-            else {
-                break rcv_nxt; // Stale segments pruned, nothing exactly contiguous found
-            };
+                .find(|&(start, _)| start == *rcv_nxt)?;
 
-            rcv_nxt += payload.len().into();
-            out.extend(payload.as_bytes().iter().copied());
-        }
+            *rcv_nxt += payload.len().into();
+            Some(payload)
+        })
     }
 
     #[cfg(test)]
@@ -90,14 +89,18 @@ mod tests {
     #[test]
     fn drains_segment_starting_at_rcv_nxt() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::new(100);
-        reassembly.insert(rcv_nxt, test_payload("abc")?);
+        let mut rcv_nxt = SeqPoint::new(100);
+        let expected_rcv_next = rcv_nxt + SeqOffset::new(3);
 
-        let mut out = Vec::new();
-        let new_rcv_nxt = reassembly.drain_contiguous(rcv_nxt, &mut out);
+        let payload = test_payload("abc")?;
+        reassembly.insert(rcv_nxt, payload.clone());
 
-        assert_eq!(out, b"abc");
-        assert_eq!(new_rcv_nxt, rcv_nxt + SeqOffset::new(3));
+        let out = reassembly
+            .drain_contiguous(&mut rcv_nxt)
+            .collect::<Vec<_>>();
+
+        assert_eq!(out, [payload]);
+        assert_eq!(rcv_nxt, expected_rcv_next);
         assert_eq!(reassembly.len(), 0);
 
         Ok(())
@@ -106,14 +109,13 @@ mod tests {
     #[test]
     fn does_not_drain_when_gap_remains_before_buffered_segment() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::new(100);
+        let mut rcv_nxt = SeqPoint::new(100);
+        let expected_rcv_nxt = rcv_nxt;
+
         reassembly.insert(rcv_nxt + SeqOffset::new(3), test_payload("later")?);
 
-        let mut out = Vec::new();
-        let new_rcv_nxt = reassembly.drain_contiguous(rcv_nxt, &mut out);
-
-        assert!(out.is_empty());
-        assert_eq!(new_rcv_nxt, rcv_nxt);
+        assert_eq!(reassembly.drain_contiguous(&mut rcv_nxt).next(), None);
+        assert_eq!(rcv_nxt, expected_rcv_nxt);
         assert_eq!(reassembly.len(), 1);
 
         Ok(())
@@ -122,18 +124,23 @@ mod tests {
     #[test]
     fn drains_multiple_contiguous_segments_once_gap_closes() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::new(100);
+        let pay = test_payload("pay")?;
+        let load = test_payload("load")?;
+
+        let mut rcv_nxt = SeqPoint::new(100);
+        let expected_rcv_nxt = rcv_nxt + SeqOffset::new(7);
 
         // "load" arrives first, buffered as out-of-order
-        reassembly.insert(rcv_nxt + SeqOffset::new(3), test_payload("load")?);
+        reassembly.insert(rcv_nxt + SeqOffset::new(3), load.clone());
         // "pay" fills the gap
-        reassembly.insert(rcv_nxt, test_payload("pay")?);
+        reassembly.insert(rcv_nxt, pay.clone());
 
-        let mut out = Vec::new();
-        let new_rcv_nxt = reassembly.drain_contiguous(rcv_nxt, &mut out);
+        let out = reassembly
+            .drain_contiguous(&mut rcv_nxt)
+            .collect::<Vec<_>>();
 
-        assert_eq!(out, b"payload");
-        assert_eq!(new_rcv_nxt, rcv_nxt + SeqOffset::new(7));
+        assert_eq!(out, [pay, load]);
+        assert_eq!(rcv_nxt, expected_rcv_nxt);
         assert_eq!(reassembly.len(), 0);
 
         Ok(())
@@ -142,14 +149,13 @@ mod tests {
     #[test]
     fn discards_buffered_segment_that_starts_before_rcv_nxt() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::new(100);
+        let mut rcv_nxt = SeqPoint::new(100);
+        let expected_rcv_nxt = rcv_nxt;
+
         reassembly.insert(SeqPoint::new(90), test_payload("stale")?);
 
-        let mut out = Vec::new();
-        let new_rcv_nxt = reassembly.drain_contiguous(rcv_nxt, &mut out);
-
-        assert!(out.is_empty());
-        assert_eq!(new_rcv_nxt, rcv_nxt);
+        assert_eq!(reassembly.drain_contiguous(&mut rcv_nxt).next(), None);
+        assert_eq!(rcv_nxt, expected_rcv_nxt);
         assert_eq!(reassembly.len(), 0);
 
         Ok(())
@@ -158,15 +164,15 @@ mod tests {
     #[test]
     fn keeps_longer_segment_when_shorter_arrives_with_same_seq() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
-        let seq = SeqPoint::new(100);
+        let mut seq = SeqPoint::new(100);
+        let longer = test_payload("longer")?;
 
-        reassembly.insert(seq, test_payload("longer")?);
+        reassembly.insert(seq, longer.clone());
         reassembly.insert(seq, test_payload("short")?);
 
-        let mut out = Vec::new();
-        reassembly.drain_contiguous(seq, &mut out);
+        let out = reassembly.drain_contiguous(&mut seq).collect::<Vec<_>>();
 
-        assert_eq!(out, b"longer");
+        assert_eq!(out, [longer]);
 
         Ok(())
     }
@@ -174,15 +180,15 @@ mod tests {
     #[test]
     fn replaces_shorter_segment_when_longer_arrives_with_same_seq() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
-        let seq = SeqPoint::new(100);
+        let mut seq = SeqPoint::new(100);
+        let longer = test_payload("longer")?;
 
         reassembly.insert(seq, test_payload("short")?);
-        reassembly.insert(seq, test_payload("longer")?);
+        reassembly.insert(seq, longer.clone());
 
-        let mut out = Vec::new();
-        reassembly.drain_contiguous(seq, &mut out);
+        let out = reassembly.drain_contiguous(&mut seq).collect::<Vec<_>>();
 
-        assert_eq!(out, b"longer");
+        assert_eq!(out, [longer]);
 
         Ok(())
     }
@@ -210,21 +216,25 @@ mod tests {
     #[test]
     fn fin_reached_after_draining_buffered_data_up_to_fin_seq() -> TraceableResult {
         let mut reassembly = TcpReassembly::new();
-        let rcv_nxt = SeqPoint::new(100);
+        let mut rcv_nxt = SeqPoint::new(100);
+        let fin_rcv_nxt = rcv_nxt + SeqOffset::new(7);
+        let pay = test_payload("pay")?;
+        let load = test_payload("load")?;
 
         // FIN-carrying segment arrives first, out of order, its FIN sitting past its own payload
-        reassembly.insert(rcv_nxt + SeqOffset::new(3), test_payload("load")?);
-        reassembly.mark_fin(rcv_nxt + SeqOffset::new(7));
+        reassembly.insert(rcv_nxt + SeqOffset::new(3), load.clone());
+        reassembly.mark_fin(fin_rcv_nxt);
         assert!(!reassembly.fin_reached(rcv_nxt));
 
         // "pay" fills the gap before the FIN-carrying segment
-        reassembly.insert(rcv_nxt, test_payload("pay")?);
+        reassembly.insert(rcv_nxt, pay.clone());
 
-        let mut out = Vec::new();
-        let new_rcv_nxt = reassembly.drain_contiguous(rcv_nxt, &mut out);
+        let out = reassembly
+            .drain_contiguous(&mut rcv_nxt)
+            .collect::<Vec<_>>();
 
-        assert_eq!(out, b"payload");
-        assert!(reassembly.fin_reached(new_rcv_nxt));
+        assert_eq!(out, [pay, load]);
+        assert!(reassembly.fin_reached(fin_rcv_nxt));
 
         Ok(())
     }

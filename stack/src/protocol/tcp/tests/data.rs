@@ -11,7 +11,7 @@ fn creates_valid_data_echo() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -19,6 +19,31 @@ fn creates_valid_data_echo() -> TraceableResult {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
             payload: TcpPayload::from_test_str("Hello")?,
+            ..SERVER_REPLY
+        })
+    );
+
+    Ok(())
+}
+
+#[test]
+fn reply_payload_is_what_the_application_returns_not_just_echo() -> TraceableResult {
+    let mut connections = TcpConnections::default().after_handshake();
+
+    let reply = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str("Hello")?,
+        ..CLIENT_PKT
+    }
+    .create_reply(&mut ShoutingTestApp, &mut connections)?;
+
+    assert_eq!(
+        reply,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            payload: TcpPayload::from_test_str("HELLO")?,
             ..SERVER_REPLY
         })
     );
@@ -40,7 +65,7 @@ fn pure_ack_on_established_connection_returns_none() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     cloned_state.snd_nxt += LOCAL_HELLO_LEN;
     cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
@@ -52,7 +77,7 @@ fn pure_ack_on_established_connection_returns_none() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    assert_eq!(pure_ack.create_reply(&mut connections)?, None);
+    assert_eq!(pure_ack.create_test_reply(&mut connections)?, None);
 
     cloned_state.snd_una += LOCAL_HELLO_LEN;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
@@ -87,7 +112,7 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply1,
@@ -116,7 +141,7 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply2,
@@ -152,7 +177,7 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply1,
@@ -182,7 +207,7 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    let reply2 = hi_pkt.create_reply(&mut connections)?;
+    let reply2 = hi_pkt.create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply2,
@@ -217,7 +242,7 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hey")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     // The stale ack_num doesn't make the segment unacceptable (SERVER_ISN+1 <=
     // SND.NXT=SERVER_ISN+8), so it's still processed normally and "Hey" is echoed
@@ -273,7 +298,7 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
     // First packet: "Hello" (seq=CLIENT_ISN+1) -> rcv_nxt advances to CLIENT_ISN+6, snd_nxt
     // advances to SERVER_ISN+6
     assert_eq!(
-        hello.create_reply(&mut connections)?,
+        hello.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
@@ -286,7 +311,7 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
     // Second packet: "Hi" (seq=CLIENT_ISN+6) -> rcv_nxt advances to CLIENT_ISN+8, snd_nxt advances
     // to SERVER_ISN+8
     assert_eq!(
-        hi.create_reply(&mut connections)?,
+        hi.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
@@ -298,7 +323,7 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
 
     // Retransmit of "Hello": seq=CLIENT_ISN+1, but rcv_nxt is now CLIENT_ISN+8
     assert_eq!(
-        hello.create_reply(&mut connections)?,
+        hello.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN + LOCAL_HI_LEN,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
@@ -330,7 +355,7 @@ fn stale_pure_ack_gets_duplicate_ack_without_updating_state() -> TraceableResult
     };
 
     assert_eq!(
-        stale_pure_ack.create_reply(&mut connections)?,
+        stale_pure_ack.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -366,7 +391,7 @@ fn ack_for_unsent_data_is_dropped_and_gets_current_state_reply() -> TraceableRes
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -404,7 +429,7 @@ fn wraparound_ack_for_unsent_data_is_still_rejected() -> TraceableResult {
 
     // ack=0 wraps 1 past SND.NXT=`u32::MAX`
     let reply = TcpSegment { seq_num: CLIENT_ISN + REMOTE_SYN_BYTE, ..CLIENT_PKT }
-        .create_reply(&mut connections)?;
+        .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -432,7 +457,7 @@ fn data_pkt_for_unknown_connection_gets_rst() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -459,7 +484,7 @@ fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -493,7 +518,7 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     let reply = TcpSegment {
         seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -501,7 +526,7 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -512,6 +537,50 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
             ..SERVER_REPLY
         }),
         "Both segments should be echoed together once the gap closes"
+    );
+
+    assert_eq!(
+        connections.try_get()?.reassembly.len(),
+        0,
+        "The reassembly buffer should be empty after draining"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn out_of_order_reassembly_respects_app_logic() -> TraceableResult {
+    // "lo" arrives out of order first, then "hel" fills the gap before it. Both should be
+    // capitalized together according to the shouting app, as a single "HELLO".
+
+    let mut app = ShoutingTestApp;
+    let mut connections = TcpConnections::default().after_handshake();
+
+    TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(3),
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str("lo")?,
+        ..CLIENT_PKT
+    }
+    .create_reply(&mut app, &mut connections)?;
+
+    let reply = TcpSegment {
+        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        payload: TcpPayload::from_test_str("hel")?,
+        ..CLIENT_PKT
+    }
+    .create_reply(&mut app, &mut connections)?;
+
+    assert_eq!(
+        reply,
+        Some(TcpSegment {
+            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            payload: TcpPayload::from_test_str("HELLO")?,
+            ..SERVER_REPLY
+        }),
+        "Both segments should be capitalized together once the gap closes"
     );
 
     assert_eq!(
@@ -539,7 +608,7 @@ fn seq_one_before_rcv_nxt_is_rejected() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -580,7 +649,7 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
     };
 
     assert_eq!(
-        hi.create_reply(&mut connections)?,
+        hi.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -624,7 +693,7 @@ fn seq_at_first_unacceptable_offset_is_rejected() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,

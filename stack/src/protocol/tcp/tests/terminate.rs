@@ -29,7 +29,7 @@ fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> TraceableResu
     };
 
     assert_eq!(
-        client_fin_ack.create_reply(&mut connections)?,
+        client_fin_ack.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_FIN_BYTE,
@@ -72,7 +72,7 @@ fn creates_valid_fin_ack() -> TraceableResult {
     };
 
     assert_eq!(
-        client_fin_ack.create_reply(&mut connections)?,
+        client_fin_ack.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_FIN_BYTE,
@@ -112,7 +112,7 @@ fn fin_ack_acks_prior_data_and_advances_snd_una() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     cloned_state.snd_nxt += LOCAL_HELLO_LEN;
     cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
@@ -141,7 +141,7 @@ fn fin_ack_acks_prior_data_and_advances_snd_una() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    client_fin_ack.create_reply(&mut connections)?;
+    client_fin_ack.create_test_reply(&mut connections)?;
 
     cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
         client_fin_ack.window,
@@ -188,7 +188,7 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> TraceableResult 
     };
 
     assert_eq!(
-        client_fin_ack.create_reply(&mut connections)?,
+        client_fin_ack.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -235,7 +235,7 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
     };
 
     assert_eq!(
-        fin_ack_with_data.create_reply(&mut connections)?,
+        fin_ack_with_data.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -276,7 +276,7 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
     };
 
     assert_eq!(
-        hello.create_reply(&mut connections)?,
+        hello.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN
@@ -297,7 +297,8 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
     // remembered.
     cloned_state
         .reassembly
-        .drain_contiguous(hello.seq_num + REMOTE_HELLO_LEN, &mut Vec::new());
+        .drain_contiguous(&mut (hello.seq_num + REMOTE_HELLO_LEN))
+        .for_each(drop);
 
     // The window state stays pinned to the FIN-ACK's values (not changing those of the "Hello") due
     // to the window update rules, even though "Hello" fills a gap in the data
@@ -342,7 +343,7 @@ fn partial_ack_after_sending_our_fin_does_not_close_or_reset() -> TraceableResul
         };
 
         assert_eq!(
-            partial_ack.create_reply(&mut connections)?,
+            partial_ack.create_test_reply(&mut connections)?,
             None,
             "A partial ACK not yet covering our FIN should get no reply (in state {tcp_state:?})"
         );
@@ -373,7 +374,7 @@ fn final_ack_after_fin_ack_removes_connection_and_returns_none() -> TraceableRes
         ..CLIENT_PKT
     };
 
-    client_fin_ack.create_reply(&mut connections)?;
+    client_fin_ack.create_test_reply(&mut connections)?;
 
     cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
         client_fin_ack.window,
@@ -392,7 +393,7 @@ fn final_ack_after_fin_ack_removes_connection_and_returns_none() -> TraceableRes
             ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_FIN_BYTE,
             ..CLIENT_PKT
         }
-        .create_reply(&mut connections)?,
+        .create_test_reply(&mut connections)?,
         None
     );
 
@@ -444,7 +445,7 @@ fn fin_wait_1_to_fin_wait_2_on_ack_of_our_fin() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    assert_eq!(ack_of_fin.create_reply(&mut connections)?, None);
+    assert_eq!(ack_of_fin.create_test_reply(&mut connections)?, None);
 
     cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(WindowState::test_new(
         ack_of_fin.window,
@@ -471,7 +472,7 @@ fn fin_wait_2_closes_on_fin_ack_from_peer() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    assert_eq!(ack_of_fin.create_reply(&mut connections)?, None);
+    assert_eq!(ack_of_fin.create_test_reply(&mut connections)?, None);
 
     cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(WindowState::test_new(
         ack_of_fin.window,
@@ -489,7 +490,7 @@ fn fin_wait_2_closes_on_fin_ack_from_peer() -> TraceableResult {
         flags: TcpFlags::FinAck,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         fin_reply,
@@ -520,7 +521,7 @@ fn fin_wait_1_closes_immediately_if_peers_fin_also_acks_ours() -> TraceableResul
         flags: TcpFlags::FinAck,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -552,7 +553,7 @@ fn data_after_our_fin_in_fin_wait_1_is_acked_without_echo() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -583,7 +584,7 @@ fn data_after_our_fin_in_fin_wait_2_is_acked_without_echo() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    assert_eq!(ack_of_fin.create_reply(&mut connections)?, None);
+    assert_eq!(ack_of_fin.create_test_reply(&mut connections)?, None);
 
     cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(WindowState::test_new(
         ack_of_fin.window,
@@ -600,7 +601,7 @@ fn data_after_our_fin_in_fin_wait_2_is_acked_without_echo() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -634,7 +635,7 @@ fn simultaneous_close_transitions_through_closing_to_closed() -> TraceableResult
     };
 
     assert_eq!(
-        client_fin_ack.create_reply(&mut connections)?,
+        client_fin_ack.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_FIN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_FIN_BYTE,
@@ -657,7 +658,7 @@ fn simultaneous_close_transitions_through_closing_to_closed() -> TraceableResult
             ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_FIN_BYTE,
             ..CLIENT_PKT
         }
-        .create_reply(&mut connections)?,
+        .create_test_reply(&mut connections)?,
         None
     );
 
@@ -686,7 +687,7 @@ fn fin_ack_with_data_in_fin_wait_1_advances_rcv_nxt_past_data_and_fin() -> Trace
     };
 
     assert_eq!(
-        fin_ack_with_data.create_reply(&mut connections)?,
+        fin_ack_with_data.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_FIN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
@@ -721,7 +722,7 @@ fn fin_ack_with_data_in_fin_wait_1_acking_our_fin_closes_immediately() -> Tracea
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -753,7 +754,7 @@ fn fin_ack_with_data_in_fin_wait_2_advances_rcv_nxt_past_data_and_fin() -> Trace
             ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_FIN_BYTE,
             ..CLIENT_PKT
         }
-        .create_reply(&mut connections)?,
+        .create_test_reply(&mut connections)?,
         None
     );
 
@@ -765,7 +766,7 @@ fn fin_ack_with_data_in_fin_wait_2_advances_rcv_nxt_past_data_and_fin() -> Trace
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -800,7 +801,7 @@ fn fin_ack_with_data_in_established_echoes_data_and_starts_closing() -> Traceabl
     };
 
     assert_eq!(
-        fin_ack_with_data.create_reply(&mut connections)?,
+        fin_ack_with_data.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
@@ -858,7 +859,7 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
     };
 
     assert_eq!(
-        fin_ack_with_data.create_reply(&mut connections)?,
+        fin_ack_with_data.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
@@ -894,7 +895,7 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
     };
 
     assert_eq!(
-        window_update.create_reply(&mut connections)?,
+        window_update.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE + SMALL_WINDOW.into(),
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_FIN_BYTE,
@@ -957,7 +958,7 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
         ..CLIENT_PKT
     };
 
-    fin_ack_tail.create_reply(&mut connections)?;
+    fin_ack_tail.create_test_reply(&mut connections)?;
 
     expected_state.reassembly.insert(
         fin_ack_tail.seq_num,
@@ -982,7 +983,7 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
     let max_len = SeqOffset::<u32, Local>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
 
     assert_eq!(
-        gap_filler.create_reply(&mut connections)?,
+        gap_filler.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + gap_len + tail_len + REMOTE_FIN_BYTE,
@@ -1000,7 +1001,8 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
     // remembered
     expected_state
         .reassembly
-        .drain_contiguous(gap_filler.seq_num + gap_len, &mut Vec::new());
+        .drain_contiguous(&mut (gap_filler.seq_num + gap_len))
+        .for_each(drop);
 
     // The window state stays pinned to the out-of-order FIN-ACK's values (not the gap-filling
     // chunk's, which arrives with an earlier sequence number) due to the window update rules
@@ -1029,7 +1031,7 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
     };
 
     assert_eq!(
-        window_update.create_reply(&mut connections)?,
+        window_update.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE + max_len,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + gap_len + tail_len + REMOTE_FIN_BYTE,
@@ -1080,7 +1082,7 @@ fn stale_retransmission_after_sending_our_fin_gets_duplicate_ack_not_rst() -> Tr
         };
 
         assert_eq!(
-            stale_retransmission.create_reply(&mut connections)?,
+            stale_retransmission.create_test_reply(&mut connections)?,
             Some(TcpSegment {
                 seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
                 ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -1122,7 +1124,7 @@ fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> TraceableR
     };
 
     assert_eq!(
-        stale_retransmission.create_reply(&mut connections)?,
+        stale_retransmission.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -1157,7 +1159,7 @@ fn stale_pure_ack_after_sending_our_fin_gets_duplicate_ack() -> TraceableResult 
         };
 
         assert_eq!(
-            stale_pure_ack.create_reply(&mut connections)?,
+            stale_pure_ack.create_test_reply(&mut connections)?,
             Some(TcpSegment {
                 seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
                 ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
@@ -1201,7 +1203,7 @@ fn stale_pure_ack_in_close_wait_gets_duplicate_ack() -> TraceableResult {
     };
 
     assert_eq!(
-        stale_pure_ack.create_reply(&mut connections)?,
+        stale_pure_ack.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,

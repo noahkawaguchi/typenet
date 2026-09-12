@@ -27,7 +27,7 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResu
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -75,7 +75,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     expected_state.snd_nxt += WINDOW.into();
     expected_state.rcv_nxt += REMOTE_HELLO_LEN;
@@ -101,7 +101,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     };
 
     assert_eq!(
-        dup_ack_same_window.create_reply(&mut connections)?,
+        dup_ack_same_window.create_test_reply(&mut connections)?,
         None,
         "No room left in the window while the first 3 bytes remain unacked"
     );
@@ -141,7 +141,7 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     expected_state.snd_nxt += HEL_LEN;
     expected_state.rcv_nxt += REMOTE_HELLO_LEN;
@@ -157,7 +157,7 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
         ..CLIENT_PKT
     };
 
-    let reply = window_update.create_reply(&mut connections)?;
+    let reply = window_update.create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -203,7 +203,7 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
@@ -260,7 +260,7 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
         payload: TcpPayload::from_test_str(&big_payload)?,
         ..CLIENT_PKT
     }
-    .create_reply(&mut connections)?;
+    .create_test_reply(&mut connections)?;
 
     expected_state.rcv_nxt += big_payload_len;
     expected_state.send_buffer.extend(big_payload.as_bytes());
@@ -275,7 +275,7 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
     };
 
     assert_eq!(
-        window_update.create_reply(&mut connections)?,
+        window_update.create_test_reply(&mut connections)?,
         Some(TcpSegment {
             seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
             ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + big_payload_len,
