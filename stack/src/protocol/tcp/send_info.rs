@@ -87,46 +87,18 @@ impl SendInfo {
             server_port: seg.ports.dst,
         };
 
-        // Closure to deduplicate processing of state-specific helpers' return values
-        let known_conn_case = |(maybe_send_info, remove_conn), conns: &mut TcpConnections| {
-            if remove_conn {
-                conns.remove(&key);
+        match connections.get_mut(&key) {
+            None => Self::handle_unknown_conn(seg, connections, key),
+
+            Some(conn) => {
+                Self::handle_known_conn(app, seg, conn).map(|(maybe_send_info, remove_conn)| {
+                    if remove_conn {
+                        connections.remove(&key);
+                    }
+                    maybe_send_info
+                })
             }
-            maybe_send_info
-        };
-
-        Ok(match connections.get_mut(&key) {
-            None => Self::handle_unknown_conn(seg, connections, key)?,
-
-            Some(conn) => known_conn_case(
-                match conn.tcp_state {
-                    TcpState::SynReceived(syn_received) => {
-                        Self::handle_syn_rcv(app, seg, conn, syn_received)?
-                    }
-
-                    TcpState::Established(established) => {
-                        Self::handle_established(app, seg, conn, established)?
-                    }
-
-                    TcpState::FinWait1(fin_wait_1) => {
-                        Self::handle_fin_wait_1(seg, conn, fin_wait_1)
-                    }
-
-                    TcpState::FinWait2(fin_wait_2) => {
-                        Self::handle_fin_wait_2(seg, conn, fin_wait_2)
-                    }
-
-                    TcpState::CloseWait(close_wait) => {
-                        Self::handle_close_wait(seg, conn, close_wait)?
-                    }
-
-                    TcpState::Closing(closing) => Self::handle_closing(seg, conn, closing),
-
-                    TcpState::LastAck(last_ack) => Self::handle_last_ack(seg, conn, last_ack),
-                },
-                connections,
-            ),
-        })
+        }
     }
 
     fn handle_unknown_conn(
@@ -156,6 +128,28 @@ impl SendInfo {
             // Something else with ACK set (non-RST) -> per RFC 9293, Sections 3.10.7.1 and
             // 3.10.7.2, send <SEQ=SEG.ACK><CTL=RST>.
             TcpFlags::SynAck | TcpFlags::Ack | TcpFlags::FinAck => Some(Self::rst(seg)),
+        })
+    }
+
+    /// Handles the reply decision and state updates for a known connection, returning a reply if
+    /// necessary and a `bool` representing whether the connection should be removed.
+    fn handle_known_conn(
+        app: &mut impl Application,
+        seg: &TcpSegment<Remote>,
+        conn: &mut ConnState,
+    ) -> TraceableResult<(Option<Self>, bool)> {
+        Ok(match conn.tcp_state {
+            TcpState::SynReceived(syn_received) => {
+                Self::handle_syn_rcv(app, seg, conn, syn_received)?
+            }
+            TcpState::Established(established) => {
+                Self::handle_established(app, seg, conn, established)?
+            }
+            TcpState::FinWait1(fin_wait_1) => Self::handle_fin_wait_1(seg, conn, fin_wait_1),
+            TcpState::FinWait2(fin_wait_2) => Self::handle_fin_wait_2(seg, conn, fin_wait_2),
+            TcpState::CloseWait(close_wait) => Self::handle_close_wait(seg, conn, close_wait)?,
+            TcpState::Closing(closing) => Self::handle_closing(seg, conn, closing),
+            TcpState::LastAck(last_ack) => Self::handle_last_ack(seg, conn, last_ack),
         })
     }
 
