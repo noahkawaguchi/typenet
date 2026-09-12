@@ -1,7 +1,6 @@
 use {
     typenet_server::{
         config::Config,
-        application::EchoApp,
         server,
         sys::{ShutdownSignal, poll, tun},
     },
@@ -13,12 +12,5 @@ fn main() -> TraceableResult {
     let shutdown = ShutdownSignal::install()?;
     let config = Config::load()?;
     let mut tun = tun::attach(&config.tun_name)?;
-
-    server::run(
-        EchoApp,
-        &mut tun,
-        |fd, timeout| poll::readable(fd, timeout),
-        || shutdown.load(),
-        &config,
-    )
+    server::run(&mut tun, |fd, timeout| poll::readable(fd, timeout), || shutdown.load(), &config)
 }
