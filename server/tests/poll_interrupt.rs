@@ -17,7 +17,9 @@ use {
 #[test]
 #[expect(unsafe_code, reason = "libc FFI to target a spawned thread with a real SIGINT")]
 fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
-    ShutdownSignal::install()?; // `SA_RESTART` unset
+    // Keep the fd open for the whole test so it cannot be reused by a socket and then potentially
+    // corrupted by the signal handler
+    let _shutdown = ShutdownSignal::install()?; // `SA_RESTART` unset
 
     let (_tx, rx) = UnixStream::pair()?;
     let (tid_tx, tid_rx) = mpsc::channel();
@@ -46,7 +48,7 @@ fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
 
     let result = poller
         .join()
-        .map_err(|_| io::Error::other("poller thread panicked"))?;
+        .map_err(|_| io::Error::other("Poller thread panicked"))?;
 
     assert_matches!(result, Err(e) if e.kind() == io::ErrorKind::Interrupted);
 

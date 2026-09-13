@@ -38,6 +38,12 @@ fn main() -> TraceableResult {
             })
             .collect::<Vec<_>>();
 
+        // Each worker thread above inherited the still-unblocked mask from this thread at spawn
+        // time, so they can keep reacting to `SIGINT`. Blocking it here stops `SIGINT` from being
+        // delivered to this thread instead of a worker (particularly used for repeated Ctrl+C
+        // during graceful shutdown).
+        ShutdownSignal::block_sigint_on_this_thread()?;
+
         handles.into_iter().try_for_each(|handle| {
             handle
                 .join()

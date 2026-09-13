@@ -106,4 +106,45 @@ impl ShutdownSignal {
     /// stays) readable once a shutdown signal is received.
     #[must_use]
     pub fn eventfd(&self) -> BorrowedFd<'_> { self.eventfd.as_fd() }
+
+    /// Blocks `SIGINT` on the calling thread only, so it stops being a candidate for delivery of
+    /// that signal in a multithreaded process.
+    ///
+    /// Must be called after any threads meant to still receive `SIGINT` has already been spawned,
+    /// so those threads inherit the mask from before this call, not after.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the signal mask could not be read or set.
+    #[expect(unsafe_code, reason = "libc syscalls to block a signal")]
+    pub fn block_sigint_on_this_thread() -> TraceableResult {
+        // SAFETY: `set` is fully initialized by `sigemptyset` before any other use.
+        let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
+
+        // SAFETY: `&raw mut set` is a valid, aligned, writable pointer to an owned `sigset_t` on
+        // the stack.
+        if unsafe { libc::sigemptyset(&raw mut set) } != 0 {
+            return Err(io::Error::last_os_error().into());
+        }
+
+        // SAFETY: `SIGINT` is a valid signum and `&raw mut set` points to the same initialized
+        // `sigset_t` emptied above.
+        if unsafe { libc::sigaddset(&raw mut set, libc::SIGINT) } != 0 {
+            return Err(io::Error::last_os_error().into());
+        }
+
+        // SAFETY: `SIG_BLOCK` is a valid `how`, `&raw const set` is a valid, aligned pointer to a
+        // fully initialized `sigset_t`, and a null `oldset` is permitted. `pthread_sigmask`
+        // only ever affects the calling thread's mask.
+        //
+        // (Unlike most libc functions, `pthread_sigmask` reports failure via its return value, not
+        // `errno`, so the error is built from that return value directly rather than
+        // `last_os_error`.)
+        match unsafe {
+            libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, std::ptr::null_mut())
+        } {
+            0 => Ok(()),
+            errno => Err(io::Error::from_raw_os_error(errno).into()),
+        }
+    }
 }
