@@ -12,6 +12,9 @@ static SHUTDOWN_FLAG: AtomicBool = AtomicBool::new(false);
 
 /// The raw fd of the shutdown eventfd. `ShutdownSignal::install` replaces the sentinel -1 with the
 /// real fd before installing the handler itself, so the handler should never observe the sentinel.
+///
+/// Assumes C `int` is equivalent to Rust `i32` (which should be true on any Linux system), causing
+/// a compilation error otherwise.
 static SHUTDOWN_EVENTFD_FD: AtomicI32 = AtomicI32::new(-1);
 
 /// Signal handler to atomically set the shutdown flag and make the shutdown eventfd readable,
