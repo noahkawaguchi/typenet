@@ -27,8 +27,7 @@ fn shutdown_flag_starts_false_and_flips_on_sigint() -> TraceableResult {
     );
 
     // SAFETY: raising `SIGINT` on the current thread is well-defined, and the handler installed
-    // above is async-signal-safe (a relaxed store, a relaxed load, and a `write()` syscall), so
-    // this cannot corrupt thread state.
+    // above is async-signal-safe (see its comments), so this cannot corrupt thread state.
     if unsafe { libc::raise(libc::SIGINT) } != 0 {
         return Err(io::Error::last_os_error().into());
     }

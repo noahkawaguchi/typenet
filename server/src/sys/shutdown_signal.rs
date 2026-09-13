@@ -14,25 +14,49 @@ static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 /// real fd before installing the handler itself, so the handler should never observe the sentinel.
 static SHUTDOWN_EVENTFD_FD: AtomicI32 = AtomicI32::new(-1);
 
-/// Signal handler to atomically set the shutdown flag and wake any thread blocked polling the
-/// shutdown eventfd.
-#[expect(unsafe_code, reason = "libc syscall to write to the shutdown eventfd")]
+/// Signal handler to atomically set the shutdown flag and make the shutdown eventfd readable,
+/// broadcasting shutdown to all threads polling it.
+///
+/// Worker threads other than the one the signal was actually delivered to have no way to learn
+/// about shutdown other than this write making the eventfd readable, so a silent failure would
+/// leave them stuck forever. An eventfd write is all-or-nothing for exactly 8 bytes, so anything
+/// else means that guarantee no longer holds. Accordingly, retry a failed write if merely
+/// interrupted by another signal, but abort on a partial write or any other failure.
+#[expect(unsafe_code, reason = "libc syscalls to write to the shutdown eventfd, retry, and abort")]
 extern "C" fn shutdown_signal_handler(_sig: libc::c_int) {
     SHUTDOWN.store(true, Ordering::Relaxed);
 
     let fd = SHUTDOWN_EVENTFD_FD.load(Ordering::Relaxed);
+    let one = 1u64;
 
-    if fd >= 0 {
-        let one = 1u64;
-
+    loop {
         // Write 1 into the shutdown eventfd, which will make it readable when `poll()` is called.
         //
-        // SAFETY: `fd` is a valid, open eventfd (the -1 sentinel is excluded above), and `&raw
-        // const one` is a valid pointer to `size_of::<u64>()` initialized bytes. Writing to
-        // an eventfd is a plain `write()` syscall, so it's async-signal-safe. The return value is
-        // intentionally ignored because there's nothing actionable to do with a failure in a signal
-        // handler.
-        unsafe { libc::write(fd, (&raw const one).cast(), size_of::<u64>()) };
+        // SAFETY: `&raw const one` is a valid pointer to `size_of::<u64>()` initialized bytes.
+        // Writing to an eventfd is a plain `write()` syscall, so it's async-signal-safe. `fd` is
+        // expected to be a valid, open eventfd. If it's ever not (including the -1 sentinel, which
+        // `install` replaces before this handler can be installed), this simply fails with `EBADF`
+        // rather than doing anything unsafe.
+        let bytes_written = unsafe { libc::write(fd, (&raw const one).cast(), size_of::<u64>()) };
+
+        if bytes_written == size_of::<u64>().cast_signed() {
+            break;
+        }
+
+        if bytes_written < 0 {
+            // SAFETY: `__errno_location` takes no arguments and always returns a valid pointer to
+            // the calling thread's `errno`, which `write` above just set.
+            let errno_ptr = unsafe { libc::__errno_location() };
+
+            // SAFETY: `errno_ptr` was just obtained above and points to a live, initialized C
+            // `int`. Reading it is async-signal-safe and does not allocate.
+            if unsafe { *errno_ptr } == libc::EINTR {
+                continue;
+            }
+        }
+
+        // SAFETY: `abort()` is async-signal-safe and terminates the process immediately.
+        unsafe { libc::abort() };
     }
 }
 
@@ -84,9 +108,7 @@ impl ShutdownSignal {
         // - `SIGINT` is a valid `signum`.
         // - `&raw const sa` is a valid, aligned pointer to a fully initialized `sigaction`.
         // - A null `oldact` is permitted.
-        // - `shutdown_signal_handler` is async-signal-safe, performing only a relaxed store to a
-        //   lock-free `AtomicBool`, a relaxed load from a lock-free `AtomicI32`, and a raw
-        //   `write()` syscall.
+        // - `shutdown_signal_handler` is async-signal-safe (see its comments).
         if unsafe { libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut()) } != 0 {
             return Err(io::Error::last_os_error().into());
         }
