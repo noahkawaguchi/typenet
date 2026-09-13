@@ -30,11 +30,11 @@ fn eventfd_wakes_a_thread_that_never_receives_sigint_directly() -> TraceableResu
                 .send(unsafe { libc::pthread_self() })
                 .map_err(io::Error::other)?;
 
-            poll::readable(&targeted_rx, Some(shutdown.eventfd()), None)
+            poll::readable(&targeted_rx, Some(shutdown.borrow_eventfd()), None)
         });
 
         let bystander =
-            scope.spawn(|| poll::readable(&bystander_rx, Some(shutdown.eventfd()), None));
+            scope.spawn(|| poll::readable(&bystander_rx, Some(shutdown.borrow_eventfd()), None));
 
         let targeted_tid = tid_rx.recv().map_err(io::Error::other)?;
 

@@ -8,7 +8,7 @@ use {
 };
 
 /// The flag for graceful shutdown, private to this module.
-static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+static SHUTDOWN_FLAG: AtomicBool = AtomicBool::new(false);
 
 /// The raw fd of the shutdown eventfd. `ShutdownSignal::install` replaces the sentinel -1 with the
 /// real fd before installing the handler itself, so the handler should never observe the sentinel.
@@ -24,7 +24,7 @@ static SHUTDOWN_EVENTFD_FD: AtomicI32 = AtomicI32::new(-1);
 /// interrupted by another signal, but abort on a partial write or any other failure.
 #[expect(unsafe_code, reason = "libc syscalls to write to the shutdown eventfd, retry, and abort")]
 extern "C" fn shutdown_signal_handler(_sig: libc::c_int) {
-    SHUTDOWN.store(true, Ordering::Relaxed);
+    SHUTDOWN_FLAG.store(true, Ordering::Relaxed);
 
     let fd = SHUTDOWN_EVENTFD_FD.load(Ordering::Relaxed);
     let one = 1u64;
@@ -117,17 +117,17 @@ impl ShutdownSignal {
         // from this point on (nothing else holds or closes it).
         let eventfd = unsafe { OwnedFd::from_raw_fd(eventfd_raw) };
 
-        Ok(Self { flag: &SHUTDOWN, eventfd })
+        Ok(Self { flag: &SHUTDOWN_FLAG, eventfd })
     }
 
     /// Atomically loads the status of the flag representing whether or not to shut down.
     #[must_use]
-    pub fn load(&self) -> bool { self.flag.load(Ordering::Relaxed) }
+    pub fn load_flag(&self) -> bool { self.flag.load(Ordering::Relaxed) }
 
     /// Borrows the shutdown eventfd so it can be polled for readability. It becomes (and forever
     /// stays) readable once a shutdown signal is received.
     #[must_use]
-    pub fn eventfd(&self) -> BorrowedFd<'_> { self.eventfd.as_fd() }
+    pub fn borrow_eventfd(&self) -> BorrowedFd<'_> { self.eventfd.as_fd() }
 
     /// Blocks `SIGINT` on the calling thread only, so it stops being a candidate for delivery of
     /// that signal in a multithreaded process.

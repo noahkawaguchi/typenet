@@ -29,9 +29,13 @@ fn main() -> TraceableResult {
                     server::run(
                         tun,
                         |fd, timeout, watch_shutdown| {
-                            poll::readable(fd, watch_shutdown.then(|| shutdown.eventfd()), timeout)
+                            poll::readable(
+                                fd,
+                                watch_shutdown.then(|| shutdown.borrow_eventfd()),
+                                timeout,
+                            )
                         },
-                        || shutdown.load(),
+                        || shutdown.load_flag(),
                         &config,
                     )
                 })

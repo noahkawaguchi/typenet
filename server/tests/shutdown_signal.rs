@@ -19,10 +19,10 @@ fn shutdown_flag_starts_false_and_flips_on_sigint() -> TraceableResult {
     // A dummy primary fd that's never readable to focus on testing the shutdown eventfd
     let (_tx, never_readable) = UnixStream::pair()?;
 
-    assert!(!shutdown.load());
+    assert!(!shutdown.load_flag());
 
     assert_eq!(
-        poll::readable(&never_readable, Some(shutdown.eventfd()), Some(Duration::ZERO))?,
+        poll::readable(&never_readable, Some(shutdown.borrow_eventfd()), Some(Duration::ZERO))?,
         poll::PollOutcome::Timeout
     );
 
@@ -32,10 +32,10 @@ fn shutdown_flag_starts_false_and_flips_on_sigint() -> TraceableResult {
         return Err(io::Error::last_os_error().into());
     }
 
-    assert!(shutdown.load());
+    assert!(shutdown.load_flag());
 
     assert_eq!(
-        poll::readable(&never_readable, Some(shutdown.eventfd()), Some(Duration::ZERO))?,
+        poll::readable(&never_readable, Some(shutdown.borrow_eventfd()), Some(Duration::ZERO))?,
         poll::PollOutcome::Shutdown
     );
 
