@@ -2,12 +2,12 @@ use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn due_retransmission_is_sent_as_real_io() -> TraceableResult {
-    // Zero RTO means the pending SYN-ACK is due the instant it's seeded, so the very first
-    // `Ok(false)` (a poll timeout) should trigger a real resend. The second poll call is a shutdown
-    // signal, and since a SYN-RECEIVED connection isn't mid-close, it exits immediately without
-    // writing anything more.
+    // Zero RTO means the pending SYN-ACK is due the instant it's seeded, so the very first timeout
+    // should trigger a real resend. The second poll call is a shutdown signal, and since a
+    // SYN-RECEIVED connection isn't mid-close, it exits immediately without writing anything more.
 
-    let poll = MockPoll::with_results([Ok(false), Err(io::ErrorKind::Interrupted.into())]);
+    let poll =
+        MockPoll::with_results([Ok(PollOutcome::Timeout), Err(io::ErrorKind::Interrupted.into())]);
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
@@ -31,8 +31,11 @@ fn retransmission_does_not_drop_the_connection() -> TraceableResult {
     // first retransmit, the second due poll should trigger another one instead of finding the
     // connection already gone.
 
-    let poll =
-        MockPoll::with_results([Ok(false), Ok(false), Err(io::ErrorKind::Interrupted.into())]);
+    let poll = MockPoll::with_results([
+        Ok(PollOutcome::Timeout),
+        Ok(PollOutcome::Timeout),
+        Err(io::ErrorKind::Interrupted.into()),
+    ]);
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
@@ -68,9 +71,9 @@ fn gives_up_and_drops_connection_after_max_retries() -> TraceableResult {
     // write.
 
     let poll = MockPoll::with_results([
-        Ok(false),
-        Ok(false),
-        Ok(false),
+        Ok(PollOutcome::Timeout),
+        Ok(PollOutcome::Timeout),
+        Ok(PollOutcome::Timeout),
         Err(io::ErrorKind::Interrupted.into()),
     ]);
     let mut device = MockDevice::with_read_results([])?;

@@ -35,6 +35,8 @@ words = [
     "dtolnay",
     "dumpcap",
     "envrc",
+    "eventfd",
+    "fds",
     "ifr",
     "ifreq",
     "inetutils",

@@ -28,7 +28,7 @@ fn poll_error_unrelated_to_interruption_propagates() -> TraceableResult {
 fn read_error_unrelated_to_interruption_propagates() -> TraceableResult {
     const MESSAGE: &str = "boom from read";
 
-    let poll = MockPoll::with_results([Ok(true)]);
+    let poll = MockPoll::with_results([Ok(PollOutcome::Readable)]);
     let mut device = MockDevice::with_read_results([Err(io::Error::other(MESSAGE))])?;
 
     assert_matches!(

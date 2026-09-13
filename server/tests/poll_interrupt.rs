@@ -5,8 +5,8 @@
 //!   unset.
 //! - That error is correctly propagated through `poll::readable`.
 //!
-//! Written as an integration test so it runs as its own process, since installing a signal handler
-//! and flipping the static shutdown flag mutate process-wide state.
+//! Written as an integration test so it runs as its own process, since installing and running the
+//! signal handler mutates process-wide state.
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
@@ -28,7 +28,7 @@ fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
             .send(unsafe { libc::pthread_self() })
             .map_err(io::Error::other)?;
 
-        poll::readable(&rx, None)
+        poll::readable(&rx, None, None)
     });
 
     let tid = tid_rx.recv().map_err(io::Error::other)?;

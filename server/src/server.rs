@@ -1,5 +1,5 @@
 use {
-    crate::{application::ServerApp, config::Config, logger::Logger},
+    crate::{application::ServerApp, config::Config, logger::Logger, sys::poll::PollOutcome},
     std::{
         io::{self, Read, Write},
         os::fd::AsFd,
@@ -33,7 +33,7 @@ pub fn run<D, P, S>(
 ) -> TraceableResult
 where
     D: Read + Write + AsFd,
-    P: Fn(&D, Option<Duration>) -> io::Result<bool>,
+    P: Fn(&D, Option<Duration>) -> io::Result<PollOutcome>,
     S: Fn() -> bool,
 {
     let logger = Logger::new(config.log_level);
@@ -71,7 +71,7 @@ struct Server<'a, D, P, S> {
 impl<D, P, S> Server<'_, D, P, S>
 where
     D: Read + Write + AsFd,
-    P: Fn(&D, Option<Duration>) -> io::Result<bool>,
+    P: Fn(&D, Option<Duration>) -> io::Result<PollOutcome>,
     S: Fn() -> bool,
 {
     fn run(&mut self) -> TraceableResult {
@@ -92,7 +92,9 @@ where
 
                 Err(e) => break Err(e.into()),
 
-                Ok(false) if self.engine.grace_period_elapsed(Instant::now()) => {
+                Ok(PollOutcome::Shutdown | PollOutcome::Timeout)
+                    if self.engine.grace_period_elapsed(Instant::now()) =>
+                {
                     self.logger.server_newline();
                     self.logger.server_info(format_args!(
                         "Grace period elapsed with {} remaining connection(s), exiting",
@@ -102,8 +104,16 @@ where
                     break Ok(());
                 }
 
+                // Some other worker thread received the shutdown signal's `EINTR` -> same reaction
+                // as if this thread had received it
+                Ok(PollOutcome::Shutdown) => {
+                    if (self.shutdown_check)() && self.handle_shutdown_interrupt(Instant::now())? {
+                        break Ok(());
+                    }
+                }
+
                 // A retransmit deadline elapsed -> retransmit all expired segments
-                Ok(false) => {
+                Ok(PollOutcome::Timeout) => {
                     for retransmission in self.engine.make_retransmissions() {
                         self.logger
                             .pkt_extra(" ==== Packet sent (retransmission) ====");
@@ -113,8 +123,13 @@ where
                     }
                 }
 
-                // The device became readable within the timeout -> regular read and reply
-                Ok(true) => {
+                // The device became readable within the timeout -> regular read and reply. If the
+                // shutdown eventfd also became readable, check for shutdown after handling the
+                // packet.
+                Ok(poll_outcome @ (PollOutcome::Readable | PollOutcome::Both)) => {
+                    // Unlike `poll()`, `read()` here never needs to watch the shutdown
+                    // eventfd because it only ever runs once this fd is readable, and since each
+                    // worker thread owns its own queue fd exclusively, that data is still there
                     let bytes_read = match self.device.read(&mut read_buf) {
                         // If `read()` was interrupted and returned `EINTR`, react to the shutdown
                         // signal in the same way as for a `poll()` interruption
@@ -136,11 +151,11 @@ where
                     match self.engine.handle_packet(read_buf.try_get(..bytes_read)?) {
                         Err(e) => self.logger.pkt_err(e),
 
-                        Ok(outcome) => {
+                        Ok(pkt_outcome) => {
                             self.logger.pkt_extra(" ==== Packet received ====");
-                            self.logger.pkt_io(&outcome.incoming)?;
+                            self.logger.pkt_io(&pkt_outcome.incoming)?;
 
-                            match outcome.reply {
+                            match pkt_outcome.reply {
                                 None => self.logger.pkt_extra("\n<no reply>"),
 
                                 Some(reply) => {
@@ -152,6 +167,13 @@ where
                     }
 
                     self.logger.divider();
+
+                    if poll_outcome == PollOutcome::Both
+                        && (self.shutdown_check)()
+                        && self.handle_shutdown_interrupt(Instant::now())?
+                    {
+                        break Ok(());
+                    }
 
                     if self.engine.draining_complete() {
                         self.logger.server_newline();
@@ -252,7 +274,7 @@ mod tests {
     fn run_test_server(
         tcp_connections: TcpConnections,
         device: &mut MockDevice,
-        poll_readable: impl Fn(&MockDevice, Option<Duration>) -> io::Result<bool>,
+        poll_readable: impl Fn(&MockDevice, Option<Duration>) -> io::Result<PollOutcome>,
         shutdown_check: impl Fn() -> bool,
         shutdown_grace_period: Duration,
     ) -> TraceableResult {

@@ -6,7 +6,8 @@ fn first_interrupt_with_established_connection_sends_fin_ack_and_continues() -> 
     // grace period end the loop instead of running forever. Proves that the loop sends the packets
     // as real I/O when draining begins.
 
-    let poll = MockPoll::with_results([Err(io::ErrorKind::Interrupted.into()), Ok(false)]);
+    let poll =
+        MockPoll::with_results([Err(io::ErrorKind::Interrupted.into()), Ok(PollOutcome::Timeout)]);
     let mut device = MockDevice::with_read_results([])?;
 
     run_test_server(
@@ -140,7 +141,7 @@ fn read_interrupt_reaches_the_same_shutdown_handling_as_poll_interrupt() -> Trac
     // Mirrors the test for poll, but the `EINTR` arrives from the `read()` call instead of the
     // `poll()`, confirming that both entry points reach the same shutdown decision handling
 
-    let poll = MockPoll::with_results([Ok(true)]);
+    let poll = MockPoll::with_results([Ok(PollOutcome::Readable)]);
     let mut device = MockDevice::with_read_results([Err(io::ErrorKind::Interrupted.into())])?;
 
     run_test_server(
