@@ -28,7 +28,9 @@ fn main() -> TraceableResult {
                 scope.spawn(|| {
                     server::run(
                         tun,
-                        |fd, timeout| poll::readable(fd, Some(shutdown.eventfd()), timeout),
+                        |fd, timeout, watch_shutdown| {
+                            poll::readable(fd, watch_shutdown.then(|| shutdown.eventfd()), timeout)
+                        },
                         || shutdown.load(),
                         &config,
                     )

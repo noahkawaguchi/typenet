@@ -33,7 +33,7 @@ pub fn run<D, P, S>(
 ) -> TraceableResult
 where
     D: Read + Write + AsFd,
-    P: Fn(&D, Option<Duration>) -> io::Result<PollOutcome>,
+    P: Fn(&D, Option<Duration>, bool) -> io::Result<PollOutcome>,
     S: Fn() -> bool,
 {
     let logger = Logger::new(config.log_level);
@@ -55,6 +55,7 @@ where
         device,
         poll_readable,
         shutdown_check,
+        draining: false,
     }
     .run()
 }
@@ -66,12 +67,18 @@ struct Server<'a, D, P, S> {
     device: &'a mut D,
     poll_readable: P,
     shutdown_check: S,
+
+    /// Whether this thread has already reacted to a shutdown signal at least once. Used to stop
+    /// polling the shutdown eventfd after this thread has become aware of shutdown, because
+    /// otherwise the `poll()` call would always return immediately saying the shutdown eventfd is
+    /// readable and the loop would spin.
+    draining: bool,
 }
 
 impl<D, P, S> Server<'_, D, P, S>
 where
     D: Read + Write + AsFd,
-    P: Fn(&D, Option<Duration>) -> io::Result<PollOutcome>,
+    P: Fn(&D, Option<Duration>, bool) -> io::Result<PollOutcome>,
     S: Fn() -> bool,
 {
     fn run(&mut self) -> TraceableResult {
@@ -80,7 +87,11 @@ where
         self.logger.divider();
 
         loop {
-            match (self.poll_readable)(self.device, self.engine.poll_timeout(Instant::now())) {
+            match (self.poll_readable)(
+                self.device,
+                self.engine.poll_timeout(Instant::now()),
+                !self.draining,
+            ) {
                 // If `poll()` was interrupted and returned `EINTR`, check if a shutdown signal has
                 // been received
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
@@ -92,9 +103,16 @@ where
 
                 Err(e) => break Err(e.into()),
 
-                Ok(PollOutcome::Shutdown | PollOutcome::Timeout)
-                    if self.engine.grace_period_elapsed(Instant::now()) =>
-                {
+                // Some other worker thread received the shutdown signal's `EINTR` -> same reaction
+                // as if this thread had received it
+                Ok(PollOutcome::Shutdown) => {
+                    if (self.shutdown_check)() && self.handle_shutdown_interrupt(Instant::now())? {
+                        break Ok(());
+                    }
+                }
+
+                // Grace period ended with connections left -> forcefully exit
+                Ok(PollOutcome::Timeout) if self.engine.grace_period_elapsed(Instant::now()) => {
                     self.logger.server_newline();
                     self.logger.server_info(format_args!(
                         "Grace period elapsed with {} remaining connection(s), exiting",
@@ -102,14 +120,6 @@ where
                     ));
 
                     break Ok(());
-                }
-
-                // Some other worker thread received the shutdown signal's `EINTR` -> same reaction
-                // as if this thread had received it
-                Ok(PollOutcome::Shutdown) => {
-                    if (self.shutdown_check)() && self.handle_shutdown_interrupt(Instant::now())? {
-                        break Ok(());
-                    }
                 }
 
                 // A retransmit deadline elapsed -> retransmit all expired segments
@@ -190,6 +200,7 @@ where
     /// Reacts to an `EINTR` caused by the shutdown signal, performing I/O resulting from the
     /// shutdown decision as necessary. Returns whether to proceed to shutdown immediately.
     fn handle_shutdown_interrupt(&mut self, now: Instant) -> TraceableResult<bool> {
+        self.draining = true;
         self.logger.server_newline(); // Because ^C is probably in the terminal
 
         Ok(match self.engine.handle_shutdown(now)? {
@@ -274,7 +285,7 @@ mod tests {
     fn run_test_server(
         tcp_connections: TcpConnections,
         device: &mut MockDevice,
-        poll_readable: impl Fn(&MockDevice, Option<Duration>) -> io::Result<PollOutcome>,
+        poll_readable: impl Fn(&MockDevice, Option<Duration>, bool) -> io::Result<PollOutcome>,
         shutdown_check: impl Fn() -> bool,
         shutdown_grace_period: Duration,
     ) -> TraceableResult {
@@ -285,6 +296,7 @@ mod tests {
             device,
             poll_readable,
             shutdown_check,
+            draining: false,
         }
         .run()
     }

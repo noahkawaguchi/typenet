@@ -13,7 +13,7 @@ fn due_retransmission_is_sent_as_real_io() -> TraceableResult {
     run_test_server(
         TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv(),
         &mut device,
-        |_, _| poll.next(),
+        |_, _, _| poll.next(),
         || true,
         ONE_YEAR_GRACE_PERIOD,
     )?;
@@ -41,7 +41,7 @@ fn retransmission_does_not_drop_the_connection() -> TraceableResult {
     run_test_server(
         TcpConnections::test_new(Duration::ZERO, 5).with_syn_rcv(),
         &mut device,
-        |_, _| poll.next(),
+        |_, _, _| poll.next(),
         || true,
         ONE_YEAR_GRACE_PERIOD,
     )?;
@@ -81,7 +81,7 @@ fn gives_up_and_drops_connection_after_max_retries() -> TraceableResult {
     run_test_server(
         TcpConnections::test_new(Duration::ZERO, 2).with_syn_rcv(),
         &mut device,
-        |_, _| poll.next(),
+        |_, _, _| poll.next(),
         || true,
         ONE_YEAR_GRACE_PERIOD,
     )?;

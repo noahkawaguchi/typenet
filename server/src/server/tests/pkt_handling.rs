@@ -14,7 +14,7 @@ fn malformed_pkt_is_skipped_without_propagating_or_writing() -> TraceableResult 
         run_test_server(
             TcpConnections::default(),
             &mut device,
-            |_, _| poll.next(),
+            |_, _, _| poll.next(),
             || true,
             IMMEDIATE_GRACE_PERIOD,
         ),
@@ -37,7 +37,7 @@ fn valid_syn_producing_a_reply_is_sent() -> TraceableResult {
     run_test_server(
         TcpConnections::default(),
         &mut device,
-        |_, _| poll.next(),
+        |_, _, _| poll.next(),
         || true,
         IMMEDIATE_GRACE_PERIOD,
     )?;
@@ -65,7 +65,7 @@ fn valid_ack_completing_handshake_produces_no_reply() -> TraceableResult {
         run_test_server(
             TcpConnections::default().with_syn_rcv(),
             &mut device,
-            |_, _| poll.next(),
+            |_, _, _| poll.next(),
             || false,
             ONE_YEAR_GRACE_PERIOD,
         ),

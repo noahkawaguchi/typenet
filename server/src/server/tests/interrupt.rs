@@ -13,7 +13,7 @@ fn first_interrupt_with_established_connection_sends_fin_ack_and_continues() -> 
     run_test_server(
         TcpConnections::default().after_handshake(),
         &mut device,
-        |_, _| poll.next(),
+        |_, _, _| poll.next(),
         || true,
         IMMEDIATE_GRACE_PERIOD,
     )?;
@@ -46,7 +46,7 @@ fn second_interrupt_while_draining_does_not_resend_or_exit() -> TraceableResult 
         run_test_server(
             TcpConnections::default().after_handshake(),
             &mut device,
-            |_, _| {
+            |_, _, _| {
                 poll_calls.set(poll_calls.get() + 1);
                 poll.next()
             },
@@ -86,7 +86,7 @@ fn interrupt_with_no_established_connections_exits_immediately() -> TraceableRes
         run_test_server(
             TcpConnections::default(),
             &mut device,
-            |_, _| poll.next(),
+            |_, _, _| poll.next(),
             || true,
             IMMEDIATE_GRACE_PERIOD,
         ),
@@ -122,7 +122,7 @@ fn interrupt_unrelated_to_shutdown_is_ignored() -> TraceableResult {
     run_test_server(
         TcpConnections::default(),
         &mut device,
-        |_, _| {
+        |_, _, _| {
             poll_calls.set(poll_calls.get() + 1);
             poll.next()
         },
@@ -147,7 +147,7 @@ fn read_interrupt_reaches_the_same_shutdown_handling_as_poll_interrupt() -> Trac
     run_test_server(
         TcpConnections::default(),
         &mut device,
-        |_, _| poll.next(),
+        |_, _, _| poll.next(),
         || true,
         IMMEDIATE_GRACE_PERIOD,
     )?;
