@@ -45,7 +45,11 @@ impl Config {
             tun_name: Self::parse_env("TYPENET_TUN_NAME")?.unwrap_or_else(|| String::from("tun0")),
 
             worker_count: Self::parse_env("TYPENET_WORKER_COUNT")?
-                .unwrap_or_else(|| thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)),
+                .or_else(|| thread::available_parallelism().ok())
+                .ok_or(
+                    "Failed to estimate available parallelism. Set the TYPENET_WORKER_COUNT \
+                     environment variable to specify the number of worker threads manually.",
+                )?,
 
             app: Self::parse_env("TYPENET_APP")?.unwrap_or_default(),
 
