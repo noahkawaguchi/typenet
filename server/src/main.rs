@@ -1,5 +1,5 @@
 use {
-    std::{thread, time::Instant},
+    std::{iter, thread, time::Instant},
     typenet_server::{
         config::Config,
         server,
@@ -18,8 +18,8 @@ fn main() -> TraceableResult {
     let shutdown = ShutdownSignal::install()?;
     let config = Config::load()?;
 
-    let mut tuns = (0..config.worker_count.get())
-        .map(|_| tun::attach(&config.tun_name))
+    let mut tuns = iter::repeat_with(|| tun::attach(&config.tun_name))
+        .take(config.worker_count.get())
         .collect::<TraceableResult<Vec<_>>>()?;
 
     // Define an `Instant` of creation shared across all worker threads so their logged timestamps
