@@ -70,10 +70,15 @@ pub struct Logger {
 
     /// The `Instant` to base timestamps on.
     birth: Instant,
+
+    /// Identifies which worker thread this logger belongs to.
+    worker_id: usize,
 }
 
 impl Logger {
-    pub(crate) const fn new(level: LogLevel, birth: Instant) -> Self { Self { level, birth } }
+    pub(crate) const fn new(level: LogLevel, birth: Instant, worker_id: usize) -> Self {
+        Self { level, birth, worker_id }
+    }
 
     /// Prints a visual divider to stdout if and how the log level allows.
     pub(crate) fn divider(&self) {
@@ -95,7 +100,7 @@ impl Logger {
     /// Logs information about the server to stdout if the log level allows.
     pub(crate) fn server_info(&self, msg: impl fmt::Display) {
         if self.level >= LogLevel::ServerInfo {
-            println!("[{}] {msg}", Timestamp(self.birth));
+            println!("[w{} {}] {msg}", self.worker_id, Timestamp(self.birth));
         }
     }
 
@@ -111,7 +116,8 @@ impl Logger {
 
             level @ (LogLevel::PktDetails | LogLevel::PktFull) => {
                 println!(
-                    "{}\n{pkt}\n{}",
+                    "[w{}] {}\n{pkt}\n{}",
+                    self.worker_id,
                     Timestamp(self.birth),
                     pkt.pretty_payload(level == LogLevel::PktFull)
                 );
@@ -132,7 +138,7 @@ impl Logger {
     /// Logs an error handling a packet to stderr if the log level allows.
     pub(crate) fn pkt_err(&self, msg: impl fmt::Display) {
         if self.level >= LogLevel::PktDetails {
-            eprintln!("[{}] {msg}", Timestamp(self.birth));
+            eprintln!("[w{} {}] {msg}", self.worker_id, Timestamp(self.birth));
         }
     }
 }

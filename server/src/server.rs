@@ -31,13 +31,14 @@ pub fn run<D, P, S>(
     shutdown_check: S,
     config: &Config,
     birth: Instant,
+    worker_id: usize,
 ) -> TraceableResult
 where
     D: Read + Write + AsFd,
     P: Fn(&D, Option<Duration>, bool) -> io::Result<PollOutcome>,
     S: Fn() -> bool,
 {
-    let logger = Logger::new(config.log_level, birth);
+    let logger = Logger::new(config.log_level, birth, worker_id);
 
     logger.server_info(format_args!(
         "Waiting for packets on TUN device {} (Ctrl+C to stop)",
@@ -293,7 +294,7 @@ mod tests {
         Server {
             write_buf: [0u8; ETHERNET_MTU],
             engine: Engine::test_new(ServerApp::Echo, tcp_connections, shutdown_grace_period),
-            logger: Logger::new(LogLevel::Silent, Instant::now()),
+            logger: Logger::new(LogLevel::Silent, Instant::now(), 0),
             device,
             poll_readable,
             shutdown_check,

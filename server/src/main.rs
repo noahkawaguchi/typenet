@@ -29,20 +29,27 @@ fn main() -> TraceableResult {
     thread::scope(|scope| {
         let handles = tuns
             .iter_mut()
-            .map(|tun| {
-                scope.spawn(|| {
+            .enumerate()
+            .map(|(worker_id, tun)| {
+                // Create references outside the `spawn` closure because it needs to be marked
+                // `move` for `worker_id`
+                let config_ref = &config;
+                let shutdown_ref = &shutdown;
+
+                scope.spawn(move || {
                     server::run(
                         tun,
                         |fd, timeout, watch_shutdown| {
                             poll::readable(
                                 fd,
-                                watch_shutdown.then(|| shutdown.borrow_eventfd()),
+                                watch_shutdown.then(|| shutdown_ref.borrow_eventfd()),
                                 timeout,
                             )
                         },
-                        || shutdown.load_flag(),
-                        &config,
+                        || shutdown_ref.load_flag(),
+                        config_ref,
                         birth,
+                        worker_id,
                     )
                 })
             })
