@@ -44,10 +44,10 @@ impl Config {
             // NOTE: "TYPENET_TUN_NAME" is also read in the `justfile` with a "tun0" fallback
             tun_name: Self::parse_env("TYPENET_TUN_NAME")?.unwrap_or_else(|| String::from("tun0")),
 
-            worker_count: Self::parse_env("TYPENET_WORKER_COUNT")?
+            worker_count: Self::parse_env("TYPENET_WORKERS")?
                 .or_else(|| thread::available_parallelism().ok())
                 .ok_or(
-                    "Failed to estimate available parallelism. Set the TYPENET_WORKER_COUNT \
+                    "Failed to estimate available parallelism. Set the TYPENET_WORKERS \
                      environment variable to specify the number of worker threads manually.",
                 )?,
 
