@@ -49,7 +49,8 @@ Although the TCP implementation is not complete, it covers a significant portion
 ### TUN Server
 
 - Implements all logic from scratch, using one external dependency containing only raw FFI bindings, `libc`
-- Performs low-level packet I/O using Linux TUN virtual network interfaces rather than sockets
+- Performs low-level packet I/O using Linux multi-queue TUN virtual network interfaces rather than sockets
+- Uses a shared-nothing, thread-per-core structured concurrency model where each worker thread owns a lock-free TCP connection table and shutdown is communicated through an atomic flag and eventfd
 - Allows configuration of key parameters at runtime, including a range of log levels (see [Environment Variables](#environment-variables) below)
 - Includes a simple echo application and a shout (capitalization) application
 - Catches SIGINT, drains TCP connections with a timeout, and exits gracefully
