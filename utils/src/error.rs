@@ -59,32 +59,30 @@ impl PartialEq for TraceableError {
     }
 }
 
-impl From<Cow<'static, str>> for TraceableError {
-    fn from(value: Cow<'static, str>) -> Self {
+impl<E: Into<TraceableErrorKind>> From<E> for TraceableError {
+    fn from(value: E) -> Self {
         Self {
-            error: match value {
-                Cow::Borrowed(s) => TraceableErrorKind::Static(s),
-                Cow::Owned(s) => TraceableErrorKind::Dynamic(s),
-            },
+            error: value.into(),
+            // Cheap no-op if `RUST_BACKTRACE` and `RUST_LIB_BACKTRACE` backtrace are both not set
             backtrace: Backtrace::capture(),
         }
     }
 }
 
-/// Generates `impl From<E> for TraceableError` blocks for the passed set of error types, accepting
-/// the same syntax as the enum definition for `TraceableErrorKind`.
+enum TraceableErrorKind {
+    Static(&'static str),
+    Dynamic(String),
+    Io(io::Error),
+    TryFromInt(num::TryFromIntError),
+}
+
+/// Generates `impl From<E> for TraceableErrorKind` blocks for the passed set of error types,
+/// accepting the same syntax as the enum definition.
 macro_rules! impl_from_error_types {
     {$($variant:ident($err_type:ty)),+ $(,)?} => {
         $(
-            impl From<$err_type> for TraceableError {
-                fn from(value: $err_type) -> Self {
-                    Self {
-                        error: TraceableErrorKind::$variant(value),
-                        // Cheap no-op if `RUST_BACKTRACE` and `RUST_LIB_BACKTRACE` backtrace are
-                        // both not set
-                        backtrace: Backtrace::capture(),
-                    }
-                }
+            impl From<$err_type> for TraceableErrorKind {
+                fn from(value: $err_type) -> Self { Self::$variant(value) }
             }
         )+
     };
@@ -97,11 +95,13 @@ impl_from_error_types! {
     TryFromInt(num::TryFromIntError),
 }
 
-enum TraceableErrorKind {
-    Static(&'static str),
-    Dynamic(String),
-    Io(io::Error),
-    TryFromInt(num::TryFromIntError),
+impl From<Cow<'static, str>> for TraceableErrorKind {
+    fn from(value: Cow<'static, str>) -> Self {
+        match value {
+            Cow::Borrowed(s) => Self::Static(s),
+            Cow::Owned(s) => Self::Dynamic(s),
+        }
+    }
 }
 
 impl fmt::Debug for TraceableErrorKind {
