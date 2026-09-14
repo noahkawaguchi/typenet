@@ -1,5 +1,6 @@
 use std::{
     backtrace::{Backtrace, BacktraceStatus},
+    borrow::Cow,
     fmt::{self, Write as _},
     io, num,
 };
@@ -55,6 +56,18 @@ impl fmt::Display for TraceableError {
 impl PartialEq for TraceableError {
     fn eq(&self, Self { error, backtrace }: &Self) -> bool {
         &self.error == error && self.backtrace.status() == backtrace.status()
+    }
+}
+
+impl From<Cow<'static, str>> for TraceableError {
+    fn from(value: Cow<'static, str>) -> Self {
+        Self {
+            error: match value {
+                Cow::Borrowed(s) => TraceableErrorKind::Static(s),
+                Cow::Owned(s) => TraceableErrorKind::Dynamic(s),
+            },
+            backtrace: Backtrace::capture(),
+        }
     }
 }
 

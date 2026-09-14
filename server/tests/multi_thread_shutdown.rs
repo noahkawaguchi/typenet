@@ -7,9 +7,12 @@
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
-    typenet_server::sys::{
-        ShutdownSignal,
-        poll::{self, PollOutcome},
+    typenet_server::{
+        sys::{
+            ShutdownSignal,
+            poll::{self, PollOutcome},
+        },
+        thread_panic_msg,
     },
     typenet_utils::error::TraceableResult,
 };
@@ -47,13 +50,8 @@ fn eventfd_wakes_a_thread_that_never_receives_sigint_directly() -> TraceableResu
             return Err(io::Error::last_os_error().into());
         }
 
-        let targeted_result = targeted
-            .join()
-            .map_err(|_| io::Error::other("Targeted thread panicked"))?;
-
-        let bystander_result = bystander
-            .join()
-            .map_err(|_| io::Error::other("Bystander thread panicked"))?;
+        let targeted_result = targeted.join().map_err(thread_panic_msg)?;
+        let bystander_result = bystander.join().map_err(thread_panic_msg)?;
 
         assert_matches!(targeted_result, Err(e) if e.kind() == io::ErrorKind::Interrupted);
         assert_matches!(bystander_result, Ok(PollOutcome::Shutdown));

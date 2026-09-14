@@ -10,7 +10,10 @@
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
-    typenet_server::sys::{ShutdownSignal, poll},
+    typenet_server::{
+        sys::{ShutdownSignal, poll},
+        thread_panic_msg,
+    },
     typenet_utils::error::TraceableResult,
 };
 
@@ -46,9 +49,7 @@ fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
         return Err(io::Error::last_os_error().into());
     }
 
-    let result = poller
-        .join()
-        .map_err(|_| io::Error::other("Poller thread panicked"))?;
+    let result = poller.join().map_err(thread_panic_msg)?;
 
     assert_matches!(result, Err(e) if e.kind() == io::ErrorKind::Interrupted);
 

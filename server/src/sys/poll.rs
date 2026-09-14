@@ -76,6 +76,7 @@ pub fn readable(
 mod tests {
     use {
         super::*,
+        crate::thread_panic_msg,
         pretty_assertions::assert_eq,
         std::{
             io::Write as _,
@@ -87,10 +88,7 @@ mod tests {
 
     /// Joins on a writer thread with error handling.
     fn join_writer(writer: JoinHandle<io::Result<()>>) -> TraceableResult {
-        writer
-            .join()
-            .unwrap_or_else(|_| Err(io::Error::other("Writer thread panicked")))
-            .map_err(Into::into)
+        writer.join().map_err(thread_panic_msg)?.map_err(Into::into)
     }
 
     #[test]

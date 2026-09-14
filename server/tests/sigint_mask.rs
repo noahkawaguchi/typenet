@@ -13,7 +13,10 @@
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
-    typenet_server::sys::{ShutdownSignal, poll},
+    typenet_server::{
+        sys::{ShutdownSignal, poll},
+        thread_panic_msg,
+    },
     typenet_utils::error::TraceableResult,
 };
 
@@ -50,9 +53,7 @@ fn thread_that_blocks_sigint_is_not_interrupted_by_it() -> TraceableResult {
         return Err(io::Error::last_os_error().into());
     }
 
-    let result = blocked
-        .join()
-        .map_err(|_| io::Error::other("Blocked thread panicked"))?;
+    let result = blocked.join().map_err(thread_panic_msg)?;
 
     // If the mask hadn't taken effect, this would be `Err(e)` with `e.kind() ==
     // io::ErrorKind::Interrupted`.

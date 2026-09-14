@@ -1,9 +1,10 @@
 use {
-    std::{io, thread},
+    std::thread,
     typenet_server::{
         config::Config,
         server,
         sys::{ShutdownSignal, poll, tun},
+        thread_panic_msg,
     },
     typenet_utils::error::TraceableResult,
 };
@@ -48,10 +49,8 @@ fn main() -> TraceableResult {
         // during graceful shutdown).
         ShutdownSignal::block_sigint_on_this_thread()?;
 
-        handles.into_iter().try_for_each(|handle| {
-            handle
-                .join()
-                .unwrap_or_else(|_| Err(io::Error::other("Worker thread panicked").into()))
-        })
+        handles
+            .into_iter()
+            .try_for_each(|handle| handle.join().map_err(thread_panic_msg)?)
     })
 }
