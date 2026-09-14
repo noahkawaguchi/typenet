@@ -22,6 +22,8 @@ fn main() -> TraceableResult {
         .take(config.worker_count.get())
         .collect::<TraceableResult<Vec<_>>>()?;
 
+    let shutdown_eventfd = shutdown.borrow_eventfd();
+
     // Define an `Instant` of creation shared across all worker threads so their logged timestamps
     // are on the same clock
     let birth = Instant::now();
@@ -40,11 +42,7 @@ fn main() -> TraceableResult {
                     server::run(
                         tun,
                         |fd, timeout, watch_shutdown| {
-                            poll::readable(
-                                fd,
-                                watch_shutdown.then(|| shutdown_ref.borrow_eventfd()),
-                                timeout,
-                            )
+                            poll::readable(fd, watch_shutdown.then_some(shutdown_eventfd), timeout)
                         },
                         || shutdown_ref.load_flag(),
                         config_ref,
