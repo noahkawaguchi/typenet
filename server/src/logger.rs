@@ -68,12 +68,12 @@ pub struct Logger {
     /// The level of output for logging.
     level: LogLevel,
 
-    /// The `Instant` at which `self` was created.
+    /// The `Instant` to base timestamps on.
     birth: Instant,
 }
 
 impl Logger {
-    pub(crate) fn new(level: LogLevel) -> Self { Self { level, birth: Instant::now() } }
+    pub(crate) const fn new(level: LogLevel, birth: Instant) -> Self { Self { level, birth } }
 
     /// Prints a visual divider to stdout if and how the log level allows.
     pub(crate) fn divider(&self) {

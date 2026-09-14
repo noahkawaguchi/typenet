@@ -1,5 +1,5 @@
 use {
-    std::thread,
+    std::{thread, time::Instant},
     typenet_server::{
         config::Config,
         server,
@@ -22,6 +22,10 @@ fn main() -> TraceableResult {
         .map(|_| tun::attach(&config.tun_name))
         .collect::<TraceableResult<Vec<_>>>()?;
 
+    // Define an `Instant` of creation shared across all worker threads so their logged timestamps
+    // are on the same clock
+    let birth = Instant::now();
+
     thread::scope(|scope| {
         let handles = tuns
             .iter_mut()
@@ -38,6 +42,7 @@ fn main() -> TraceableResult {
                         },
                         || shutdown.load_flag(),
                         &config,
+                        birth,
                     )
                 })
             })
