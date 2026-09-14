@@ -1,9 +1,6 @@
 //! Test confirming that a `SIGINT` delivered to only one thread still wakes a different thread
 //! blocked in its own `poll()` call via the shared shutdown eventfd, rather than that other thread
 //! needing its own direct interruption.
-//!
-//! Written as an integration test so it runs as its own process, since installing and running the
-//! signal handler mutates process-wide state.
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},

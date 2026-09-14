@@ -1,8 +1,5 @@
 //! Test confirming that the shutdown signal handler installs successfully, flips the shutdown
 //! flag, and wakes the shutdown eventfd.
-//!
-//! Written as an integration test so it runs as its own process, since installing and running the
-//! signal handler mutates process-wide state.
 
 use {
     pretty_assertions::assert_eq,

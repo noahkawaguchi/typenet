@@ -4,9 +4,6 @@
 //!   when `SIGINT` arrives, since the shutdown handler installation should leave `SA_RESTART`
 //!   unset.
 //! - That error is correctly propagated through `poll::readable`.
-//!
-//! Written as an integration test so it runs as its own process, since installing and running the
-//! signal handler mutates process-wide state.
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},

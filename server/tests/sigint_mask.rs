@@ -6,10 +6,6 @@
 //! only one thread sees it, but `libc::pthread_kill` is used here to deterministically send the
 //! signal to the thread with it blocked, rather than allowing the kernel choose a different
 //! unblocked thread.
-//!
-//! Written as an integration test so it runs as its own process, since installing the signal
-//! handler and altering a thread's signal mask both mutate process/thread state that would leak
-//! across tests sharing a process.
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
