@@ -74,6 +74,7 @@ enum TraceableErrorKind {
     Dynamic(String),
     Io(io::Error),
     TryFromInt(num::TryFromIntError),
+    Fmt(fmt::Error),
 }
 
 /// Generates `impl From<E> for TraceableErrorKind` blocks for the passed set of error types,
@@ -93,6 +94,7 @@ impl_from_error_types! {
     Dynamic(String),
     Io(io::Error),
     TryFromInt(num::TryFromIntError),
+    Fmt(fmt::Error),
 }
 
 impl From<Cow<'static, str>> for TraceableErrorKind {
@@ -111,6 +113,7 @@ impl fmt::Debug for TraceableErrorKind {
             Self::Dynamic(s) => s.fmt(f),
             Self::Io(e) => write!(f, "I/O error: {e:?}"),
             Self::TryFromInt(e) => write!(f, "Integer conversion error: {e:?}"),
+            Self::Fmt(e) => write!(f, "Formatting error: {e:?}"),
         }
     }
 }
@@ -122,6 +125,7 @@ impl fmt::Display for TraceableErrorKind {
             Self::Dynamic(s) => s.fmt(f),
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::TryFromInt(e) => write!(f, "Integer conversion error: {e}"),
+            Self::Fmt(e) => write!(f, "Formatting error: {e}"),
         }
     }
 }
@@ -141,6 +145,8 @@ impl PartialEq for TraceableErrorKind {
             }
 
             (Self::TryFromInt(e1), Self::TryFromInt(e2)) => e1 == e2,
+
+            (Self::Fmt(e1), Self::Fmt(e2)) => e1 == e2,
 
             _ => false,
         }
