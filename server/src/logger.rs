@@ -57,9 +57,9 @@ impl From<LogLevel> for u8 {
 }
 
 /// Wrapper struct for displaying the time elapsed since the inner `Instant`.
-struct Timestamp(Instant);
+struct TimestampCalculator(Instant);
 
-impl fmt::Display for Timestamp {
+impl fmt::Display for TimestampCalculator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let elapsed = Instant::now().saturating_duration_since(self.0);
         let secs = elapsed.as_secs();
@@ -73,8 +73,9 @@ pub struct Logger {
     /// The level of output for logging.
     level: LogLevel,
 
-    /// The `Instant` to base timestamps on.
-    birth: Instant,
+    /// The logger's birth `Instant` wrapped in a struct that calculates the timestamp offset when
+    /// displayed.
+    time_calc: TimestampCalculator,
 
     /// Identifies which worker thread this logger belongs to.
     worker_id: usize,
@@ -95,7 +96,7 @@ impl Drop for Logger {
 
 impl Logger {
     pub(crate) const fn new(level: LogLevel, birth: Instant, worker_id: usize) -> Self {
-        Self { level, birth, worker_id, buf: String::new() }
+        Self { level, time_calc: TimestampCalculator(birth), worker_id, buf: String::new() }
     }
 
     /// Writes and clears any output buffered since the last call to `flush` in a single locked
@@ -115,7 +116,7 @@ impl Logger {
     /// buffer.
     pub(crate) fn server_info(&mut self, msg: impl fmt::Display) -> TraceableResult {
         if self.level >= LogLevel::ServerInfo {
-            writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, Timestamp(self.birth))?;
+            writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, self.time_calc)?;
             self.flush()?;
         }
 
@@ -176,7 +177,7 @@ impl Logger {
     /// Buffers a log of an error handling a packet if the log level allows.
     pub(crate) fn pkt_err(&mut self, msg: impl fmt::Display) -> TraceableResult {
         if self.level >= LogLevel::PktDetails {
-            writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, Timestamp(self.birth))?;
+            writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, self.time_calc)?;
         }
 
         Ok(())
@@ -198,12 +199,7 @@ impl Logger {
             LogLevel::Silent | LogLevel::ServerInfo => {}
             LogLevel::PktQuiet => self.buf.push('↓'),
             LogLevel::PktDetails | LogLevel::PktFull => {
-                writeln!(
-                    self.buf,
-                    "[w{} {}] Packet received",
-                    self.worker_id,
-                    Timestamp(self.birth)
-                )?;
+                writeln!(self.buf, "[w{} {}] Packet received", self.worker_id, self.time_calc)?;
             }
         }
 
@@ -220,7 +216,7 @@ impl Logger {
                 self.buf,
                 "[w{} {}] Packet sent{}",
                 self.worker_id,
-                Timestamp(self.birth),
+                self.time_calc,
                 if retransmission { " (retransmission)" } else { "" }
             )?,
         }
