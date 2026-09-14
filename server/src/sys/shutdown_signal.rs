@@ -1,7 +1,8 @@
 use {
     std::{
-        io,
+        io, mem,
         os::fd::{AsFd as _, BorrowedFd, FromRawFd as _, OwnedFd},
+        ptr,
         sync::atomic::{AtomicBool, AtomicI32, Ordering},
     },
     typenet_utils::error::TraceableResult,
@@ -97,7 +98,7 @@ impl ShutdownSignal {
         // Use `sigaction` to ensure the `SA_RESTART` flag is not set.
         //
         // SAFETY: All fields of `sigaction` have valid all-zero bit patterns.
-        let mut sa: libc::sigaction = unsafe { std::mem::zeroed() };
+        let mut sa: libc::sigaction = unsafe { mem::zeroed() };
 
         sa.sa_sigaction = shutdown_signal_handler as *const () as libc::sighandler_t;
 
@@ -112,7 +113,7 @@ impl ShutdownSignal {
         // - `&raw const sa` is a valid, aligned pointer to a fully initialized `sigaction`.
         // - A null `oldact` is permitted.
         // - `shutdown_signal_handler` is async-signal-safe (see its comments).
-        if unsafe { libc::sigaction(libc::SIGINT, &raw const sa, std::ptr::null_mut()) } != 0 {
+        if unsafe { libc::sigaction(libc::SIGINT, &raw const sa, ptr::null_mut()) } != 0 {
             return Err(io::Error::last_os_error().into());
         }
 
@@ -144,7 +145,7 @@ impl ShutdownSignal {
     #[expect(unsafe_code, reason = "libc syscalls to block a signal")]
     pub fn block_sigint_on_this_thread() -> TraceableResult {
         // SAFETY: `set` is fully initialized by `sigemptyset` before any other use.
-        let mut set: libc::sigset_t = unsafe { std::mem::zeroed() };
+        let mut set: libc::sigset_t = unsafe { mem::zeroed() };
 
         // SAFETY: `&raw mut set` is a valid, aligned, writable pointer to an owned `sigset_t` on
         // the stack.
@@ -165,9 +166,7 @@ impl ShutdownSignal {
         // (Unlike most libc functions, `pthread_sigmask` reports failure via its return value, not
         // `errno`, so the error is built from that return value directly rather than
         // `last_os_error`.)
-        match unsafe {
-            libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, std::ptr::null_mut())
-        } {
+        match unsafe { libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, ptr::null_mut()) } {
             0 => Ok(()),
             errno => Err(io::Error::from_raw_os_error(errno).into()),
         }

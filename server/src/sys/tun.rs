@@ -3,7 +3,7 @@ use {
     std::{
         ffi::CString,
         fs::{File, OpenOptions},
-        io,
+        io, mem,
         os::unix::io::AsRawFd as _,
     },
     typenet_utils::error::TraceableResult,
@@ -44,7 +44,7 @@ pub fn attach(device_name: &str) -> TraceableResult<File> {
     // Initialize a new interface request C struct.
     //
     // SAFETY: All fields of `ifreq` have valid all-zero bit patterns.
-    let mut ifr: libc::ifreq = unsafe { std::mem::zeroed() };
+    let mut ifr: libc::ifreq = unsafe { mem::zeroed() };
 
     // Simply copy up to `IFNAMSIZ - 1` bytes without full name validation because the kernel
     // reporting that the device exists above already proves that the name is valid
