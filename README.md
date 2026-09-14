@@ -182,15 +182,18 @@ The following environment variables can be used to configure the TUN device and 
 | ----------------------- | --------------------------------------------------------- | ----------- |
 | TYPENET_TUN_NAME        | Name of the TUN device to create and use                  | `tun0`      |
 | TYPENET_TUN_CIDR        | CIDR used when creating the TUN device                    | 10.0.0.1/24 |
+| TYPENET_WORKER_COUNT    | Number of worker threads to spawn                         | CPU count\* |
 | TYPENET_APP             | Application to run, either `echo` or `shout`              | `echo`      |
-| TYPENET_INIT_RTO_MILLIS | Initial retransmission timeout before exponential backoff | 1000\*      |
+| TYPENET_INIT_RTO_MILLIS | Initial retransmission timeout before exponential backoff | 1000\*\*    |
 | TYPENET_MAX_RETRANSMITS | Number of retransmissions before giving up                | 15          |
-| TYPENET_GRACE_SECS      | Wait time before shutdown when draining connections       | 60\*\*      |
+| TYPENET_GRACE_SECS      | Wait time before shutdown when draining connections       | 60\*\*\*    |
 | TYPENET_LOG_LEVEL       | Level of output for logging (see table below)             | 4           |
 
-\* 250 in debug builds. All RTOs are clamped to between 200 milliseconds and 2 minutes in all builds.
+\* Estimated using `std::thread::available_parallelism`. The estimation may differ from the exact number of CPUs or be completely unavailable, in which case the environment variable is required.
 <br />
-\*\* 5 in debug builds.
+\*\* 250 in debug builds. All RTOs are clamped to between 200 milliseconds and 2 minutes in all builds.
+<br />
+\*\*\* 5 in debug builds.
 
 | Log level | Meaning                                                                       |
 | --------- | ----------------------------------------------------------------------------- |
