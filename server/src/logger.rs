@@ -5,7 +5,12 @@ use {
         str::FromStr,
         time::Instant,
     },
-    typenet_stack::{display::PrettyProtocol as _, endpoint::Endpoint, ipv4_packet::Ipv4Packet},
+    typenet_stack::{
+        display::PrettyProtocol as _,
+        endpoint::{Endpoint, Local},
+        engine::PacketOutcome,
+        ipv4_packet::Ipv4Packet,
+    },
     typenet_utils::error::{TraceableError, TraceableResult},
 };
 
@@ -106,16 +111,15 @@ impl Logger {
         Ok(())
     }
 
-    /// Buffers a visual divider if and how the log level allows, then flushes everything buffered
-    /// since the previous call to `divider`.
-    pub(crate) fn divider(&mut self) -> TraceableResult {
-        match self.level {
-            LogLevel::Silent | LogLevel::ServerInfo => {}
-            LogLevel::PktQuiet => self.buf.push(' '),
-            LogLevel::PktDetails | LogLevel::PktFull => writeln!(self.buf, "\n{:=<80}\n", "")?,
+    /// If the log level allows, buffers a log of information about the server, then flushes the
+    /// buffer.
+    pub(crate) fn server_info(&mut self, msg: impl fmt::Display) -> TraceableResult {
+        if self.level >= LogLevel::ServerInfo {
+            writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, Timestamp(self.birth))?;
+            self.flush()?;
         }
 
-        self.flush()
+        Ok(())
     }
 
     /// Buffers a log of a bare newline from the server without a timestamp.
@@ -125,9 +129,53 @@ impl Logger {
         }
     }
 
-    /// Buffers a log of information about the server if the log level allows.
-    pub(crate) fn server_info(&mut self, msg: impl fmt::Display) -> TraceableResult {
-        if self.level >= LogLevel::ServerInfo {
+    /// If and how the log level allows, buffers a log of an exchange (incoming packet and optional
+    /// reply), then flushes the buffer.
+    pub(crate) fn exchange(&mut self, outcome: &PacketOutcome) -> TraceableResult {
+        self.divider()?;
+
+        self.pkt_received()?;
+        self.pkt_io(&outcome.incoming)?;
+
+        if self.level >= LogLevel::PktDetails {
+            self.buf.push('\n');
+        }
+
+        match &outcome.reply {
+            None => {
+                if self.level >= LogLevel::PktDetails {
+                    self.buf.push_str("<no reply>\n");
+                }
+            }
+
+            Some(reply) => {
+                self.pkt_sent(false)?;
+                self.pkt_io(reply)?;
+            }
+        }
+
+        self.divider()?;
+        self.flush()
+    }
+
+    /// If and how the log level allows, buffers a log of a single packet transmission not in reply
+    /// to an incoming packet, then flushes the buffer. For the more verbose log levels, labels it
+    /// as a retransmission if `retransmission` is `true`.
+    pub(crate) fn non_reply_transmission(
+        &mut self,
+        pkt: &Ipv4Packet<Local>,
+        retransmission: bool,
+    ) -> TraceableResult {
+        self.divider()?;
+        self.pkt_sent(retransmission)?;
+        self.pkt_io(pkt)?;
+        self.divider()?;
+        self.flush()
+    }
+
+    /// Buffers a log of an error handling a packet if the log level allows.
+    pub(crate) fn pkt_err(&mut self, msg: impl fmt::Display) -> TraceableResult {
+        if self.level >= LogLevel::PktDetails {
             writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, Timestamp(self.birth))?;
         }
 
@@ -135,38 +183,57 @@ impl Logger {
     }
 
     /// Buffers a log of receipt or transmission of a packet if and how the log level allows.
-    pub(crate) fn pkt_io<S: Endpoint>(&mut self, pkt: &Ipv4Packet<'_, S>) -> TraceableResult {
+    fn pkt_io<S: Endpoint>(&mut self, pkt: &Ipv4Packet<'_, S>) -> TraceableResult {
+        if self.level >= LogLevel::PktDetails {
+            writeln!(self.buf, "{pkt}\n{}", pkt.pretty_payload(self.level == LogLevel::PktFull))?;
+        }
+
+        Ok(())
+    }
+
+    /// Buffers a log of the fact of receiving a packet (not the packet itself) if and how the log
+    /// level allows.
+    fn pkt_received(&mut self) -> TraceableResult {
         match self.level {
             LogLevel::Silent | LogLevel::ServerInfo => {}
+            LogLevel::PktQuiet => self.buf.push('↓'),
+            LogLevel::PktDetails | LogLevel::PktFull => {
+                writeln!(
+                    self.buf,
+                    "[w{} {}] Packet received",
+                    self.worker_id,
+                    Timestamp(self.birth)
+                )?;
+            }
+        }
 
-            LogLevel::PktQuiet => self.buf.push(S::INDICATOR),
+        Ok(())
+    }
 
-            level @ (LogLevel::PktDetails | LogLevel::PktFull) => writeln!(
+    /// Buffers a log of the fact of sending a packet (not the packet itself) if and how the log
+    /// level allows.
+    fn pkt_sent(&mut self, retransmission: bool) -> TraceableResult {
+        match self.level {
+            LogLevel::Silent | LogLevel::ServerInfo => {}
+            LogLevel::PktQuiet => self.buf.push('↑'),
+            LogLevel::PktDetails | LogLevel::PktFull => writeln!(
                 self.buf,
-                "[w{}] {}\n{pkt}\n{}",
+                "[w{} {}] Packet sent{}",
                 self.worker_id,
                 Timestamp(self.birth),
-                pkt.pretty_payload(level == LogLevel::PktFull)
+                if retransmission { " (retransmission)" } else { "" }
             )?,
         }
 
         Ok(())
     }
 
-    /// Buffers a log of packet-related information and formatting other than the packets themselves
-    /// if the log level allows.
-    pub(crate) fn pkt_extra(&mut self, msg: impl fmt::Display) -> TraceableResult {
-        if self.level >= LogLevel::PktDetails {
-            writeln!(self.buf, "{msg}")?;
-        }
-
-        Ok(())
-    }
-
-    /// Buffers a log of an error handling a packet if the log level allows.
-    pub(crate) fn pkt_err(&mut self, msg: impl fmt::Display) -> TraceableResult {
-        if self.level >= LogLevel::PktDetails {
-            writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, Timestamp(self.birth))?;
+    /// Buffers a visual divider if and how the log level allows.
+    fn divider(&mut self) -> TraceableResult {
+        match self.level {
+            LogLevel::Silent | LogLevel::ServerInfo => {}
+            LogLevel::PktQuiet => self.buf.push(' '),
+            LogLevel::PktDetails | LogLevel::PktFull => writeln!(self.buf, "{:-<80}", "")?,
         }
 
         Ok(())

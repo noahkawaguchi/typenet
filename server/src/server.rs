@@ -86,8 +86,6 @@ where
     fn run(&mut self) -> TraceableResult {
         let mut read_buf = [0u8; ETHERNET_MTU];
 
-        self.logger.divider()?;
-
         loop {
             match (self.poll_readable)(
                 self.device,
@@ -97,6 +95,8 @@ where
                 // If `poll()` was interrupted and returned `EINTR`, check if a shutdown signal has
                 // been received
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
+                    self.logger.server_newline(); // Because ^C is probably in the terminal
+
                     if (self.shutdown_check)() && self.handle_shutdown_interrupt(Instant::now())? {
                         break Ok(());
                     }
@@ -115,7 +115,6 @@ where
 
                 // Grace period ended with connections left -> forcefully exit
                 Ok(PollOutcome::Timeout) if self.engine.grace_period_elapsed(Instant::now()) => {
-                    self.logger.server_newline();
                     self.logger.server_info(format_args!(
                         "Grace period elapsed with {} remaining connection(s), exiting",
                         self.engine.connection_count()
@@ -127,11 +126,9 @@ where
                 // A retransmit deadline elapsed -> retransmit all expired segments
                 Ok(PollOutcome::Timeout) => {
                     for retransmission in self.engine.make_retransmissions() {
-                        self.logger
-                            .pkt_extra(" ==== Packet sent (retransmission) ====")?;
-
-                        self.send_pkt(&retransmission?)?;
-                        self.logger.divider()?;
+                        let pkt = retransmission?;
+                        self.send_pkt(&pkt)?;
+                        self.logger.non_reply_transmission(&pkt, true)?;
                     }
                 }
 
@@ -164,21 +161,13 @@ where
                         Err(e) => self.logger.pkt_err(e)?,
 
                         Ok(pkt_outcome) => {
-                            self.logger.pkt_extra(" ==== Packet received ====")?;
-                            self.logger.pkt_io(&pkt_outcome.incoming)?;
-
-                            match pkt_outcome.reply {
-                                None => self.logger.pkt_extra("\n<no reply>")?,
-
-                                Some(reply) => {
-                                    self.logger.pkt_extra("\n ==== Packet sent ====")?;
-                                    self.send_pkt(&reply)?;
-                                }
+                            if let Some(reply) = &pkt_outcome.reply {
+                                self.send_pkt(reply)?;
                             }
+
+                            self.logger.exchange(&pkt_outcome)?;
                         }
                     }
-
-                    self.logger.divider()?;
 
                     if poll_outcome == PollOutcome::Both
                         && (self.shutdown_check)()
@@ -188,7 +177,6 @@ where
                     }
 
                     if self.engine.draining_complete() {
-                        self.logger.server_newline();
                         self.logger
                             .server_info("All connections closed within grace period, exiting")?;
 
@@ -203,7 +191,6 @@ where
     /// shutdown decision as necessary. Returns whether to proceed to shutdown immediately.
     fn handle_shutdown_interrupt(&mut self, now: Instant) -> TraceableResult<bool> {
         self.draining = true;
-        self.logger.server_newline(); // Because ^C is probably in the terminal
 
         Ok(match self.engine.handle_shutdown(now)? {
             ShutdownOutcome::AlreadyDraining { time_left } => {
@@ -220,14 +207,11 @@ where
                 self.logger
                     .server_info("Shutdown signal received, closing established connections...")?;
 
-                self.logger.divider()?;
-
                 for pkt in to_send {
-                    self.logger.pkt_extra(" ==== Packet sent ====")?;
                     self.send_pkt(&pkt)?;
+                    self.logger.non_reply_transmission(&pkt, false)?;
                 }
 
-                self.logger.divider()?;
                 false
             }
 
@@ -242,15 +226,13 @@ where
     }
 
     /// Writes the protocol-specific header and payload of `outgoing` into the write buffer,
-    /// prefixed with an IPv4 header, then writes the resulting packet to the device and logs its
-    /// transmission.
+    /// prefixed with an IPv4 header, then writes the resulting packet to the device.
     fn send_pkt(&mut self, outgoing: &Ipv4Packet<Local>) -> TraceableResult {
         outgoing.write_into(&mut self.write_buf)?;
 
         self.device
-            .write_all(self.write_buf.try_get(..outgoing.total_len().into())?)?;
-
-        self.logger.pkt_io(outgoing)
+            .write_all(self.write_buf.try_get(..outgoing.total_len().into())?)
+            .map_err(Into::into)
     }
 }
 
