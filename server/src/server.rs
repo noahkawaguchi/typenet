@@ -38,12 +38,12 @@ where
     P: Fn(&D, Option<Duration>, bool) -> io::Result<PollOutcome>,
     S: Fn() -> bool,
 {
-    let logger = Logger::new(config.log_level, birth, worker_id);
+    let mut logger = Logger::new(config.log_level, birth, worker_id);
 
     logger.server_info(format_args!(
         "Waiting for packets on TUN device {} (Ctrl+C to stop)",
         config.tun_name
-    ));
+    ))?;
 
     Server {
         write_buf: [0u8; ETHERNET_MTU],
@@ -86,7 +86,7 @@ where
     fn run(&mut self) -> TraceableResult {
         let mut read_buf = [0u8; ETHERNET_MTU];
 
-        self.logger.divider();
+        self.logger.divider()?;
 
         loop {
             match (self.poll_readable)(
@@ -119,7 +119,7 @@ where
                     self.logger.server_info(format_args!(
                         "Grace period elapsed with {} remaining connection(s), exiting",
                         self.engine.connection_count()
-                    ));
+                    ))?;
 
                     break Ok(());
                 }
@@ -128,10 +128,10 @@ where
                 Ok(PollOutcome::Timeout) => {
                     for retransmission in self.engine.make_retransmissions() {
                         self.logger
-                            .pkt_extra(" ==== Packet sent (retransmission) ====");
+                            .pkt_extra(" ==== Packet sent (retransmission) ====")?;
 
                         self.send_pkt(&retransmission?)?;
-                        self.logger.divider();
+                        self.logger.divider()?;
                     }
                 }
 
@@ -161,24 +161,24 @@ where
                     };
 
                     match self.engine.handle_packet(read_buf.try_get(..bytes_read)?) {
-                        Err(e) => self.logger.pkt_err(e),
+                        Err(e) => self.logger.pkt_err(e)?,
 
                         Ok(pkt_outcome) => {
-                            self.logger.pkt_extra(" ==== Packet received ====");
+                            self.logger.pkt_extra(" ==== Packet received ====")?;
                             self.logger.pkt_io(&pkt_outcome.incoming)?;
 
                             match pkt_outcome.reply {
-                                None => self.logger.pkt_extra("\n<no reply>"),
+                                None => self.logger.pkt_extra("\n<no reply>")?,
 
                                 Some(reply) => {
-                                    self.logger.pkt_extra("\n ==== Packet sent ====");
+                                    self.logger.pkt_extra("\n ==== Packet sent ====")?;
                                     self.send_pkt(&reply)?;
                                 }
                             }
                         }
                     }
 
-                    self.logger.divider();
+                    self.logger.divider()?;
 
                     if poll_outcome == PollOutcome::Both
                         && (self.shutdown_check)()
@@ -190,7 +190,7 @@ where
                     if self.engine.draining_complete() {
                         self.logger.server_newline();
                         self.logger
-                            .server_info("All connections closed within grace period, exiting");
+                            .server_info("All connections closed within grace period, exiting")?;
 
                         break Ok(());
                     }
@@ -211,30 +211,30 @@ where
                     "Draining connections, {}.{:03}s left",
                     time_left.as_secs(),
                     time_left.subsec_millis()
-                ));
+                ))?;
 
                 false
             }
 
             ShutdownOutcome::BeganDraining { to_send } => {
                 self.logger
-                    .server_info("Shutdown signal received, closing established connections...");
+                    .server_info("Shutdown signal received, closing established connections...")?;
 
-                self.logger.divider();
+                self.logger.divider()?;
 
                 for pkt in to_send {
-                    self.logger.pkt_extra(" ==== Packet sent ====");
+                    self.logger.pkt_extra(" ==== Packet sent ====")?;
                     self.send_pkt(&pkt)?;
                 }
 
-                self.logger.divider();
+                self.logger.divider()?;
                 false
             }
 
             ShutdownOutcome::NoConnections => {
                 self.logger.server_info(
                     "Shutdown signal received with no established connections, exiting",
-                );
+                )?;
 
                 true
             }

@@ -1,6 +1,6 @@
 use {
     std::{
-        fmt,
+        fmt::{self, Write as _},
         io::{self, Write as _},
         str::FromStr,
         time::Instant,
@@ -73,72 +73,102 @@ pub struct Logger {
 
     /// Identifies which worker thread this logger belongs to.
     worker_id: usize,
+
+    /// Accumulates output for one logical record so it can be written to stdout in a single locked
+    /// write and can't be interleaved with another worker thread's output.
+    buf: String,
+}
+
+impl Drop for Logger {
+    /// Flushes any buffered output to stdout. If the flush fails, reports it to stderr.
+    fn drop(&mut self) {
+        if let Err(e) = self.flush() {
+            eprintln!("Failed to flush logger output for worker {}: {e}", self.worker_id);
+        }
+    }
 }
 
 impl Logger {
     pub(crate) const fn new(level: LogLevel, birth: Instant, worker_id: usize) -> Self {
-        Self { level, birth, worker_id }
+        Self { level, birth, worker_id, buf: String::new() }
     }
 
-    /// Prints a visual divider to stdout if and how the log level allows.
-    pub(crate) fn divider(&self) {
-        match self.level {
-            LogLevel::Silent | LogLevel::ServerInfo => {}
-            // Buffered until the next newline or flush, which is desired
-            LogLevel::PktQuiet => print!(" "),
-            LogLevel::PktDetails | LogLevel::PktFull => println!("\n{:=<80}\n", ""),
-        }
-    }
-
-    /// Logs a bare newline from the server without a timestamp.
-    pub(crate) fn server_newline(&self) {
-        if self.level >= LogLevel::ServerInfo {
-            println!();
-        }
-    }
-
-    /// Logs information about the server to stdout if the log level allows.
-    pub(crate) fn server_info(&self, msg: impl fmt::Display) {
-        if self.level >= LogLevel::ServerInfo {
-            println!("[w{} {}] {msg}", self.worker_id, Timestamp(self.birth));
-        }
-    }
-
-    /// Logs receipt or transmission of a packet to stdout if and how the log level allows.
-    pub(crate) fn pkt_io<S: Endpoint>(&self, pkt: &Ipv4Packet<'_, S>) -> TraceableResult {
-        match self.level {
-            LogLevel::Silent | LogLevel::ServerInfo => {}
-
-            LogLevel::PktQuiet => {
-                print!("{}", S::INDICATOR);
-                io::stdout().flush()?;
-            }
-
-            level @ (LogLevel::PktDetails | LogLevel::PktFull) => {
-                println!(
-                    "[w{}] {}\n{pkt}\n{}",
-                    self.worker_id,
-                    Timestamp(self.birth),
-                    pkt.pretty_payload(level == LogLevel::PktFull)
-                );
-            }
+    /// Writes and clears any output buffered since the last call to `flush` in a single locked
+    /// write so it can't be interleaved with another worker thread's output.
+    fn flush(&mut self) -> TraceableResult {
+        if !self.buf.is_empty() {
+            let mut stdout = io::stdout().lock();
+            stdout.write_all(self.buf.as_bytes())?;
+            stdout.flush()?;
+            self.buf.clear();
         }
 
         Ok(())
     }
 
-    /// Logs packet-related information and formatting other than the packets themselves to stdout
-    /// if the log level allows.
-    pub(crate) fn pkt_extra(&self, msg: impl fmt::Display) {
-        if self.level >= LogLevel::PktDetails {
-            println!("{msg}");
+    /// Buffers a visual divider if and how the log level allows, then flushes everything buffered
+    /// since the previous call to `divider`.
+    pub(crate) fn divider(&mut self) -> TraceableResult {
+        match self.level {
+            LogLevel::Silent | LogLevel::ServerInfo => {}
+            LogLevel::PktQuiet => self.buf.push(' '),
+            LogLevel::PktDetails | LogLevel::PktFull => writeln!(self.buf, "\n{:=<80}\n", "")?,
+        }
+
+        self.flush()
+    }
+
+    /// Buffers a log of a bare newline from the server without a timestamp.
+    pub(crate) fn server_newline(&mut self) {
+        if self.level >= LogLevel::ServerInfo {
+            self.buf.push('\n');
         }
     }
 
-    /// Logs an error handling a packet to stderr if the log level allows.
-    pub(crate) fn pkt_err(&self, msg: impl fmt::Display) {
-        if self.level >= LogLevel::PktDetails {
-            eprintln!("[w{} {}] {msg}", self.worker_id, Timestamp(self.birth));
+    /// Buffers a log of information about the server if the log level allows.
+    pub(crate) fn server_info(&mut self, msg: impl fmt::Display) -> TraceableResult {
+        if self.level >= LogLevel::ServerInfo {
+            writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, Timestamp(self.birth))?;
         }
+
+        Ok(())
+    }
+
+    /// Buffers a log of receipt or transmission of a packet if and how the log level allows.
+    pub(crate) fn pkt_io<S: Endpoint>(&mut self, pkt: &Ipv4Packet<'_, S>) -> TraceableResult {
+        match self.level {
+            LogLevel::Silent | LogLevel::ServerInfo => {}
+
+            LogLevel::PktQuiet => self.buf.push(S::INDICATOR),
+
+            level @ (LogLevel::PktDetails | LogLevel::PktFull) => writeln!(
+                self.buf,
+                "[w{}] {}\n{pkt}\n{}",
+                self.worker_id,
+                Timestamp(self.birth),
+                pkt.pretty_payload(level == LogLevel::PktFull)
+            )?,
+        }
+
+        Ok(())
+    }
+
+    /// Buffers a log of packet-related information and formatting other than the packets themselves
+    /// if the log level allows.
+    pub(crate) fn pkt_extra(&mut self, msg: impl fmt::Display) -> TraceableResult {
+        if self.level >= LogLevel::PktDetails {
+            writeln!(self.buf, "{msg}")?;
+        }
+
+        Ok(())
+    }
+
+    /// Buffers a log of an error handling a packet if the log level allows.
+    pub(crate) fn pkt_err(&mut self, msg: impl fmt::Display) -> TraceableResult {
+        if self.level >= LogLevel::PktDetails {
+            writeln!(self.buf, "[w{} {}] {msg}", self.worker_id, Timestamp(self.birth))?;
+        }
+
+        Ok(())
     }
 }
