@@ -14,12 +14,14 @@ use {
     typenet_utils::{error::TraceableResult, try_ops::TryGet as _},
 };
 
-/// Reads and writes IPv4 packets to and from `device`, maintaining TCP connection state and echoing
-/// payloads as necessary.
+/// Reads and writes IPv4 packets to and from `device`, maintaining TCP connection state, responding
+/// to payloads as necessary, and logging processed data if and how the log level allows.
 ///
-/// When polling `device` with `poll_readable` is interrupted and `shutdown_check` returns `true`,
-/// actively closes all established TCP connections and waits up to `shutdown_grace_period` for them
-/// to finish before returning.
+/// When polling `device` with `poll_readable` is interrupted or returns [`PollOutcome::Shutdown`]
+/// and `shutdown_check` returns `true`, actively closes all established TCP connections and waits
+/// up to `config.grace_period` for them to finish before returning.
+///
+/// Maintains its own logger identified by `worker_id` with timestamps relative to `birth`.
 ///
 /// # Errors
 ///
@@ -187,8 +189,10 @@ where
         }
     }
 
-    /// Reacts to an `EINTR` caused by the shutdown signal, performing I/O resulting from the
-    /// shutdown decision as necessary. Returns whether to proceed to shutdown immediately.
+    /// Reacts to a shutdown interrupt, either an `EINTR` directly on this thread or the shutdown
+    /// eventfd becoming readable after the interrupt arrived on a different thread. Performs I/O
+    /// resulting from the shutdown decision as necessary, returning whether to proceed to shutdown
+    /// immediately.
     fn handle_shutdown_interrupt(&mut self, now: Instant) -> TraceableResult<bool> {
         self.draining = true;
 
