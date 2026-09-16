@@ -88,9 +88,15 @@ The internal and external dependency relationships are as follows, with arrows p
 The project separates IPv4 handling from ICMP/TCP/UDP-specific logic using an `Ipv4Packet` struct and a `ProtocolRouter` enum with variants for each supported protocol.
 
 ```
+┌──────────────────────────────┐
+│             TUN              │
+│            device            │
+└──────────────┬───────────────┘
+               │
+               ▼
 ╭──────────────────────────────╮   ╮
-│    TUN device, main loop,    │   ├ typenet-server crate
-│      shutdown signals        │   │
+│  thread management, server   │   ├ typenet-server crate
+│ loop, shutdown coordination  │   │
 ╰──────────────┬───────────────╯   ╯
                │
                ▼
