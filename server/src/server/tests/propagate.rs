@@ -11,7 +11,7 @@ fn poll_error_unrelated_to_interruption_propagates() -> TraceableResult {
         run_test_server(
             TcpConnections::default(),
             &mut device,
-            |_, _| poll.next(),
+            |_, _, _| poll.next(),
             || false,
             ONE_YEAR_GRACE_PERIOD,
         ),
@@ -28,14 +28,14 @@ fn poll_error_unrelated_to_interruption_propagates() -> TraceableResult {
 fn read_error_unrelated_to_interruption_propagates() -> TraceableResult {
     const MESSAGE: &str = "boom from read";
 
-    let poll = MockPoll::with_results([Ok(true)]);
+    let poll = MockPoll::with_results([Ok(PollOutcome::Readable)]);
     let mut device = MockDevice::with_read_results([Err(io::Error::other(MESSAGE))])?;
 
     assert_matches!(
         run_test_server(
             TcpConnections::default(),
             &mut device,
-            |_, _| poll.next(),
+            |_, _, _| poll.next(),
             || false,
             ONE_YEAR_GRACE_PERIOD,
         ),
@@ -59,7 +59,7 @@ fn write_failure_while_sending_fin_ack_propagates() -> TraceableResult {
         run_test_server(
             TcpConnections::default().after_handshake(),
             &mut device,
-            |_, _| poll.next(),
+            |_, _, _| poll.next(),
             || true,
             ONE_YEAR_GRACE_PERIOD,
         ),

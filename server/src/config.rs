@@ -1,12 +1,18 @@
 use {
     crate::{application::ServerApp, logger::LogLevel},
-    std::{any::type_name, env, fmt::Display, str::FromStr, time::Duration},
+    std::{
+        any::type_name, env, fmt::Display, num::NonZeroUsize, str::FromStr, thread, time::Duration,
+    },
     typenet_utils::error::TraceableResult,
 };
 
 pub struct Config {
     /// The name of the TUN device to attach to.
     pub tun_name: String,
+
+    /// The number of worker threads to run, each attached to its own queue of the same multi-queue
+    /// TUN device.
+    pub worker_count: NonZeroUsize,
 
     /// The application logic to use for the server.
     pub(crate) app: ServerApp,
@@ -36,53 +42,68 @@ impl Config {
     pub fn load() -> TraceableResult<Self> {
         Ok(Self {
             // NOTE: "TYPENET_TUN_NAME" is also read in the `justfile` with a "tun0" fallback
-            tun_name: Self::get_env_or_else(|| String::from("tun0"), "TYPENET_TUN_NAME")?,
+            tun_name: Self::parse_env("TYPENET_TUN_NAME")?.unwrap_or_else(|| String::from("tun0")),
 
-            app: Self::get_env_or_else(Default::default, "TYPENET_APP")?,
+            worker_count: Self::parse_env("TYPENET_WORKERS")?
+                .or_else(|| thread::available_parallelism().ok())
+                .ok_or(
+                    "Failed to estimate available parallelism. Set the TYPENET_WORKERS \
+                     environment variable to specify the number of worker threads manually.",
+                )?,
 
-            initial_rto: Duration::from_millis(Self::get_env_or_else(
-                || if cfg!(debug_assertions) { 250 } else { 1000 },
-                "TYPENET_INIT_RTO_MILLIS",
-            )?),
+            app: Self::parse_env("TYPENET_APP")?.unwrap_or_default(),
 
-            max_retries: Self::get_env_or_else(|| 15, "TYPENET_MAX_RETRANSMITS")?,
+            initial_rto: Duration::from_millis(
+                Self::parse_env("TYPENET_INIT_RTO_MILLIS")?.unwrap_or(if cfg!(debug_assertions) {
+                    250
+                } else {
+                    1000
+                }),
+            ),
 
-            grace_period: Duration::from_secs(Self::get_env_or_else(
-                || if cfg!(debug_assertions) { 5 } else { 60 },
-                "TYPENET_GRACE_SECS",
-            )?),
+            max_retries: Self::parse_env("TYPENET_MAX_RETRANSMITS")?.unwrap_or(15),
 
-            log_level: Self::get_env_or_else(Default::default, "TYPENET_LOG_LEVEL")?,
+            grace_period: Duration::from_secs(
+                Self::parse_env("TYPENET_GRACE_SECS")?.unwrap_or(if cfg!(debug_assertions) {
+                    5
+                } else {
+                    60
+                }),
+            ),
+
+            log_level: Self::parse_env("TYPENET_LOG_LEVEL")?.unwrap_or_default(),
         })
     }
 
-    /// Reads in an environment variable using `key`, or if not found, computes a default from a
-    /// closure.
+    /// Reads in an environment variable using `key` and parses it as `T`, or if not found, returns
+    /// `Ok(None)`.
     ///
     /// # Errors
     ///
     /// Returns `Err` if the environment variable is present but is not valid Unicode or cannot be
     /// parsed as `T`.
-    fn get_env_or_else<T, F>(op: F, key: &str) -> TraceableResult<T>
+    fn parse_env<T>(key: &str) -> TraceableResult<Option<T>>
     where
         T: FromStr,
         T::Err: Display,
-        F: FnOnce() -> T,
     {
         match env::var(key) {
-            Err(env::VarError::NotPresent) => Ok(op()),
+            Err(env::VarError::NotPresent) => Ok(None),
 
             Err(env::VarError::NotUnicode(_)) => {
                 Err(format!("Environment variable {key} present but not valid Unicode").into())
             }
 
-            Ok(val) => val.parse().map_err(|e| {
-                format!(
-                    "Environment variable {key} present but could not be parsed as {}: {e}",
-                    type_name::<T>()
-                )
-                .into()
-            }),
+            Ok(val) => val
+                .parse()
+                .map_err(|e| {
+                    format!(
+                        "Environment variable {key} present but could not be parsed as {}: {e}",
+                        type_name::<T>()
+                    )
+                    .into()
+                })
+                .map(Some),
         }
     }
 }

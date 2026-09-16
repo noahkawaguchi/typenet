@@ -14,3 +14,18 @@ pub mod sys {
 }
 
 mod logger;
+
+use std::{any::Any, borrow::Cow};
+
+/// Extracts the panic message from `payload` (which should be the `Err` payload from joining a
+/// thread) if it is a `String` or `&'static str`, otherwise returns a generic message.
+#[must_use]
+pub fn thread_panic_msg(payload: Box<dyn Any + Send + 'static>) -> Cow<'static, str> {
+    match payload.downcast::<String>() {
+        Ok(s) => Cow::Owned(*s),
+
+        Err(inner) => inner
+            .downcast::<&'static str>()
+            .map_or(Cow::Borrowed("<non-string panic payload>"), |s| Cow::Borrowed(*s)),
+    }
+}

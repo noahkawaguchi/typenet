@@ -56,7 +56,7 @@ tun:
 [private]
 [confirm(f'Create TUN device {{ tun-name }}? (uses sudo)')]
 tun-create:
-    sudo ip tuntap add dev {{ tun-name }} mode tun user {{ user }}
+    sudo ip tuntap add dev {{ tun-name }} mode tun multi_queue user {{ user }}
     sudo ip addr add {{ tun-cidr }} dev {{ tun-name }}
     sudo ip link set {{ tun-name }} up
     @echo 'TUN device created: name={{ tun-name }}, CIDR={{ tun-cidr }}, user={{ user }}'

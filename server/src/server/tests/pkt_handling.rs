@@ -6,14 +6,15 @@ fn malformed_pkt_is_skipped_without_propagating_or_writing() -> TraceableResult 
     // packet should just be logged and skipped. The second poll call is a shutdown signal, and
     // since there are no established connections, it ends the loop cleanly.
 
-    let poll = MockPoll::with_results([Ok(true), Err(io::ErrorKind::Interrupted.into())]);
+    let poll =
+        MockPoll::with_results([Ok(PollOutcome::Readable), Err(io::ErrorKind::Interrupted.into())]);
     let mut device = MockDevice::with_read_results([Ok(vec![0u8; 5])])?;
 
     assert_matches!(
         run_test_server(
             TcpConnections::default(),
             &mut device,
-            |_, _| poll.next(),
+            |_, _, _| poll.next(),
             || true,
             IMMEDIATE_GRACE_PERIOD,
         ),
@@ -28,14 +29,15 @@ fn malformed_pkt_is_skipped_without_propagating_or_writing() -> TraceableResult 
 
 #[test]
 fn valid_syn_producing_a_reply_is_sent() -> TraceableResult {
-    let poll = MockPoll::with_results([Ok(true), Err(io::ErrorKind::Interrupted.into())]);
+    let poll =
+        MockPoll::with_results([Ok(PollOutcome::Readable), Err(io::ErrorKind::Interrupted.into())]);
     let mut device =
         MockDevice::with_read_results([Ok(TcpSegment::CLIENT_SYN.encode_test_pkt()?)])?;
 
     run_test_server(
         TcpConnections::default(),
         &mut device,
-        |_, _| poll.next(),
+        |_, _, _| poll.next(),
         || true,
         IMMEDIATE_GRACE_PERIOD,
     )?;
@@ -54,7 +56,7 @@ fn valid_ack_completing_handshake_produces_no_reply() -> TraceableResult {
 
     const MESSAGE: &str = "boom from poll, unrelated to the ACK just processed";
 
-    let poll = MockPoll::with_results([Ok(true), Err(io::Error::other(MESSAGE))]);
+    let poll = MockPoll::with_results([Ok(PollOutcome::Readable), Err(io::Error::other(MESSAGE))]);
     let mut device = MockDevice::with_read_results([Ok(
         TcpSegment::CLIENT_ACK_COMPLETING_HANDSHAKE.encode_test_pkt()?,
     )])?;
@@ -63,7 +65,7 @@ fn valid_ack_completing_handshake_produces_no_reply() -> TraceableResult {
         run_test_server(
             TcpConnections::default().with_syn_rcv(),
             &mut device,
-            |_, _| poll.next(),
+            |_, _, _| poll.next(),
             || false,
             ONE_YEAR_GRACE_PERIOD,
         ),

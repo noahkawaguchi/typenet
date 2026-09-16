@@ -4,20 +4,22 @@
 //!   when `SIGINT` arrives, since the shutdown handler installation should leave `SA_RESTART`
 //!   unset.
 //! - That error is correctly propagated through `poll::readable`.
-//!
-//! Written as an integration test so it runs as its own process, since installing a signal handler
-//! and flipping the static shutdown flag mutate process-wide state.
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
-    typenet_server::sys::{ShutdownSignal, poll},
+    typenet_server::{
+        sys::{ShutdownSignal, poll},
+        thread_panic_msg,
+    },
     typenet_utils::error::TraceableResult,
 };
 
 #[test]
 #[expect(unsafe_code, reason = "libc FFI to target a spawned thread with a real SIGINT")]
 fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
-    ShutdownSignal::install()?; // `SA_RESTART` unset
+    // Keep the fd open for the whole test so it cannot be reused by a socket and then potentially
+    // corrupted by the signal handler
+    let _shutdown = ShutdownSignal::install()?; // `SA_RESTART` unset
 
     let (_tx, rx) = UnixStream::pair()?;
     let (tid_tx, tid_rx) = mpsc::channel();
@@ -28,7 +30,7 @@ fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
             .send(unsafe { libc::pthread_self() })
             .map_err(io::Error::other)?;
 
-        poll::readable(&rx, None)
+        poll::readable(&rx, None, None)
     });
 
     let tid = tid_rx.recv().map_err(io::Error::other)?;
@@ -44,9 +46,7 @@ fn poll_is_interrupted_by_sigint_instead_of_restarted() -> TraceableResult {
         return Err(io::Error::last_os_error().into());
     }
 
-    let result = poller
-        .join()
-        .map_err(|_| io::Error::other("poller thread panicked"))?;
+    let result = poller.join().map_err(thread_panic_msg)?;
 
     assert_matches!(result, Err(e) if e.kind() == io::ErrorKind::Interrupted);
 

@@ -1,9 +1,9 @@
 use {
-    libc::{IFF_NO_PI, IFF_TUN, IFNAMSIZ, TUNSETIFF},
+    libc::{IFF_MULTI_QUEUE, IFF_NO_PI, IFF_TUN, IFNAMSIZ, TUNSETIFF},
     std::{
         ffi::CString,
         fs::{File, OpenOptions},
-        io,
+        io, mem,
         os::unix::io::AsRawFd as _,
     },
     typenet_utils::error::TraceableResult,
@@ -15,10 +15,12 @@ const TUN_DEVICE_FILE: &str = "/dev/net/tun";
 
 /// The flags to use for the interface request.
 ///
-/// `IFF_TUN`   - TUN device (no Ethernet headers) rather than TAP
-/// `IFF_NO_PI` - Do not prepend packet metadata (get IP packet only)
-#[expect(clippy::cast_possible_truncation, reason = "0x1 | 0x1000 fits in a short")]
-const IFRU_FLAGS: libc::c_short = (IFF_TUN | IFF_NO_PI) as libc::c_short;
+/// `IFF_TUN`         - TUN device (no Ethernet headers) rather than TAP
+/// `IFF_NO_PI`       - Do not prepend packet metadata (get IP packet only)
+/// `IFF_MULTI_QUEUE` - Attach as one queue of a multi-queue device (required if the interface
+///                     was created with multi-queue support)
+#[expect(clippy::cast_possible_truncation, reason = "0x1 | 0x1000 | 0x100 fits in a short")]
+const IFRU_FLAGS: libc::c_short = (IFF_TUN | IFF_NO_PI | IFF_MULTI_QUEUE) as libc::c_short;
 
 /// Attaches to the TUN device with name `device_name` as an opened `File`.
 ///
@@ -42,7 +44,7 @@ pub fn attach(device_name: &str) -> TraceableResult<File> {
     // Initialize a new interface request C struct.
     //
     // SAFETY: All fields of `ifreq` have valid all-zero bit patterns.
-    let mut ifr: libc::ifreq = unsafe { std::mem::zeroed() };
+    let mut ifr: libc::ifreq = unsafe { mem::zeroed() };
 
     // Simply copy up to `IFNAMSIZ - 1` bytes without full name validation because the kernel
     // reporting that the device exists above already proves that the name is valid
@@ -87,7 +89,11 @@ const fn u8_to_c_char(b: u8) -> libc::c_char { b as libc::c_char }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::config::Config, pretty_assertions::assert_matches};
+    use {
+        super::*,
+        crate::config::Config,
+        pretty_assertions::{assert_matches, assert_ne},
+    };
 
     #[test]
     fn errors_for_nonexistent_tun_with_valid_name() {
@@ -115,6 +121,19 @@ mod tests {
     #[ignore = "requires TUN setup"]
     fn successfully_attaches_to_existing_tun() -> TraceableResult {
         assert_matches!(attach(&Config::load()?.tun_name), Ok(_));
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires TUN setup"]
+    fn attaches_multiple_independent_queues_to_the_same_tun() -> TraceableResult {
+        let tun_name = Config::load()?.tun_name;
+
+        let first = attach(&tun_name)?;
+        let second = attach(&tun_name)?;
+
+        assert_ne!(first.as_raw_fd(), second.as_raw_fd());
+
         Ok(())
     }
 

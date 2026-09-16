@@ -1,5 +1,5 @@
 use {
-    crate::{application::ServerApp, config::Config, logger::Logger},
+    crate::{application::ServerApp, config::Config, logger::Logger, sys::poll::PollOutcome},
     std::{
         io::{self, Read, Write},
         os::fd::AsFd,
@@ -14,12 +14,14 @@ use {
     typenet_utils::{error::TraceableResult, try_ops::TryGet as _},
 };
 
-/// Reads and writes IPv4 packets to and from `device`, maintaining TCP connection state and echoing
-/// payloads as necessary.
+/// Reads and writes IPv4 packets to and from `device`, maintaining TCP connection state, responding
+/// to payloads as necessary, and logging processed data if and how the log level allows.
 ///
-/// When polling `device` with `poll_readable` is interrupted and `shutdown_check` returns `true`,
-/// actively closes all established TCP connections and waits up to `shutdown_grace_period` for them
-/// to finish before returning.
+/// When polling `device` with `poll_readable` is interrupted or returns [`PollOutcome::Shutdown`]
+/// and `shutdown_check` returns `true`, actively closes all established TCP connections and waits
+/// up to `config.grace_period` for them to finish before returning.
+///
+/// Maintains its own logger identified by `worker_id` with timestamps relative to `birth`.
 ///
 /// # Errors
 ///
@@ -30,18 +32,20 @@ pub fn run<D, P, S>(
     poll_readable: P,
     shutdown_check: S,
     config: &Config,
+    birth: Instant,
+    worker_id: usize,
 ) -> TraceableResult
 where
     D: Read + Write + AsFd,
-    P: Fn(&D, Option<Duration>) -> io::Result<bool>,
+    P: Fn(&D, Option<Duration>, bool) -> io::Result<PollOutcome>,
     S: Fn() -> bool,
 {
-    let logger = Logger::new(config.log_level);
+    let mut logger = Logger::new(config.log_level, birth, worker_id);
 
     logger.server_info(format_args!(
         "Waiting for packets on TUN device {} (Ctrl+C to stop)",
         config.tun_name
-    ));
+    ))?;
 
     Server {
         write_buf: [0u8; ETHERNET_MTU],
@@ -55,6 +59,7 @@ where
         device,
         poll_readable,
         shutdown_check,
+        draining: false,
     }
     .run()
 }
@@ -66,24 +71,34 @@ struct Server<'a, D, P, S> {
     device: &'a mut D,
     poll_readable: P,
     shutdown_check: S,
+
+    /// Whether this thread has already reacted to a shutdown signal at least once. Used to stop
+    /// polling the shutdown eventfd after this thread has become aware of shutdown, because
+    /// otherwise the `poll()` call would always return immediately saying the shutdown eventfd is
+    /// readable and the loop would spin.
+    draining: bool,
 }
 
 impl<D, P, S> Server<'_, D, P, S>
 where
     D: Read + Write + AsFd,
-    P: Fn(&D, Option<Duration>) -> io::Result<bool>,
+    P: Fn(&D, Option<Duration>, bool) -> io::Result<PollOutcome>,
     S: Fn() -> bool,
 {
     fn run(&mut self) -> TraceableResult {
         let mut read_buf = [0u8; ETHERNET_MTU];
 
-        self.logger.divider();
-
         loop {
-            match (self.poll_readable)(self.device, self.engine.poll_timeout(Instant::now())) {
+            match (self.poll_readable)(
+                self.device,
+                self.engine.poll_timeout(Instant::now()),
+                !self.draining,
+            ) {
                 // If `poll()` was interrupted and returned `EINTR`, check if a shutdown signal has
                 // been received
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {
+                    self.logger.server_newline(); // Because ^C is probably in the terminal
+
                     if (self.shutdown_check)() && self.handle_shutdown_interrupt(Instant::now())? {
                         break Ok(());
                     }
@@ -92,29 +107,40 @@ where
 
                 Err(e) => break Err(e.into()),
 
-                Ok(false) if self.engine.grace_period_elapsed(Instant::now()) => {
-                    self.logger.server_newline();
+                // Some other worker thread received the shutdown signal's `EINTR` -> same reaction
+                // as if this thread had received it
+                Ok(PollOutcome::Shutdown) => {
+                    if (self.shutdown_check)() && self.handle_shutdown_interrupt(Instant::now())? {
+                        break Ok(());
+                    }
+                }
+
+                // Grace period ended with connections left -> forcefully exit
+                Ok(PollOutcome::Timeout) if self.engine.grace_period_elapsed(Instant::now()) => {
                     self.logger.server_info(format_args!(
                         "Grace period elapsed with {} remaining connection(s), exiting",
                         self.engine.connection_count()
-                    ));
+                    ))?;
 
                     break Ok(());
                 }
 
                 // A retransmit deadline elapsed -> retransmit all expired segments
-                Ok(false) => {
+                Ok(PollOutcome::Timeout) => {
                     for retransmission in self.engine.make_retransmissions() {
-                        self.logger
-                            .pkt_extra(" ==== Packet sent (retransmission) ====");
-
-                        self.send_pkt(&retransmission?)?;
-                        self.logger.divider();
+                        let pkt = retransmission?;
+                        self.send_pkt(&pkt)?;
+                        self.logger.non_reply_transmission(&pkt, true)?;
                     }
                 }
 
-                // The device became readable within the timeout -> regular read and reply
-                Ok(true) => {
+                // The device became readable within the timeout -> regular read and reply. If the
+                // shutdown eventfd also became readable, check for shutdown after handling the
+                // packet.
+                Ok(poll_outcome @ (PollOutcome::Readable | PollOutcome::Both)) => {
+                    // Unlike `poll()`, `read()` here never needs to watch the shutdown
+                    // eventfd because it only ever runs once this fd is readable, and since each
+                    // worker thread owns its own queue fd exclusively, that data is still there
                     let bytes_read = match self.device.read(&mut read_buf) {
                         // If `read()` was interrupted and returned `EINTR`, react to the shutdown
                         // signal in the same way as for a `poll()` interruption
@@ -134,29 +160,27 @@ where
                     };
 
                     match self.engine.handle_packet(read_buf.try_get(..bytes_read)?) {
-                        Err(e) => self.logger.pkt_err(e),
+                        Err(e) => self.logger.pkt_err(e)?,
 
-                        Ok(outcome) => {
-                            self.logger.pkt_extra(" ==== Packet received ====");
-                            self.logger.pkt_io(&outcome.incoming)?;
-
-                            match outcome.reply {
-                                None => self.logger.pkt_extra("\n<no reply>"),
-
-                                Some(reply) => {
-                                    self.logger.pkt_extra("\n ==== Packet sent ====");
-                                    self.send_pkt(&reply)?;
-                                }
+                        Ok(pkt_outcome) => {
+                            if let Some(reply) = &pkt_outcome.reply {
+                                self.send_pkt(reply)?;
                             }
+
+                            self.logger.exchange(&pkt_outcome)?;
                         }
                     }
 
-                    self.logger.divider();
+                    if poll_outcome == PollOutcome::Both
+                        && (self.shutdown_check)()
+                        && self.handle_shutdown_interrupt(Instant::now())?
+                    {
+                        break Ok(());
+                    }
 
                     if self.engine.draining_complete() {
-                        self.logger.server_newline();
                         self.logger
-                            .server_info("All connections closed within grace period, exiting");
+                            .server_info("All connections closed within grace period, exiting")?;
 
                         break Ok(());
                     }
@@ -165,10 +189,12 @@ where
         }
     }
 
-    /// Reacts to an `EINTR` caused by the shutdown signal, performing I/O resulting from the
-    /// shutdown decision as necessary. Returns whether to proceed to shutdown immediately.
+    /// Reacts to a shutdown interrupt, either an `EINTR` directly on this thread or the shutdown
+    /// eventfd becoming readable after the interrupt arrived on a different thread. Performs I/O
+    /// resulting from the shutdown decision as necessary, returning whether to proceed to shutdown
+    /// immediately.
     fn handle_shutdown_interrupt(&mut self, now: Instant) -> TraceableResult<bool> {
-        self.logger.server_newline(); // Because ^C is probably in the terminal
+        self.draining = true;
 
         Ok(match self.engine.handle_shutdown(now)? {
             ShutdownOutcome::AlreadyDraining { time_left } => {
@@ -176,30 +202,27 @@ where
                     "Draining connections, {}.{:03}s left",
                     time_left.as_secs(),
                     time_left.subsec_millis()
-                ));
+                ))?;
 
                 false
             }
 
             ShutdownOutcome::BeganDraining { to_send } => {
                 self.logger
-                    .server_info("Shutdown signal received, closing established connections...");
-
-                self.logger.divider();
+                    .server_info("Shutdown signal received, closing established connections...")?;
 
                 for pkt in to_send {
-                    self.logger.pkt_extra(" ==== Packet sent ====");
                     self.send_pkt(&pkt)?;
+                    self.logger.non_reply_transmission(&pkt, false)?;
                 }
 
-                self.logger.divider();
                 false
             }
 
             ShutdownOutcome::NoConnections => {
                 self.logger.server_info(
                     "Shutdown signal received with no established connections, exiting",
-                );
+                )?;
 
                 true
             }
@@ -207,15 +230,13 @@ where
     }
 
     /// Writes the protocol-specific header and payload of `outgoing` into the write buffer,
-    /// prefixed with an IPv4 header, then writes the resulting packet to the device and logs its
-    /// transmission.
+    /// prefixed with an IPv4 header, then writes the resulting packet to the device.
     fn send_pkt(&mut self, outgoing: &Ipv4Packet<Local>) -> TraceableResult {
         outgoing.write_into(&mut self.write_buf)?;
 
         self.device
-            .write_all(self.write_buf.try_get(..outgoing.total_len().into())?)?;
-
-        self.logger.pkt_io(outgoing)
+            .write_all(self.write_buf.try_get(..outgoing.total_len().into())?)
+            .map_err(Into::into)
     }
 }
 
@@ -252,17 +273,18 @@ mod tests {
     fn run_test_server(
         tcp_connections: TcpConnections,
         device: &mut MockDevice,
-        poll_readable: impl Fn(&MockDevice, Option<Duration>) -> io::Result<bool>,
+        poll_readable: impl Fn(&MockDevice, Option<Duration>, bool) -> io::Result<PollOutcome>,
         shutdown_check: impl Fn() -> bool,
         shutdown_grace_period: Duration,
     ) -> TraceableResult {
         Server {
             write_buf: [0u8; ETHERNET_MTU],
             engine: Engine::test_new(ServerApp::Echo, tcp_connections, shutdown_grace_period),
-            logger: Logger::new(LogLevel::Silent),
+            logger: Logger::new(LogLevel::Silent, Instant::now(), 0),
             device,
             poll_readable,
             shutdown_check,
+            draining: false,
         }
         .run()
     }

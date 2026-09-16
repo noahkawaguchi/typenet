@@ -74,14 +74,14 @@ impl AsFd for MockDevice {
 
 /// A scripted sequence of poll results, consumed one per call (via interior mutability since the
 /// trait bound is `Fn`, not `FnMut`). Returns `Err` if the script runs out.
-pub struct MockPoll(RefCell<VecDeque<io::Result<bool>>>);
+pub struct MockPoll(RefCell<VecDeque<io::Result<PollOutcome>>>);
 
 impl MockPoll {
-    pub fn with_results(results: impl IntoIterator<Item = io::Result<bool>>) -> Self {
+    pub fn with_results(results: impl IntoIterator<Item = io::Result<PollOutcome>>) -> Self {
         Self(RefCell::new(results.into_iter().collect()))
     }
 
-    pub fn next(&self) -> io::Result<bool> {
+    pub fn next(&self) -> io::Result<PollOutcome> {
         self.0
             .try_borrow_mut()
             .map_err(io::Error::other)?
