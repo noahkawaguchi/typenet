@@ -18,7 +18,7 @@ const IPV4_HDR_MIN_LEN_USIZE: usize = IPV4_HDR_MIN_LEN_U8 as usize;
 
 /// Manages IPv4 header fields for a packet sent from `S`.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-pub struct Ipv4Header<S: Endpoint> {
+pub(crate) struct Ipv4Header<S: Endpoint> {
     pub total_len: u16,
     pub protocol: Protocol,
     pub ip_pair: Ipv4AddrPair<S>,
@@ -27,12 +27,12 @@ pub struct Ipv4Header<S: Endpoint> {
 impl Ipv4Header<Remote> {
     /// Parses `data` as an IPv4 packet going in the remote to local direction, returning the header
     /// fields and a slice starting at the beginning of the payload.
-    pub fn parse(data: &[u8]) -> TraceableResult<(Self, &[u8])> { Self::inner_parse(data) }
+    pub(crate) fn parse(data: &[u8]) -> TraceableResult<(Self, &[u8])> { Self::inner_parse(data) }
 }
 
 impl Ipv4Header<Local> {
     /// The length in bytes of an IPv4 header for a reply packet (no options).
-    pub const REPLY_HDR_LEN: usize = IPV4_HDR_MIN_LEN_USIZE;
+    pub(crate) const REPLY_HDR_LEN: usize = IPV4_HDR_MIN_LEN_USIZE;
 
     /// Creates an IPv4 header with the given `protocol` and `ip_pair` going in the local to remote
     /// direction. Total length is the length of the IPv4 header + `proto_len`.
@@ -40,7 +40,7 @@ impl Ipv4Header<Local> {
     /// # Errors
     ///
     /// Returns `Err` if adding `proto_len` to the IPv4 header length overflows `u16`.
-    pub fn try_new(
+    pub(crate) fn try_new(
         protocol: Protocol,
         ip_pair: Ipv4AddrPair<Local>,
         proto_len: u16,
@@ -50,7 +50,7 @@ impl Ipv4Header<Local> {
 
     /// Writes an IPv4 header going in the local to remote direction into `buf`, copying the header
     /// data from `self`.
-    pub fn write_into(&self, buf: &mut [u8; ETHERNET_MTU]) { self.inner_write_into(buf); }
+    pub(crate) fn write_into(&self, buf: &mut [u8; ETHERNET_MTU]) { self.inner_write_into(buf); }
 }
 
 impl<S: Endpoint> Ipv4Header<S> {
