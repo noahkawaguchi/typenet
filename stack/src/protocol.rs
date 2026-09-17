@@ -1,6 +1,6 @@
-pub mod icmp_echo;
-pub mod tcp;
-pub mod udp;
+pub(crate) mod icmp_echo;
+pub(crate) mod tcp;
+pub(crate) mod udp;
 
 use {
     crate::{
@@ -15,7 +15,7 @@ use {
 };
 
 /// Pretty protocol-handling types that can also be encoded into a byte buffer.
-pub trait Encode<S: Endpoint>: PrettyProtocol {
+pub(crate) trait Encode<S: Endpoint>: PrettyProtocol {
     /// Copies data from `self` to write the protocol-specific header and payload into `buf`.
     ///
     /// # Errors
@@ -115,10 +115,11 @@ mod test_consts {
     };
 
     /// A pair of IP addresses going from 10.0.0.2 to 10.0.0.1 in the remote to local direction.
-    pub const REMOTE_TO_LOCAL_IP_PAIR: Ipv4AddrPair<Remote> =
+    pub(super) const REMOTE_TO_LOCAL_IP_PAIR: Ipv4AddrPair<Remote> =
         Ipv4AddrPair::new(Ipv4Addr::new(10, 0, 0, 2), Ipv4Addr::new(10, 0, 0, 1));
 
     /// A pair of IP addresses going from 10.0.0.1 to 10.0.0.2 in the local to remote direction.
     #[cfg(test)]
-    pub const LOCAL_TO_REMOTE_IP_PAIR: Ipv4AddrPair<Local> = REMOTE_TO_LOCAL_IP_PAIR.swapped();
+    pub(super) const LOCAL_TO_REMOTE_IP_PAIR: Ipv4AddrPair<Local> =
+        REMOTE_TO_LOCAL_IP_PAIR.swapped();
 }

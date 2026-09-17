@@ -69,7 +69,7 @@ impl fmt::Display for TimestampCalculator {
     }
 }
 
-pub struct Logger {
+pub(crate) struct Logger {
     /// The level of output for logging.
     level: LogLevel,
 

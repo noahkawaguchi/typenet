@@ -7,7 +7,7 @@ use {
 /// A `Read + Write + AsFd` test double. `read()` calls are scripted in advance and return an error
 /// if the script runs out, while `write()` calls are recorded (and optionally scripted to fail) so
 /// tests can assert on what would have gone out over the wire.
-pub struct MockDevice {
+pub(super) struct MockDevice {
     reads: VecDeque<io::Result<Vec<u8>>>,
     writes: Vec<Vec<u8>>,
     write_error: Option<String>,
@@ -20,7 +20,7 @@ pub struct MockDevice {
 impl MockDevice {
     /// Creates a new `Self` that returns the next result in `results` in order for each `read()`
     /// call.
-    pub fn with_read_results(
+    pub(super) fn with_read_results(
         results: impl IntoIterator<Item = io::Result<Vec<u8>>>,
     ) -> TraceableResult<Self> {
         Ok(Self {
@@ -32,12 +32,12 @@ impl MockDevice {
     }
 
     /// Makes every subsequent `write()` call fail with `io::Error::other(message)`.
-    pub fn with_failing_writes(mut self, message: impl Into<String>) -> Self {
+    pub(super) fn with_failing_writes(mut self, message: impl Into<String>) -> Self {
         self.write_error = Some(message.into());
         self
     }
 
-    pub fn write_history(&self) -> &[Vec<u8>] { &self.writes }
+    pub(super) fn write_history(&self) -> &[Vec<u8>] { &self.writes }
 }
 
 impl Read for MockDevice {
@@ -74,14 +74,14 @@ impl AsFd for MockDevice {
 
 /// A scripted sequence of poll results, consumed one per call (via interior mutability since the
 /// trait bound is `Fn`, not `FnMut`). Returns `Err` if the script runs out.
-pub struct MockPoll(RefCell<VecDeque<io::Result<PollOutcome>>>);
+pub(super) struct MockPoll(RefCell<VecDeque<io::Result<PollOutcome>>>);
 
 impl MockPoll {
-    pub fn with_results(results: impl IntoIterator<Item = io::Result<PollOutcome>>) -> Self {
+    pub(super) fn with_results(results: impl IntoIterator<Item = io::Result<PollOutcome>>) -> Self {
         Self(RefCell::new(results.into_iter().collect()))
     }
 
-    pub fn next(&self) -> io::Result<PollOutcome> {
+    pub(super) fn next(&self) -> io::Result<PollOutcome> {
         self.0
             .try_borrow_mut()
             .map_err(io::Error::other)?
