@@ -32,7 +32,7 @@ tshark-cmd := 'tshark -n --print' \
 # Run the server (default recipe)
 [continue]
 serve *ARGS: tun
-    cargo run {{ ARGS }}
+    cargo run --package typenet-server {{ ARGS }}
 
 # Run the server and save a log file to the `logs` directory
 [continue]
