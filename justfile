@@ -7,6 +7,7 @@ set dotenv-load
 project-name := 'typenet'
 user := env('USER')
 
+# NOTE: matches the loadgen binary's default address and port combination
 server-addr := '10.0.0.2'
 server-port := '8080'
 
