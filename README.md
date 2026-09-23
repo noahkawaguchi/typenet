@@ -217,15 +217,13 @@ The following environment variables can be used to configure the TUN device and 
 You will be prompted to create the TUN device on first use, once per reboot, which requires `sudo` privileges. The server will attach to the TUN device, listen for and reply to packets, and log processed data until it receives SIGINT (Ctrl+C).
 
 ```sh
-just serve     # Debug build
-just serve -r  # Release build
+just serve
 ```
 
 The [`justfile`](justfile) also includes recipes for saving logs to file.
 
 ```sh
 just serve-save     # Run and save log file to `logs` directory
-just serve-save -r  # Same but with a release build
 just log-clean      # Remove `logs` directory
 ```
 
@@ -233,7 +231,6 @@ The server crate also includes a "shout" app, verifying that the protocol stack 
 
 ```sh
 TYPENET_APP=shout just serve
-TYPENET_APP=shout just serve -r
 ```
 
 ## Connecting as a Client

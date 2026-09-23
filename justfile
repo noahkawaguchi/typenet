@@ -32,13 +32,13 @@ tshark-cmd := 'tshark -n --print' \
 # Run the server (default recipe)
 [continue]
 serve *ARGS: tun
-    cargo run --package typenet-server {{ ARGS }}
+    cargo run --release --package typenet-server {{ ARGS }}
 
 # Run the server and save a log file to the `logs` directory
 [continue]
-serve-save *ARGS:
+serve-save:
     mkdir -p '{{ logs-dir }}'
-    just serve "{{ ARGS }} --quiet 2>&1 | tee --ignore-interrupts --append '{{ log-file }}'"
+    just serve "--quiet 2>&1 | tee --ignore-interrupts --append '{{ log-file }}'"
     @echo 'Saved to {{ log-file }}'
 
 # Remove the `logs` directory
