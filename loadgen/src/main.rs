@@ -27,15 +27,11 @@ fn main() -> TraceableResult {
 
         handles
             .into_iter()
-            .map(|handle| {
-                handle
-                    .join()
-                    .unwrap_or_else(|_| Err("Worker thread panicked".into()))
-            })
-            .collect::<Vec<_>>()
-    });
+            .map(|handle| handle.join().map_err(|_| "Worker thread panicked".into()))
+            .collect::<TraceableResult<Vec<_>>>()
+    })?;
 
-    let report = report::summarize(&outcomes, start.elapsed());
+    let report = report::summarize(&outcomes, start.elapsed())?;
     report::print(&report);
 
     Ok(())
