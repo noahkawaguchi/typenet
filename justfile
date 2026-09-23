@@ -199,6 +199,18 @@ sniff-clean:
     rm -rf '{{ pcap-dir }}'
 
 ####################################################################################################
+# Microbenchmarking and load testing
+####################################################################################################
+
+# Run benchmarks (generates HTML in `target/criterion`)
+bench:
+    cargo bench {{ everything-flags }}
+
+# Open many concurrent TCP connections to measure throughput and latency (see README for more info)
+loadgen:
+    cargo run --release --package typenet-loadgen
+
+####################################################################################################
 # Testing and quality
 ####################################################################################################
 
@@ -215,10 +227,6 @@ cov *ARGS: tun
 
 # Generate HTML test coverage report (in `target/llvm-cov/html`) and open in browser
 cov-open: (cov '--open')
-
-# Run benchmarks (generates HTML in `target/criterion`)
-bench:
-    cargo bench {{ everything-flags }}
 
 # Lint with Clippy, denying warnings
 lint:
