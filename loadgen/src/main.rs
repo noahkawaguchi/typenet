@@ -16,7 +16,7 @@ fn main() -> TraceableResult {
 
     let outcomes = thread::scope(|scope| {
         #[expect(clippy::needless_collect, reason = "Threads must all be spawned before any join")]
-        let handles = (0..config.connection_count)
+        let handles = (0..config.connection_count.get())
             .map(|_| {
                 let payload_ref = &payload;
                 scope.spawn(|| {

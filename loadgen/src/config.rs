@@ -1,5 +1,12 @@
 use {
-    std::{any::type_name, env, fmt::Display, net::IpAddr, str::FromStr},
+    std::{
+        any::type_name,
+        env,
+        fmt::Display,
+        net::IpAddr,
+        num::{NonZeroU16, NonZeroUsize},
+        str::FromStr,
+    },
     typenet_utils::error::TraceableResult,
 };
 
@@ -8,13 +15,13 @@ pub(crate) struct Config {
     pub target_addr: IpAddr,
 
     /// The TCP port of the echo server to load test.
-    pub target_port: u16,
+    pub target_port: NonZeroU16,
 
     /// The number of concurrent TCP connections to open.
-    pub connection_count: usize,
+    pub connection_count: NonZeroUsize,
 
     /// The number of random bytes to send and expect echoed back on each connection.
-    pub payload_size: usize,
+    pub payload_size: NonZeroUsize,
 }
 
 impl Config {
@@ -22,7 +29,8 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns `Err` if an environment variable is present but unparsable.
+    /// Returns `Err` if an environment variable is present but unparsable, including a `0` for any
+    /// of the fields that must be nonzero.
     pub(crate) fn load() -> TraceableResult<Self> {
         Ok(Self {
             // NOTE: matches the default `server-addr` in the `justfile` ("10.0.0.2")
@@ -30,11 +38,14 @@ impl Config {
                 .unwrap_or_else(|| IpAddr::from([10, 0, 0, 2])),
 
             // NOTE: matches the default `server-port` in the `justfile` ("8080")
-            target_port: Self::parse_env("TYPENET_LOADGEN_PORT")?.unwrap_or(8080),
+            target_port: Self::parse_env("TYPENET_LOADGEN_PORT")?
+                .unwrap_or(const { NonZeroU16::new(8080).expect("8080 != 0") }),
 
-            connection_count: Self::parse_env("TYPENET_LOADGEN_CONNECTIONS")?.unwrap_or(50),
+            connection_count: Self::parse_env("TYPENET_LOADGEN_CONNECTIONS")?
+                .unwrap_or(const { NonZeroUsize::new(50).expect("50 != 0") }),
 
-            payload_size: Self::parse_env("TYPENET_LOADGEN_PAYLOAD_BYTES")?.unwrap_or(65536),
+            payload_size: Self::parse_env("TYPENET_LOADGEN_PAYLOAD_BYTES")?
+                .unwrap_or(const { NonZeroUsize::new(65536).expect("65536 != 0") }),
         })
     }
 
