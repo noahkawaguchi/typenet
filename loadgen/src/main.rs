@@ -5,12 +5,12 @@ mod worker;
 use {
     crate::{config::Config, report::Report},
     std::{iter, thread, time::Instant},
-    typenet_utils::error::TraceableResult,
+    typenet_utils::{error::TraceableResult, sys},
 };
 
 fn main() -> TraceableResult {
     let config = Config::load()?;
-    let payload = worker::generate_payload(config.payload_size)?;
+    let payload = sys::random_bytes(config.payload_size)?;
 
     let start = Instant::now();
 

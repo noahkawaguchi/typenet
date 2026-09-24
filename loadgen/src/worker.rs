@@ -1,9 +1,8 @@
 use {
     std::{
-        fs::File,
         io::{Read as _, Write as _},
         net::{IpAddr, Shutdown, TcpStream},
-        num::{NonZeroU16, NonZeroUsize},
+        num::NonZeroU16,
         time::{Duration, Instant},
     },
     typenet_utils::error::TraceableResult,
@@ -18,17 +17,6 @@ pub(crate) struct ConnectionOutcome {
 
     /// The time from just before connecting until the last byte of the reply was read.
     pub round_trip: Duration,
-}
-
-/// Reads `size` random bytes from `/dev/urandom` to use as a payload shared across connections.
-///
-/// # Errors
-///
-/// Returns `Err` if the read fails.
-pub(crate) fn generate_payload(size: NonZeroUsize) -> TraceableResult<Vec<u8>> {
-    let mut payload = vec![0u8; size.get()];
-    File::open("/dev/urandom")?.read_exact(&mut payload)?;
-    Ok(payload)
 }
 
 /// Connects to `addr:port`, sends `payload`, half-closes the write side, reads the echoed reply to
