@@ -1,9 +1,10 @@
 mod config;
 mod report;
+mod server_cpu;
 mod worker;
 
 use {
-    crate::{config::Config, report::Report},
+    crate::{config::Config, report::Report, server_cpu::ServerCpuMeter},
     std::{iter, thread, time::Instant},
     typenet_utils::{
         error::{TraceableResult, thread_panic_msg},
@@ -18,6 +19,7 @@ fn main() -> TraceableResult {
         .take(config.connection_count.get())
         .collect::<TraceableResult<Vec<_>>>()?;
 
+    let server_cpu_meter = ServerCpuMeter::start();
     let start = Instant::now();
 
     let outcomes = thread::scope(|scope| {
@@ -36,7 +38,10 @@ fn main() -> TraceableResult {
             .collect::<TraceableResult<Vec<_>>>()
     })?;
 
-    println!("{}", Report::summarize(&outcomes, start.elapsed())?);
+    let wall_time = start.elapsed();
+    let server_cpu = server_cpu_meter.and_then(ServerCpuMeter::stop);
+
+    println!("{}", Report::summarize(&outcomes, wall_time, server_cpu)?);
 
     Ok(())
 }

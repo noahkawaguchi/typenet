@@ -16,11 +16,13 @@ pub(crate) struct Report {
     pub p95: Option<Duration>,
     pub p99: Option<Duration>,
     pub max: Option<Duration>,
+    pub server_cpu: Option<Duration>,
+    pub server_cpu_pct_of_wall: Option<f64>,
 }
 
 impl Report {
     /// Aggregates per-connection outcomes into success/mismatch/error counts, throughput, and
-    /// latency percentiles.
+    /// latency percentiles, and relates `server_cpu` (if measured) to `wall_time`.
     ///
     /// # Errors
     ///
@@ -32,6 +34,7 @@ impl Report {
     pub(crate) fn summarize(
         outcomes: &[TraceableResult<ConnectionOutcome>],
         wall_time: Duration,
+        server_cpu: Option<Duration>,
     ) -> TraceableResult<Self> {
         let mismatched = outcomes
             .iter()
@@ -68,8 +71,14 @@ impl Report {
             )
         };
 
-        let seconds = wall_time.as_secs_f64();
-        let throughput_bytes_per_sec = (seconds > 0.0).then(|| bytes_transferred as f64 / seconds);
+        let wall_secs = wall_time.as_secs_f64();
+
+        let throughput_bytes_per_sec =
+            (wall_secs > 0.0).then(|| bytes_transferred as f64 / wall_secs);
+
+        let server_cpu_pct_of_wall = (wall_secs > 0.0)
+            .then(|| server_cpu.map(|cpu| cpu.as_secs_f64() / wall_secs * 100.0))
+            .flatten();
 
         Ok(Self {
             attempted: outcomes.len(),
@@ -83,6 +92,8 @@ impl Report {
             p95,
             p99,
             max,
+            server_cpu,
+            server_cpu_pct_of_wall,
         })
     }
 }
@@ -114,15 +125,17 @@ impl fmt::Display for Report {
         writeln!(f, "Verified echoes       : {}", self.verified)?;
         writeln!(f, "Mismatched echoes     : {}", self.mismatched)?;
         writeln!(f, "Connection errors     : {}", self.errored)?;
-
+        writeln!(f)?;
         writeln!(f, "Bytes transferred     : {}", self.bytes_transferred)?;
-        writeln!(f, "Wall time             : {:.3}s", self.wall_time.as_secs_f64())?;
-
+        writeln!(f, "Wall time             : {}", fmt_duration(Some(self.wall_time)))?;
+        writeln!(f, "Server CPU time       : {}", fmt_duration(self.server_cpu))?;
+        writeln!(f, "Server CPU / wall     : {}", fmt_percent(self.server_cpu_pct_of_wall))?;
         writeln!(f, "Throughput            : {}", fmt_throughput(self.throughput_bytes_per_sec))?;
-        writeln!(f, "Latency p50           : {}", fmt_latency(self.p50))?;
-        writeln!(f, "Latency p95           : {}", fmt_latency(self.p95))?;
-        writeln!(f, "Latency p99           : {}", fmt_latency(self.p99))?;
-        writeln!(f, "Latency max           : {}", fmt_latency(self.max))
+        writeln!(f)?;
+        writeln!(f, "Latency p50           : {}", fmt_duration(self.p50))?;
+        writeln!(f, "Latency p95           : {}", fmt_duration(self.p95))?;
+        writeln!(f, "Latency p99           : {}", fmt_duration(self.p99))?;
+        writeln!(f, "Latency max           : {}", fmt_duration(self.max))
     }
 }
 
@@ -130,6 +143,10 @@ fn fmt_throughput(bytes_per_sec: Option<f64>) -> String {
     bytes_per_sec.map_or_else(|| "n/a".to_owned(), |b| format!("{:.2} MB/s", b / 1_000_000.0))
 }
 
-fn fmt_latency(latency: Option<Duration>) -> String {
-    latency.map_or_else(|| "n/a".to_owned(), |d| format!("{d:?}"))
+fn fmt_duration(duration: Option<Duration>) -> String {
+    duration.map_or_else(|| "n/a".to_owned(), |d| format!("{d:?}"))
+}
+
+fn fmt_percent(percent: Option<f64>) -> String {
+    percent.map_or_else(|| "n/a".to_owned(), |p| format!("{p:.1}%"))
 }
