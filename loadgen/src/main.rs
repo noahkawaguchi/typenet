@@ -3,7 +3,7 @@ mod report;
 mod worker;
 
 use {
-    config::Config,
+    crate::{config::Config, report::Report},
     std::{iter, thread, time::Instant},
     typenet_utils::error::TraceableResult,
 };
@@ -27,8 +27,7 @@ fn main() -> TraceableResult {
         .collect::<TraceableResult<Vec<_>>>()
     })?;
 
-    let report = report::summarize(&outcomes, start.elapsed())?;
-    report::print(&report);
+    println!("{}", Report::summarize(&outcomes, start.elapsed())?);
 
     Ok(())
 }
