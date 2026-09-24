@@ -1,9 +1,7 @@
 use {
     crate::{application::ServerApp, logger::LogLevel},
-    std::{
-        any::type_name, env, fmt::Display, num::NonZeroUsize, str::FromStr, thread, time::Duration,
-    },
-    typenet_utils::error::TraceableResult,
+    std::{num::NonZeroUsize, thread, time::Duration},
+    typenet_utils::{error::TraceableResult, sys},
 };
 
 pub struct Config {
@@ -42,68 +40,36 @@ impl Config {
     pub fn load() -> TraceableResult<Self> {
         Ok(Self {
             // NOTE: "TYPENET_TUN_NAME" is also read in the `justfile` with a "tun0" fallback
-            tun_name: Self::parse_env("TYPENET_TUN_NAME")?.unwrap_or_else(|| String::from("tun0")),
+            tun_name: sys::parse_env("TYPENET_TUN_NAME")?.unwrap_or_else(|| String::from("tun0")),
 
-            worker_count: Self::parse_env("TYPENET_WORKERS")?
+            worker_count: sys::parse_env("TYPENET_WORKERS")?
                 .or_else(|| thread::available_parallelism().ok())
                 .ok_or(
                     "Failed to estimate available parallelism. Set the TYPENET_WORKERS \
                      environment variable to specify the number of worker threads manually.",
                 )?,
 
-            app: Self::parse_env("TYPENET_APP")?.unwrap_or_default(),
+            app: sys::parse_env("TYPENET_APP")?.unwrap_or_default(),
 
             initial_rto: Duration::from_millis(
-                Self::parse_env("TYPENET_INIT_RTO_MILLIS")?.unwrap_or(if cfg!(debug_assertions) {
+                sys::parse_env("TYPENET_INIT_RTO_MILLIS")?.unwrap_or(if cfg!(debug_assertions) {
                     250
                 } else {
                     1000
                 }),
             ),
 
-            max_retries: Self::parse_env("TYPENET_MAX_RETRANSMITS")?.unwrap_or(15),
+            max_retries: sys::parse_env("TYPENET_MAX_RETRANSMITS")?.unwrap_or(15),
 
             grace_period: Duration::from_secs(
-                Self::parse_env("TYPENET_GRACE_SECS")?.unwrap_or(if cfg!(debug_assertions) {
+                sys::parse_env("TYPENET_GRACE_SECS")?.unwrap_or(if cfg!(debug_assertions) {
                     5
                 } else {
                     60
                 }),
             ),
 
-            log_level: Self::parse_env("TYPENET_LOG_LEVEL")?.unwrap_or_default(),
+            log_level: sys::parse_env("TYPENET_LOG_LEVEL")?.unwrap_or_default(),
         })
-    }
-
-    /// Reads in an environment variable using `key` and parses it as `T`, or if not found, returns
-    /// `Ok(None)`.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if the environment variable is present but is not valid Unicode or cannot be
-    /// parsed as `T`.
-    fn parse_env<T>(key: &str) -> TraceableResult<Option<T>>
-    where
-        T: FromStr,
-        T::Err: Display,
-    {
-        match env::var(key) {
-            Err(env::VarError::NotPresent) => Ok(None),
-
-            Err(env::VarError::NotUnicode(_)) => {
-                Err(format!("Environment variable {key} present but not valid Unicode").into())
-            }
-
-            Ok(val) => val
-                .parse()
-                .map_err(|e| {
-                    format!(
-                        "Environment variable {key} present but could not be parsed as {}: {e}",
-                        type_name::<T>()
-                    )
-                    .into()
-                })
-                .map(Some),
-        }
     }
 }
