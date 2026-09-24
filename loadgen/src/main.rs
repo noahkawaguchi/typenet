@@ -5,7 +5,10 @@ mod worker;
 use {
     crate::{config::Config, report::Report},
     std::{iter, thread, time::Instant},
-    typenet_utils::{error::TraceableResult, sys},
+    typenet_utils::{
+        error::{TraceableResult, thread_panic_msg},
+        sys,
+    },
 };
 
 fn main() -> TraceableResult {
@@ -23,7 +26,7 @@ fn main() -> TraceableResult {
         // creation overhead because iterators are lazy
         .collect::<Vec<_>>()
         .into_iter()
-        .map(|handle| handle.join().map_err(|_| "Worker thread panicked".into()))
+        .map(|handle| handle.join().map_err(thread_panic_msg).map_err(Into::into))
         .collect::<TraceableResult<Vec<_>>>()
     })?;
 

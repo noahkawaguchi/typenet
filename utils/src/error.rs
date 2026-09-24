@@ -1,9 +1,23 @@
 use std::{
+    any::Any,
     backtrace::{Backtrace, BacktraceStatus},
     borrow::Cow,
     fmt::{self, Write as _},
     io, num,
 };
+
+/// Extracts the panic message from `payload` (which should be the `Err` payload from joining a
+/// thread) if it is a `String` or `&'static str`, otherwise returns a generic message.
+#[must_use]
+pub fn thread_panic_msg(payload: Box<dyn Any + Send + 'static>) -> Cow<'static, str> {
+    match payload.downcast::<String>() {
+        Ok(s) => Cow::Owned(*s),
+
+        Err(inner) => inner
+            .downcast::<&'static str>()
+            .map_or(Cow::Borrowed("<non-string panic payload>"), |s| Cow::Borrowed(*s)),
+    }
+}
 
 /// Custom result type that optionally includes backtrace information (controlled by
 /// `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1`).
