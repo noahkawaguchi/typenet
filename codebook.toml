@@ -81,6 +81,7 @@ words = [
     "syscalls",
     "sysfs",
     "tshark",
+    "txqueuelen",
     "typenet",
     "unacked",
     "untransmittable",

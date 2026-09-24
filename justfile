@@ -15,6 +15,10 @@ server-port := '8080'
 tun-name := env('TYPENET_TUN_NAME', 'tun0')
 tun-cidr := env('TYPENET_TUN_CIDR', '10.0.0.1/24')
 
+# Packets each TUN queue can buffer before the kernel drops them (the default of 500 overflows under
+# load testing when all connections send their initial burst at once)
+tun-txqueuelen := '10000'
+
 logs-dir := justfile_dir() / 'logs'
 log-file := logs-dir / project-name + '_' + datetime('%F_%T') + '.log'
 pcap-dir := justfile_dir() / 'pcap'
@@ -59,8 +63,9 @@ tun:
 tun-create:
     sudo ip tuntap add dev {{ tun-name }} mode tun multi_queue user {{ user }}
     sudo ip addr add {{ tun-cidr }} dev {{ tun-name }}
-    sudo ip link set {{ tun-name }} up
-    @echo 'TUN device created: name={{ tun-name }}, CIDR={{ tun-cidr }}, user={{ user }}'
+    sudo ip link set {{ tun-name }} txqueuelen {{ tun-txqueuelen }} up
+    @echo 'TUN device created: name={{ tun-name }}, CIDR={{ tun-cidr }}, user={{ user }}, \
+        txqueuelen={{ tun-txqueuelen }}'
 
 # Remove the TUN device manually instead of waiting for it to be destroyed on reboot (uses sudo)
 tun-del:
