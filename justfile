@@ -211,9 +211,52 @@ sniff-clean:
 bench:
     cargo bench {{ everything-flags }}
 
-# Open many concurrent TCP connections to measure throughput and latency (see README for more info)
+# Open many concurrent TCP connections to measure throughput and latency (server must be running)
 loadgen:
     cargo run --release --package typenet-loadgen
+
+# Load test a background server with default workers and then with one worker
+loadgen-cmp: tun
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Build separately and run the binaries directly so the background process is the server itself
+    # instead of cargo
+    cargo build --release --package typenet-server --package typenet-loadgen
+    bin_dir="${CARGO_TARGET_DIR:-{{ justfile_dir() / 'target' }}}/release"
+    server_pid=''
+
+    # Gracefully shut down the background server with SIGINT and wait for it to drain and exit
+    stop_server() {
+        if [[ -n $server_pid ]]; then
+            kill -INT "$server_pid" 2>/dev/null || true
+            wait "$server_pid" || true
+            server_pid=''
+        fi
+    }
+    trap stop_server EXIT
+
+    # Start the server with the given env vars, wait for it to answer pings, run the load test, then
+    # stop the server
+    run_load() {
+        echo "--- $1 ---"
+        shift
+        env TYPENET_LOG_LEVEL=0 "$@" "$bin_dir/typenet-server" &
+        server_pid=$!
+
+        until ping -c 1 -W 1 {{ server-addr }} >/dev/null 2>&1; do
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+                echo 'Server exited before becoming ready' >&2
+                exit 1
+            fi
+        done
+
+        "$bin_dir/typenet-loadgen"
+        stop_server
+    }
+
+    run_load 'Multithreaded (default TYPENET_WORKERS)'
+    run_load 'Single threaded (TYPENET_WORKERS=1)' TYPENET_WORKERS=1
 
 ####################################################################################################
 # Testing and quality

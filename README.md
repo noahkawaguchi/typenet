@@ -323,15 +323,17 @@ The `checksum` benchmark target compares the production Internet checksum implem
 
 `typenet-loadgen` is a standalone TCP client that opens many concurrent connections to the running server, sends a random payload on each, verifies it's echoed back byte-for-byte, and reports aggregate throughput and latency percentiles. Unlike the [File Transfer Throughput](#file-transfer-throughput) recipes, which drive single connections (always routed to a single thread even if more are available), measuring with many concurrent connections shows how the server's default thread-per-core concurrency compares with single-threaded execution.
 
-Run the server once with the default `TYPENET_WORKERS` and once with `TYPENET_WORKERS=1`, running `just loadgen` against each in a separate terminal to compare the reported throughput, latency, and server CPU usage. Logging must be turned off because writing per-packet output to the terminal would dominate the measurements and serialize the worker threads on stdout.
+The `loadgen-cmp` recipe runs the server in the background once with the default `TYPENET_WORKERS` and once with `TYPENET_WORKERS=1`, load testing each to compare the reported throughput, latency, and server CPU usage. Server logging is turned off because writing per-packet output to the terminal would dominate the measurements and serialize the worker threads on stdout.
 
 ```sh
-TYPENET_LOG_LEVEL=0 just serve                    # Terminal 1
-just loadgen                                      # Terminal 2
-^C                                                # Terminal 1
+just loadgen-cmp
+```
 
-TYPENET_LOG_LEVEL=0 TYPENET_WORKERS=1 just serve  # Terminal 1
-just loadgen                                      # Terminal 2
+To load test a server you started yourself (e.g., with other configuration), run the server and `just loadgen` in separate terminals.
+
+```sh
+TYPENET_LOG_LEVEL=0 just serve  # Terminal 1
+just loadgen                    # Terminal 2
 ```
 
 #### Environment Variables
