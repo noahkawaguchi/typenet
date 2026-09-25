@@ -16,6 +16,7 @@ pub mod ipv4_packet;
 pub mod checksum;
 
 #[cfg(not(feature = "bench-internals"))]
+#[expect(unreachable_pub, reason = "Only exported with the `bench-internals` feature")]
 mod checksum;
 
 mod addr_pairs;
