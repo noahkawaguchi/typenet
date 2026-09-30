@@ -1,3 +1,7 @@
+#[cfg_attr(
+    not(feature = "test-utils"),
+    expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
+)]
 pub use connections::TcpConnections;
 
 mod connections;

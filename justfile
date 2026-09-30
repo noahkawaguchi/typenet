@@ -7,12 +7,17 @@ set dotenv-load
 project-name := 'typenet'
 user := env('USER')
 
+# NOTE: matches the loadgen binary's default address and port combination
 server-addr := '10.0.0.2'
 server-port := '8080'
 
 # NOTE: "TYPENET_TUN_NAME" is also read by the server with a "tun0" fallback
 tun-name := env('TYPENET_TUN_NAME', 'tun0')
 tun-cidr := env('TYPENET_TUN_CIDR', '10.0.0.1/24')
+
+# Packets each TUN queue can buffer before the kernel drops them (the default of 500 overflows under
+# load testing when all connections send their initial burst at once)
+tun-txqueuelen := '10000'
 
 logs-dir := justfile_dir() / 'logs'
 log-file := logs-dir / project-name + '_' + datetime('%F_%T') + '.log'
@@ -32,13 +37,13 @@ tshark-cmd := 'tshark -n --print' \
 # Run the server (default recipe)
 [continue]
 serve *ARGS: tun
-    cargo run {{ ARGS }}
+    cargo run --release --package typenet-server {{ ARGS }}
 
 # Run the server and save a log file to the `logs` directory
 [continue]
-serve-save *ARGS:
+serve-save:
     mkdir -p '{{ logs-dir }}'
-    just serve "{{ ARGS }} --quiet 2>&1 | tee --ignore-interrupts --append '{{ log-file }}'"
+    just serve "--quiet 2>&1 | tee --ignore-interrupts --append '{{ log-file }}'"
     @echo 'Saved to {{ log-file }}'
 
 # Remove the `logs` directory
@@ -58,8 +63,9 @@ tun:
 tun-create:
     sudo ip tuntap add dev {{ tun-name }} mode tun multi_queue user {{ user }}
     sudo ip addr add {{ tun-cidr }} dev {{ tun-name }}
-    sudo ip link set {{ tun-name }} up
-    @echo 'TUN device created: name={{ tun-name }}, CIDR={{ tun-cidr }}, user={{ user }}'
+    sudo ip link set {{ tun-name }} txqueuelen {{ tun-txqueuelen }} up
+    @echo 'TUN device created: name={{ tun-name }}, CIDR={{ tun-cidr }}, user={{ user }}, \
+        txqueuelen={{ tun-txqueuelen }}'
 
 # Remove the TUN device manually instead of waiting for it to be destroyed on reboot (uses sudo)
 tun-del:
@@ -198,6 +204,61 @@ sniff-clean:
     rm -rf '{{ pcap-dir }}'
 
 ####################################################################################################
+# Microbenchmarking and load testing
+####################################################################################################
+
+# Run benchmarks (generates HTML in `target/criterion`)
+bench:
+    cargo bench {{ everything-flags }}
+
+# Open many concurrent TCP connections to measure throughput and latency (server must be running)
+loadgen:
+    cargo run --release --package typenet-loadgen
+
+# Load test a background server with default workers and then with one worker
+loadgen-cmp: tun
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Build separately and run the binaries directly so the background process is the server itself
+    # instead of cargo
+    cargo build --release --package typenet-server --package typenet-loadgen
+    bin_dir="${CARGO_TARGET_DIR:-{{ justfile_dir() / 'target' }}}/release"
+    server_pid=''
+
+    # Gracefully shut down the background server with SIGINT and wait for it to drain and exit
+    stop_server() {
+        if [[ -n $server_pid ]]; then
+            kill -INT "$server_pid" 2>/dev/null || true
+            wait "$server_pid" || true
+            server_pid=''
+        fi
+    }
+    trap stop_server EXIT
+
+    # Start the server with the given env vars, wait for it to answer pings, run the load test, then
+    # stop the server
+    run_load() {
+        echo "--- $1 ---"
+        shift
+        env TYPENET_LOG_LEVEL=0 "$@" "$bin_dir/typenet-server" &
+        server_pid=$!
+
+        until ping -c 1 -W 1 {{ server-addr }} >/dev/null 2>&1; do
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+                echo 'Server exited before becoming ready' >&2
+                exit 1
+            fi
+        done
+
+        "$bin_dir/typenet-loadgen"
+        stop_server
+    }
+
+    run_load 'Multithreaded (default TYPENET_WORKERS)'
+    run_load 'Single threaded (TYPENET_WORKERS=1)' TYPENET_WORKERS=1
+
+####################################################################################################
 # Testing and quality
 ####################################################################################################
 
@@ -214,10 +275,6 @@ cov *ARGS: tun
 
 # Generate HTML test coverage report (in `target/llvm-cov/html`) and open in browser
 cov-open: (cov '--open')
-
-# Run benchmarks (generates HTML in `target/criterion`)
-bench:
-    cargo bench {{ everything-flags }}
 
 # Lint with Clippy, denying warnings
 lint:

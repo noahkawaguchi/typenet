@@ -7,11 +7,8 @@
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
-    typenet_server::{
-        sys::{ShutdownSignal, poll},
-        thread_panic_msg,
-    },
-    typenet_utils::error::TraceableResult,
+    typenet_server::sys::{ShutdownSignal, poll},
+    typenet_utils::error::{TraceableResult, thread_panic_msg},
 };
 
 #[test]

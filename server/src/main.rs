@@ -4,9 +4,8 @@ use {
         config::Config,
         server,
         sys::{ShutdownSignal, poll, tun},
-        thread_panic_msg,
     },
-    typenet_utils::error::TraceableResult,
+    typenet_utils::error::{TraceableResult, thread_panic_msg},
 };
 
 /// Runs an echo server that uses a TUN device to read and write IPv4 packets: TCP, UDP, and ICMP.

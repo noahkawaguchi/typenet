@@ -4,14 +4,11 @@
 
 use {
     std::{assert_matches, io, os::unix::net::UnixStream, sync::mpsc, thread, time::Duration},
-    typenet_server::{
-        sys::{
-            ShutdownSignal,
-            poll::{self, PollOutcome},
-        },
-        thread_panic_msg,
+    typenet_server::sys::{
+        ShutdownSignal,
+        poll::{self, PollOutcome},
     },
-    typenet_utils::error::TraceableResult,
+    typenet_utils::error::{TraceableResult, thread_panic_msg},
 };
 
 #[test]

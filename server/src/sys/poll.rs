@@ -76,14 +76,13 @@ pub fn readable(
 mod tests {
     use {
         super::*,
-        crate::thread_panic_msg,
         pretty_assertions::assert_eq,
         std::{
             io::Write as _,
             os::unix::net::UnixStream,
             thread::{self, JoinHandle},
         },
-        typenet_utils::error::TraceableResult,
+        typenet_utils::error::{TraceableResult, thread_panic_msg},
     };
 
     /// Joins on a writer thread with error handling.

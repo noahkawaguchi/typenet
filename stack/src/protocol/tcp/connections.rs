@@ -58,6 +58,10 @@ pub(super) struct ConnKey {
 }
 
 /// Tracks per-connection state keyed by the 4-tuple.
+#[cfg_attr(
+    not(feature = "test-utils"),
+    expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
+)]
 #[cfg_attr(any(test, feature = "test-utils"), derive(Default))]
 pub struct TcpConnections {
     table: HashMap<ConnKey, ConnState>,
@@ -71,6 +75,10 @@ pub struct TcpConnections {
 }
 
 impl TcpConnections {
+    #[cfg_attr(
+        not(feature = "test-utils"),
+        expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
+    )]
     #[must_use]
     pub fn new(initial_rto: Duration, max_retries: u8) -> Self {
         Self {

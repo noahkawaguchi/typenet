@@ -11,7 +11,7 @@ Typenet is a userspace IPv4/ICMP/TCP/UDP implementation and echo server that ope
 5. [Running the Server](#running-the-server)
 6. [Connecting as a Client](#connecting-as-a-client)
 7. [Testing](#testing)
-8. [Benchmarking](#benchmarking)
+8. [Performance](#performance)
 9. [Development and CI](#development-and-ci)
 10. [Demos](#demos)
 
@@ -35,7 +35,7 @@ Typenet is a userspace IPv4/ICMP/TCP/UDP implementation and echo server that ope
 
 #### TCP Implementation
 
-Although the TCP implementation is not complete, it covers a significant portion of RFC 9293 and is capable of reliable transmission of data in degraded network conditions (see [Network Emulation](#network-emulation) below). Some highlights include:
+Although the TCP implementation is not complete, it covers a significant portion of RFC 9293 and is capable of reliable transmission of data in degraded network conditions (see [Network Emulation](#network-emulation)). Some highlights include:
 
 - 4-tuple-keyed state machine
 - Three-way handshake (passive open)
@@ -51,36 +51,37 @@ Although the TCP implementation is not complete, it covers a significant portion
 - Implements all logic from scratch, using one external dependency containing only raw FFI bindings, `libc`
 - Performs low-level packet I/O using Linux multi-queue TUN virtual network interfaces rather than sockets
 - Uses a shared-nothing, thread-per-core structured concurrency model where each worker thread owns a lock-free TCP connection table and shutdown is communicated through an atomic flag and eventfd
-- Allows configuration of key parameters at runtime, including a range of log levels (see [Environment Variables](#environment-variables) below)
+- Allows configuration of key parameters at runtime, including a range of log levels (see [Environment Variables](#environment-variables))
 - Includes a simple echo application and a shout (capitalization) application
 - Catches SIGINT, drains TCP connections with a timeout, and exits gracefully
 
 ## Design
 
-### Three-Crate Workspace
+### Four-Crate Workspace
 
-The project's code is organized as a Cargo workspace with three members.
+The project's code is organized as a Cargo workspace with four members.
 
 - `typenet-stack`: core protocol implementations, no I/O
 - `typenet-server`: TUN device server, minimal application logic
+- `typenet-loadgen`: standalone TCP client for load testing the server (see [Load Testing](#load-testing))
 - `typenet-utils`: general-purpose utilities outside the other crates' domains
 
 The internal and external dependency relationships are as follows, with arrows pointing from dependent to dependency.
 
 ```
-╭──────────────────────────────────╮
-│          typenet-server          │
-╰───┬────────────┬─────────┬───────╯
-    │            │         │
-    ▼            ▼         │
-┌──────┐ ╭───────────────╮ │
-│ libc │ │ typenet-stack │ │
-└──────┘ ╰───────┬───────╯ │
-                 │         │
-                 ▼         ▼
-         ╭─────────────────────────╮
-         │      typenet-utils      │
-         ╰─────────────────────────╯
+╭──────────────────────────────────╮ ╭─────────────────╮
+│          typenet-server          │ │ typenet-loadgen │
+╰───┬────────────┬─────────┬───────╯ ╰────────┬────────╯
+    │            │         │                  │
+    ▼            ▼         │                  │
+┌──────┐ ╭───────────────╮ │                  │
+│ libc │ │ typenet-stack │ │                  │
+└──────┘ ╰───────┬───────╯ │                  │
+                 │         │                  │
+                 ▼         ▼                  ▼
+         ╭─────────────────────────────────────────────╮
+         │                typenet-utils                │
+         ╰─────────────────────────────────────────────╯
 ```
 
 ### Static Dispatch Architecture
@@ -217,23 +218,20 @@ The following environment variables can be used to configure the TUN device and 
 You will be prompted to create the TUN device on first use, once per reboot, which requires `sudo` privileges. The server will attach to the TUN device, listen for and reply to packets, and log processed data until it receives SIGINT (Ctrl+C).
 
 ```sh
-just serve     # Debug build
-just serve -r  # Release build
+just serve
 ```
 
 The [`justfile`](justfile) also includes recipes for saving logs to file.
 
 ```sh
 just serve-save     # Run and save log file to `logs` directory
-just serve-save -r  # Same but with a release build
 just log-clean      # Remove `logs` directory
 ```
 
-The server crate also includes a "shout" app, verifying that the protocol stack crate respects application logic rather than hardcoding payload echo. With the environment variable `TYPENET_APP=shout`, TCP and UDP payloads will be returned with all ASCII letters capitalized. Note that the recipes that check for exact equality of the server's response (see [File Transfer Throughput](#file-transfer-throughput) below) are meant for the default echo app and will fail for the shout app.
+The server crate also includes a "shout" app, verifying that the protocol stack crate respects application logic rather than hardcoding payload echo. With the environment variable `TYPENET_APP=shout`, TCP and UDP payloads will be returned with all ASCII letters capitalized. Note that the recipes with exact equality checks on the server's response (see [File Transfer Throughput](#file-transfer-throughput) and [Load Testing](#load-testing)) are meant for the default echo app and will fail for the shout app.
 
 ```sh
 TYPENET_APP=shout just serve
-TYPENET_APP=shout just serve -r
 ```
 
 ## Connecting as a Client
@@ -307,7 +305,9 @@ The project includes unit and integration tests for:
 - Serial number arithmetic
 - Various custom type invariants
 
-## Benchmarking
+## Performance
+
+### Microbenchmarking
 
 In addition to running benchmarks with summaries in the terminal, this will also generate HTML reports in the `target/criterion` directory.
 
@@ -318,6 +318,142 @@ just bench
 The `checksum` benchmark target compares the production Internet checksum implementation (64-bit and 128-bit integers used as groups of 16-bit lanes) with 16-bit and 32-bit alternatives.
 
 ![Checksum Line Chart](img/checksum_line_chart.svg)
+
+### Load Testing
+
+`typenet-loadgen` is a standalone TCP client that opens many concurrent connections to the running server, sends a random payload on each, verifies it's echoed back byte-for-byte, and reports aggregate throughput and latency percentiles. Unlike the [File Transfer Throughput](#file-transfer-throughput) recipes, which drive single connections (always routed to a single thread even if more are available), measuring with many concurrent connections shows how the server's default thread-per-core concurrency compares with single-threaded execution.
+
+The `loadgen-cmp` recipe runs the server in the background once with the default `TYPENET_WORKERS` and once with `TYPENET_WORKERS=1`, load testing each to compare the reported throughput, latency, and server CPU usage. Server logging is turned off because writing per-packet output to the terminal would dominate the measurements and serialize the worker threads on stdout.
+
+```sh
+just loadgen-cmp
+```
+
+To load test a server you started yourself (e.g., with other configuration), run the server and `just loadgen` in separate terminals.
+
+```sh
+TYPENET_LOG_LEVEL=0 just serve  # Terminal 1
+just loadgen                    # Terminal 2
+```
+
+#### Environment Variables
+
+<details>
+<summary><i>Optional environment variable configuration (click to expand)</i></summary>
+<br />
+
+| Key                      | Meaning                                               | Default  |
+| ------------------------ | ----------------------------------------------------- | -------- |
+| TYPENET_LG_ADDR          | IP address of the server to load test                 | 10.0.0.2 |
+| TYPENET_LG_PORT          | TCP port of the server to load test                   | 8080     |
+| TYPENET_LG_CONNECTIONS   | Number of concurrent TCP connections to open          | 50       |
+| TYPENET_LG_PAYLOAD_BYTES | Number of random bytes sent and echoed per connection | 65536    |
+
+</details>
+
+#### Output Examples
+
+The examples below compare multithreaded and single-threaded runs with the default 50 connections and 64 KiB payloads, with the client and server sharing an 8-core VM on an Apple M5.
+
+Without network emulation, the server's packet processing is the bottleneck. The single-threaded server was busy for 93% of the run, while the multithreaded server's CPU time exceeded wall time (202%) because its work was spread across cores. The multithreaded server reached about 4 times the throughput of the single-threaded server, at about 1/14 of its p50 latency and about 1/5 of its p95 and p99 latencies.
+
+Under `netem-wan` emulation, network latency and loss recovery dominate. Server CPU time was only 1.3% of wall time in both modes, so additional worker threads had almost nothing to speed up, and the two modes performed about the same.
+
+<details>
+<summary><i>No network emulation, multithreaded (click to expand)</i></summary>
+<br />
+
+```
+Attempted connections : 50
+Verified echoes       : 50
+Mismatched echoes     : 0
+Connection errors     : 0
+
+Bytes transferred     : 3276800
+Wall time             : 17.023059ms
+Server CPU time       : 34.387397ms
+Server CPU / wall     : 202.0%
+Throughput            : 192.49 MB/s
+
+Latency p50           : 3.438046ms
+Latency p95           : 11.963074ms
+Latency p99           : 13.270925ms
+Latency max           : 13.581054ms
+```
+
+</details>
+
+<details>
+<summary><i>No network emulation, single threaded (click to expand)</i></summary>
+<br />
+
+```
+Attempted connections : 50
+Verified echoes       : 50
+Mismatched echoes     : 0
+Connection errors     : 0
+
+Bytes transferred     : 3276800
+Wall time             : 68.107505ms
+Server CPU time       : 63.568425ms
+Server CPU / wall     : 93.3%
+Throughput            : 48.11 MB/s
+
+Latency p50           : 48.305669ms
+Latency p95           : 63.791028ms
+Latency p99           : 63.852404ms
+Latency max           : 63.85632ms
+```
+
+</details>
+
+<details>
+<summary><i><code>netem-wan</code> emulation, multithreaded (click to expand)</i></summary>
+<br />
+
+```
+Attempted connections : 50
+Verified echoes       : 50
+Mismatched echoes     : 0
+Connection errors     : 0
+
+Bytes transferred     : 3276800
+Wall time             : 4.567118571s
+Server CPU time       : 60.367847ms
+Server CPU / wall     : 1.3%
+Throughput            : 0.72 MB/s
+
+Latency p50           : 1.660212166s
+Latency p95           : 3.719206807s
+Latency p99           : 4.332713574s
+Latency max           : 4.563227724s
+```
+
+</details>
+
+<details>
+<summary><i><code>netem-wan</code> emulation, single threaded (click to expand)</i></summary>
+<br />
+
+```
+Attempted connections : 50
+Verified echoes       : 50
+Mismatched echoes     : 0
+Connection errors     : 0
+
+Bytes transferred     : 3276800
+Wall time             : 4.841614224s
+Server CPU time       : 62.222931ms
+Server CPU / wall     : 1.3%
+Throughput            : 0.68 MB/s
+
+Latency p50           : 1.823302207s
+Latency p95           : 4.081685712s
+Latency p99           : 4.605760823s
+Latency max           : 4.838370423s
+```
+
+</details>
 
 ## Development and CI
 
