@@ -355,7 +355,7 @@ just loadgen                    # Terminal 2
 
 The examples below compare multithreaded and single-threaded runs with the default 50 connections and 64 KiB payloads, with the client and server sharing an 8-core VM on an Apple M5.
 
-Without network emulation, the server's packet processing is the bottleneck. The multithreaded server reached about 4 times the throughput of the single-threaded server at about 1/14 of its p50 latency. The single-threaded server was busy for 93% of the run, while the multithreaded server's CPU time of exceeded wall time (202%) because its work was spread across cores.
+Without network emulation, the server's packet processing is the bottleneck. The single-threaded server was busy for 93% of the run, while the multithreaded server's CPU time exceeded wall time (202%) because its work was spread across cores. The multithreaded server reached about 4 times the throughput of the single-threaded server, at about 1/14 of its p50 latency and about 1/5 of its p95 and p99 latencies.
 
 Under `netem-wan` emulation, network latency and loss recovery dominate. Server CPU time was only 1.3% of wall time in both modes, so additional worker threads had almost nothing to speed up, and the two modes performed about the same.
 
