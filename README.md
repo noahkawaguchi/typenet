@@ -137,22 +137,51 @@ A driving force throughout the codebase is the use of domain types to create and
 
 ## Prerequisites
 
-- Linux (for its TUN devices and various low-level APIs)
-- `sudo` privileges (for creating and managing TUN devices)
-- For [Nix](https://github.com/NixOS/nix) users, the toolchain is included as a flake.
-- Otherwise, install the following:
-  - The [Rust toolchain](https://rust-lang.org/tools/install)
-  - The command runner [Just](https://github.com/casey/just)
-  - _Likely already installed_: `telnet`, `nc`/`netcat`, `ping`, and `tc`
-  - _Optional, used for generating test coverage reports_: [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov)
-  - _Development only, used for spell checking_: [Codebook](https://github.com/blopker/codebook)
-  - _Development only, used for formatting_: install nightly Rust using `rustup toolchain install nightly`
+The project requires Linux because it uses TUN devices and various low-level APIs, but it is set up for cross-platform use as described below.
+
+### Toolchain Installation Methods (Choose One)
+
+#### Nix (Linux/WSL2)
+
+For [Nix](https://github.com/NixOS/nix) users, the toolchain is included as a flake.
+
+#### Manual (Linux/WSL2)
+
+Ensure the following toolchain is installed:
+
+- The [Rust toolchain](https://rust-lang.org/tools/install)
+- The command runner [Just](https://github.com/casey/just)
+- _Likely already installed_: `telnet`, `nc`/`netcat`, `ping`, and `tc`
+- _Optional, used for generating test coverage reports_: [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov)
+- _Development only, used for spell checking_: [Codebook](https://github.com/blopker/codebook)
+- _Development only, used for formatting_: install nightly Rust using `rustup toolchain install nightly`
+
+#### Docker (macOS/Linux/WSL2)
+
+- [Docker](https://docs.docker.com/get-started/get-docker/) must be installed.
+- Note that you will be `root` inside the container. This is fine on macOS using [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) or [Colima](https://github.com/abiosoft/colima) or if using rootless Docker on Linux/WSL2. If using rootful Docker, files created inside the container will be owned by `root` on the host, so one of the other two methods might be preferable.
+- The `typenet-docker.sh` script manages this method, dropping you into a shell with the toolchain available.
+
+```sh
+./typenet-docker.sh        # Start a shell in the container, building as necessary
+./typenet-docker.sh down   # Remove the container and network
+./typenet-docker.sh clean  # Remove the container, network, volume, and image
+```
+
+### Packet Capture (Optional)
 
 <details>
-<summary><i>Optional: Capture and save traffic with TShark (click to expand)</i></summary>
+<summary><i>Capture and save traffic with TShark (click to expand)</i></summary>
 <br />
 
-Although the server has logging functionality built in, [TShark](https://www.wireshark.org/docs/man-pages/tshark.html) can also be used to capture network traffic on the TUN device and save/read PCAP files. In most package managers, the CLI-only version is called `tshark` or `wireshark-cli`, while the full [Wireshark](https://www.wireshark.org) GUI version is called `wireshark`.
+Although the server has logging functionality built in, [TShark](https://www.wireshark.org/docs/man-pages/tshark.html) can also be used to capture network traffic on the TUN device and save/read PCAP files.
+
+#### Installation
+
+> [!NOTE]
+> If using the Docker method from above, this installation is already done.
+
+In most package managers, the CLI-only version is called `tshark` or `wireshark-cli`, while the full [Wireshark](https://www.wireshark.org) GUI version is called `wireshark`.
 
 If using TShark/Wireshark for live packet capture specifically, the `dumpcap` binary requires CAP_NET_RAW and CAP_NET_ADMIN capabilities. It works to just use `sudo` and be done, but to be more granular:
 
@@ -164,7 +193,11 @@ programs.wireshark.enable = true;
 users.users.<you>.extraGroups = [ "wireshark" ];
 ```
 
-You should then be able to capture traffic without `sudo` by running `just sniff` in another terminal while creating traffic on the TUN device as explained below.
+You should then be able to capture traffic without `sudo`.
+
+#### Usage
+
+Run `just sniff` in another terminal while creating traffic on the TUN device (see [Connecting as a Client](#connecting-as-a-client)).
 
 ```sh
 just sniff          # Capture, log, and save to PCAP

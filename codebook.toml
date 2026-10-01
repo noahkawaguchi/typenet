@@ -21,6 +21,7 @@ words = [
     "UDP",
     "URG",
     "WND",
+    "WSL",
     "acked",
     "acking",
     "acks",
