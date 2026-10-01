@@ -6,7 +6,6 @@ set dotenv-load
 
 project-name := 'typenet'
 user := env('USER')
-img-tag := project-name + '-dev'
 
 # NOTE: matches the loadgen binary's default address and port combination
 server-addr := '10.0.0.2'
@@ -32,32 +31,10 @@ tshark-cmd := 'tshark -n --print' \
     + ' -o ip.check_checksum:true -o tcp.check_checksum:true -o udp.check_checksum:true'
 
 ####################################################################################################
-# Docker
-####################################################################################################
-
-# Build the Docker image
-docker-build:
-    docker build --tag {{ img-tag }} .
-
-# Create and run a Docker container from the image
-docker-run: docker-build
-    docker run --rm -it --name {{ project-name }} \
-        --cap-add NET_ADMIN \
-        --device /dev/net/tun \
-        --volume "$PWD":/{{ project-name }} \
-        --volume {{ project-name }}-cargo:/root/.cargo \
-        {{ img-tag }}
-
-# Join the running container from another terminal
-docker-join:
-    docker exec -it {{ project-name }} nix develop .#docker
-
-####################################################################################################
 # Running the server (including TUN device setup)
 ####################################################################################################
 
 # Run the server (default recipe)
-[default]
 [continue]
 serve *ARGS: tun
     cargo run --release --package typenet-server {{ ARGS }}
