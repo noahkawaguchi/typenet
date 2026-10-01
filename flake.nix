@@ -18,8 +18,7 @@
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
-        in
-        {
+
           default = pkgs.mkShell {
             packages = with pkgs; [
               # Use nightly for formatting only
@@ -36,8 +35,30 @@
               cargo-llvm-cov
               codebook
               inetutils
+              iproute2
               just
+              netcat
             ];
+          };
+        in
+        {
+          inherit default;
+
+          docker = pkgs.mkShell {
+            inputsFrom = [ default ];
+
+            packages = with pkgs; [
+              # Only include TShark in the Docker shell because if it's used in the native setup, it
+              # should be set up on the host (see README), and including `tshark`/`wireshark-cli` in
+              # the devShell would shadow the privileged Dumpcap with an unprivileged one
+              tshark
+
+              # The user is root inside the container, so `sudo` calls in the `justfile` only need
+              # to run the command as is
+              (writeShellScriptBin "sudo" ''exec "$@"'')
+            ];
+
+            shellHook = "alias j=just";
           };
         }
       );
