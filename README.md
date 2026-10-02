@@ -165,7 +165,7 @@ Ensure the following toolchain is installed:
 ```sh
 ./typenet-docker.sh        # Start a shell in the container, building as necessary
 ./typenet-docker.sh down   # Remove the container and network
-./typenet-docker.sh clean  # Remove the container, network, volume, and image
+./typenet-docker.sh clean  # Remove the container, network, volumes, and image
 ```
 
 ### Packet Capture (Optional)

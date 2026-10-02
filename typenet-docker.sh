@@ -24,7 +24,7 @@ h | help | -h | --help)
 
 $0        # Start a shell in the container, building as necessary
 $0 down   # Remove the container and network
-$0 clean  # Remove the container, network, volume, and image
+$0 clean  # Remove the container, network, volumes, and image
 "
   ;;
 
