@@ -1,0 +1,26 @@
+name: typenet
+
+services:
+  typenet:
+    build: .
+    pull_policy: build # Make `up` always build instead of trying to pull
+    image: typenet-dev
+    container_name: typenet
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun]
+    environment:
+      CARGO_TARGET_DIR: /cargo-target
+    volumes:
+      - .:/typenet
+      - cargo:/root/.cargo
+      - target:/cargo-target
+
+    # Idle in the background so shells can be started with `exec`, and run under an init process so
+    # the idle command receives SIGTERM instead of ignoring it as PID 1. Set this here instead of in
+    # the Dockerfile `CMD` so `docker run -it ...` still starts an interactive dev shell.
+    command: sleep infinity
+    init: true
+
+volumes:
+  cargo:
+  target:
