@@ -293,6 +293,60 @@ fmt:
 spell-check:
     git ls-files -z | xargs -0 codebook-lsp lint
 
+# Run a background server and check that it replies correctly over ICMP, TCP, and UDP
+smoke: tun
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Build separately and run the binary directly so the background process is the server itself
+    # instead of cargo. Use a debug build for faster compile times since performance doesn't matter
+    # for this smoke test.
+    cargo build --package typenet-server
+    bin_dir="${CARGO_TARGET_DIR:-{{ justfile_dir() / 'target' }}}/debug"
+
+    TYPENET_LOG_LEVEL=1 "$bin_dir/typenet-server" &
+    server_pid=$!
+
+    # Gracefully shut down the background server with SIGINT and wait for it to drain and exit,
+    # propagating a nonzero exit status so a failed shutdown also fails the smoke test
+    stop_server() {
+        if [[ -n $server_pid ]]; then
+            kill -INT "$server_pid" 2>/dev/null || true
+            local status=0
+            wait "$server_pid" || status=$?
+            server_pid=''
+            return "$status"
+        fi
+    }
+    trap stop_server EXIT
+
+    until ping -c 1 -W 1 {{ server-addr }} >/dev/null 2>&1; do
+        if ! kill -0 "$server_pid" 2>/dev/null; then
+            echo 'Server exited before becoming ready' >&2
+            exit 1
+        fi
+    done
+
+    ping -c 3 -W 1 {{ server-addr }}
+    echo 'ICMP: received echo replies'
+
+    msg='{{ project-name }} smoke test'
+
+    # Fail if the echoed reply $2 doesn't match the message sent for protocol $1
+    check_reply() {
+        if [[ $2 != $msg ]]; then
+            echo "$1: expected reply \"$msg\", got \"$2\"" >&2
+            exit 1
+        fi
+        echo "$1: reply matched"
+    }
+
+    check_reply TCP "$(printf '%s' "$msg" | nc -Nnw 5 {{ server-addr }} {{ server-port }})"
+    check_reply UDP "$(printf '%s' "$msg" | nc -unw 2 {{ server-addr }} {{ server-port }})"
+
+    stop_server
+    echo 'Smoke test passed'
+
 ####################################################################################################
 # General development cleanup
 ####################################################################################################
