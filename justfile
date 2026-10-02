@@ -25,6 +25,7 @@ pcap-dir := justfile_dir() / 'pcap'
 pcap-file := pcap-dir / project-name + '_' + datetime('%F_%T') + '.pcap'
 blob-dir := justfile_dir() / 'blob'
 blob-file := blob-dir / 'random.bin'
+reports-dir := justfile_dir() / 'reports'
 
 everything-flags := '--workspace --all-targets --all-features'
 tshark-cmd := 'tshark -n --print' \
@@ -207,9 +208,9 @@ sniff-clean:
 # Microbenchmarking and load testing
 ####################################################################################################
 
-# Run benchmarks (generates HTML in `target/criterion`)
+# Run benchmarks (generates HTML in `reports/criterion`)
 bench:
-    cargo bench {{ everything-flags }}
+    CRITERION_HOME='{{ reports-dir / "criterion" }}' cargo bench {{ everything-flags }}
 
 # Open many concurrent TCP connections to measure throughput and latency (server must be running)
 loadgen:
@@ -273,8 +274,8 @@ test *ARGS: tun
 cov *ARGS: tun
     cargo llvm-cov {{ everything-flags }} {{ ARGS }} -- --include-ignored
 
-# Generate HTML test coverage report (in `target/llvm-cov/html`) and open in browser
-cov-open: (cov '--open')
+# Generate HTML test coverage report (in `reports/coverage/html`) and open in browser
+cov-open: (cov f"--open --output-dir '{{ reports-dir }}/coverage'")
 
 # Lint with Clippy, denying warnings
 lint:
@@ -291,3 +292,11 @@ fmt:
 # Check spelling with Codebook
 spell-check:
     git ls-files -z | xargs -0 codebook-lsp lint
+
+####################################################################################################
+# General development cleanup
+####################################################################################################
+
+# Remove the `reports` directory
+reports-clean:
+    rm -rf '{{ reports-dir }}'

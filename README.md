@@ -326,7 +326,7 @@ Or with a coverage report:
 
 ```sh
 just cov       # Text summary
-just cov-open  # Generate detailed HTML and open in browser
+just cov-open  # Detailed HTML (in `reports/coverage/html`) opened in browser
 ```
 
 The project includes unit and integration tests for:
@@ -342,7 +342,7 @@ The project includes unit and integration tests for:
 
 ### Microbenchmarking
 
-In addition to running benchmarks with summaries in the terminal, this will also generate HTML reports in the `target/criterion` directory.
+In addition to running benchmarks with summaries in the terminal, this will also generate HTML reports in the `reports/criterion` directory.
 
 ```sh
 just bench
