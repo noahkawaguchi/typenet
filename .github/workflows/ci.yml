@@ -78,30 +78,19 @@ jobs:
         run: nix develop --command just spell-check
 
   # Verify the Docker toolchain installation method by building the image and running the server
-  # end to end inside the container
+  # end to end inside the container.
+  #
+  # Note: no caching here because caching with buildx and bake took multiple GB of cache space and
+  # was actually slower than this (~1.5 min), of course uncached (~7.5 min), but also even with a
+  # full cache hit (~2.5 min).
   docker:
     strategy: *os-matrix
     runs-on: ${{ matrix.os }}
     steps:
       - *checkout
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build image
-        uses: docker/bake-action@v7
-        with:
-          # Run bake from the runner's checked out directory instead of a separate git clone
-          source: .
-          # Load the image into the local image store so Compose can use it without rebuilding
-          load: true
-          # Cache image layers (primarily the Nix toolchain) from the Dockerfile's only stage
-          set: |
-            *.cache-from=type=gha,scope=docker-${{ runner.os }}-${{ runner.arch }}
-            *.cache-to=type=gha,scope=docker-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Start container
-        run: docker compose up --detach --no-build
+      - name: Build image and start container
+        run: docker compose up --detach
 
       - name: Create TUN device and run smoke test in container
         run: >-
