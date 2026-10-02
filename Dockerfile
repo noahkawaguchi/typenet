@@ -4,6 +4,10 @@ FROM nixos/nix:2.35.2
 RUN printf '%s\n' 'experimental-features = nix-command flakes' 'max-jobs = auto' \
   >> /etc/nix/nix.conf
 
+# The bind-mounted repo is owned by the host user, which differs from the container's root user
+# under rootful Docker (e.g., in CI), so tell Nix's libgit2 to trust it
+RUN printf '%s\n' '[safe]' '	directory = /typenet' >> /root/.gitconfig
+
 WORKDIR /typenet
 COPY flake.nix flake.lock ./
 
