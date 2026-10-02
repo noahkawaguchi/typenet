@@ -90,7 +90,7 @@ jobs:
 
       - name: Create TUN device and run smoke test in container
         run: >-
-          docker compose exec --no-tty typenet
+          docker compose exec typenet
           nix develop .#docker --command just --yes tun-create smoke
 
   all-checks:
