@@ -263,8 +263,8 @@ loadgen-cmp: tun
 # Testing and quality
 ####################################################################################################
 
-# Run tests, lints, format checking, and spell checking to match CI
-ci-checks: (test '--quiet') lint fmt-check spell-check
+# Run tests, lints, format checking, spell checking, and the smoke test to match CI
+ci-checks: (test '--quiet') lint fmt-check spell-check smoke
 
 # Run tests, including ignored
 test *ARGS: tun

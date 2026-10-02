@@ -490,7 +490,7 @@ Latency max           : 4.838370423s
 
 ## Development and CI
 
-Tests, lints, format checking, and spell checking run in CI (as defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)) and must all pass before merging into `main`. Tests and lints run on both `ubuntu-24.04-arm` and `ubuntu-24.04` because the results can differ between architectures, especially due to the C FFI.
+Tests, lints, format checking, and spell checking, as well as a build of the Docker image and an end-to-end smoke test inside the container, run in CI as defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml). All checks pass before merging into `main`. Tests and lints run on both `ubuntu-24.04-arm` and `ubuntu-24.04` because the results can differ between architectures, especially due to the C FFI.
 
 The project takes a strict approach to linting (as defined in [`Cargo.toml`](Cargo.toml)), completely forbidding panicking constructs like `unwrap` and `expect` and isolating limited use of `unsafe`.
 
@@ -498,9 +498,10 @@ The [`justfile`](justfile) includes recipes for running CI checks locally.
 
 ```sh
 just lint
-just fmt-check  # `just fmt` to apply changes
+just fmt-check    # Run `just fmt` to apply changes
 just spell-check
-just ci-checks  # All CI checks (including tests)
+just smoke        # ICMP/TCP/UDP smoke test with a background server
+just ci-checks    # All CI checks (including tests)
 ```
 
 ## Demos

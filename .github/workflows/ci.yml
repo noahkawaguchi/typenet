@@ -77,9 +77,25 @@ jobs:
       - name: Check spelling
         run: nix develop --command just spell-check
 
+  # Verify the Docker toolchain installation method by building the image and running the server
+  # end to end inside the container
+  docker:
+    strategy: *os-matrix
+    runs-on: ${{ matrix.os }}
+    steps:
+      - *checkout
+
+      - name: Build and start container
+        run: docker compose up --detach
+
+      - name: Create TUN device and run smoke test in container
+        run: >-
+          docker compose exec --no-tty typenet
+          nix develop .#docker --command just --yes tun-create smoke
+
   all-checks:
     runs-on: ubuntu-slim
     permissions: {}
-    needs: [test, lint, fmt-check, spell-check]
+    needs: [test, lint, fmt-check, spell-check, docker]
     steps:
       - run: echo 'All checks passed!'
