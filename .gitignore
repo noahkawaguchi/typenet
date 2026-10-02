@@ -2,8 +2,9 @@
 !.env.example
 !.envrc
 
-target/
-.direnv/
+/target/
+/.direnv/
+/reports/
 
 *.log
 *.pcap
