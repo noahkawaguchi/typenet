@@ -1,6 +1,6 @@
 use {
     crate::{
-        endpoint::Local,
+        direction::Local,
         protocol::tcp::{
             connections::RtoConfig,
             flags::TcpFlags,

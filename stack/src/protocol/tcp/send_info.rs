@@ -1,7 +1,7 @@
 use {
     crate::{
         application::Application,
-        endpoint::{Local, Remote},
+        direction::{Local, Remote},
         protocol::tcp::{
             LOCAL_FIN_BYTE, REMOTE_FIN_BYTE, REMOTE_SYN_BYTE, TcpSegment,
             connections::{ConnKey, TcpConnections},

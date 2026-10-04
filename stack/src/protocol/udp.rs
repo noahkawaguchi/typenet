@@ -2,8 +2,8 @@ use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
         application::Application,
+        direction::{Endpoint, Local, Remote},
         display::{PrettyPayload, PrettyProtocol},
-        endpoint::{Endpoint, Local, Remote},
         protocol::{Encode, Protocol, pseudo_hdr_cksum},
     },
     std::{borrow::Cow, fmt},

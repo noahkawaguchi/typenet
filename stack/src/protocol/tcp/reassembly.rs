@@ -1,6 +1,6 @@
 use {
     crate::{
-        endpoint::Remote,
+        direction::Remote,
         protocol::tcp::{payload::TcpPayload, seq_space::SeqPoint},
     },
     std::iter,

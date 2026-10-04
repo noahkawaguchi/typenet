@@ -6,8 +6,8 @@ use {
         time::Instant,
     },
     typenet_stack::{
+        direction::{Endpoint, Local},
         display::PrettyProtocol as _,
-        endpoint::{Endpoint, Local},
         engine::PacketOutcome,
         ipv4_packet::Ipv4Packet,
     },

@@ -168,7 +168,7 @@ mod test_impls {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::endpoint::Local, std::ops::Sub};
+    use {super::*, crate::direction::Local, std::ops::Sub};
 
     impl<S> Add for SeqOffset<u32, S> {
         type Output = Self;

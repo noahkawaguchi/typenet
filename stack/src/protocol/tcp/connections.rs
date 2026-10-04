@@ -1,7 +1,7 @@
 use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
-        endpoint::Local,
+        direction::Local,
         protocol::tcp::{
             LOCAL_FIN_BYTE, TcpSegment,
             flags::TcpFlags,

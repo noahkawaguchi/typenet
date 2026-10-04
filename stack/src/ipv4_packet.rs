@@ -3,8 +3,8 @@ use {
         ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
         application::Application,
+        direction::{Endpoint, Local, Remote},
         display::{PrettyPayload, PrettyProtocol},
-        endpoint::{Endpoint, Local, Remote},
         ipv4_header::Ipv4Header,
         protocol::{
             Encode, Protocol,

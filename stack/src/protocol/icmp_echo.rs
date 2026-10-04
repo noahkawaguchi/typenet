@@ -2,8 +2,8 @@ use {
     crate::{
         addr_pairs::Ipv4AddrPair,
         checksum,
+        direction::{Endpoint, Local, Remote},
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
-        endpoint::{Endpoint, Local, Remote},
         protocol::{Encode, Protocol},
     },
     std::fmt,

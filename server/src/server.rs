@@ -7,7 +7,7 @@ use {
     },
     typenet_stack::{
         ETHERNET_MTU,
-        endpoint::Local,
+        direction::Local,
         engine::{Engine, ShutdownOutcome},
         ipv4_packet::Ipv4Packet,
     },

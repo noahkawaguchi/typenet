@@ -4,8 +4,8 @@ pub(crate) mod udp;
 
 use {
     crate::{
-        ETHERNET_MTU, addr_pairs::Ipv4AddrPair, checksum, display::PrettyProtocol,
-        endpoint::Endpoint,
+        ETHERNET_MTU, addr_pairs::Ipv4AddrPair, checksum, direction::Endpoint,
+        display::PrettyProtocol,
     },
     std::fmt,
     typenet_utils::{
@@ -108,9 +108,9 @@ impl fmt::Display for Protocol {
 #[cfg(any(test, feature = "test-utils"))]
 mod test_consts {
     #[cfg(test)]
-    use crate::endpoint::Local;
+    use crate::direction::Local;
     use {
-        crate::{addr_pairs::Ipv4AddrPair, endpoint::Remote},
+        crate::{addr_pairs::Ipv4AddrPair, direction::Remote},
         std::net::Ipv4Addr,
     };
 

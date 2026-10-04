@@ -1,5 +1,5 @@
 use {
-    crate::endpoint::Endpoint,
+    crate::direction::Endpoint,
     std::{fmt, marker::PhantomData, net::Ipv4Addr},
 };
 

@@ -1,7 +1,7 @@
 use {
     crate::{
         application::Application,
-        endpoint::{Local, Remote},
+        direction::{Local, Remote},
         ipv4_packet::Ipv4Packet,
         protocol::tcp::TcpConnections,
     },

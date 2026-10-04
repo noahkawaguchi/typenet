@@ -20,8 +20,8 @@ use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
         application::Application,
+        direction::{Endpoint, Local, Remote},
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
-        endpoint::{Endpoint, Local, Remote},
         protocol::{
             Encode, Protocol, pseudo_hdr_cksum,
             tcp::{

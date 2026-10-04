@@ -3,7 +3,7 @@ use {
         ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
         checksum,
-        endpoint::{Endpoint, Local, Remote},
+        direction::{Endpoint, Local, Remote},
         protocol::Protocol,
     },
     std::{fmt, net::Ipv4Addr},
