@@ -1,6 +1,6 @@
 use {super::*, pretty_assertions::assert_eq};
 
-fn client_rst(seq_num: SeqPoint<Remote>) -> TcpSegment<Remote> {
+fn client_rst(seq_num: SeqPoint<In>) -> TcpSegment<In> {
     TcpSegment { seq_num, flags: TcpFlags::Rst, ..CLIENT_PKT }
 }
 
@@ -9,7 +9,7 @@ fn rst_in_established_at_rcv_nxt_cleans_up_connection_and_returns_none() -> Trac
     // RFC 9293, Section 3.10.7.4, RST bit set, SEG.SEQ == RCV.NXT -> reset connection
 
     let mut connections = TcpConnections::default().after_handshake();
-    assert_eq!(client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_test_reply(&mut connections)?, None);
+    assert_eq!(client_rst(CLIENT_ISN + SYN_BYTE_IN).create_test_reply(&mut connections)?, None);
     assert_matches!(connections.try_get(), Err(_), "Connection should be removed after RST");
 
     Ok(())
@@ -31,8 +31,8 @@ fn rst_in_established_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> T
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "In-window non-exact RST should get a challenge ACK, not a silent drop or reset"
@@ -77,7 +77,7 @@ fn rst_in_established_with_out_of_window_seq_is_silently_dropped() -> TraceableR
 fn rst_in_syn_received_at_rcv_nxt_cleans_up_connection_and_returns_none() -> TraceableResult {
     let mut connections = TcpConnections::default().with_syn_rcv();
 
-    assert_eq!(client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_test_reply(&mut connections)?, None);
+    assert_eq!(client_rst(CLIENT_ISN + SYN_BYTE_IN).create_test_reply(&mut connections)?, None);
     assert_matches!(connections.try_get(), Err(_), "Connection should be removed after RST");
 
     Ok(())
@@ -126,8 +126,8 @@ fn rst_in_syn_received_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> 
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "In-window non-exact RST should get a challenge ACK, not a silent drop or reset"
@@ -147,7 +147,7 @@ fn rst_for_unknown_connection_is_silently_dropped() -> TraceableResult {
     let mut connections = TcpConnections::default();
 
     assert_eq!(
-        client_rst(CLIENT_ISN + REMOTE_SYN_BYTE).create_test_reply(&mut connections)?,
+        client_rst(CLIENT_ISN + SYN_BYTE_IN).create_test_reply(&mut connections)?,
         None,
         "Unknown RST should be silently dropped"
     );

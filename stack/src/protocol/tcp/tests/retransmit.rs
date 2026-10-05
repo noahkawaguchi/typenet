@@ -17,12 +17,12 @@ fn syn_ack_is_resent_while_due() -> TraceableResult {
         reply,
         TcpSegment {
             seq_num: isn,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             flags: TcpFlags::SynAck,
             ..SERVER_REPLY
         }
     );
-    assert_eq!(reply.get_ip_pair(), REMOTE_TO_LOCAL_IP_PAIR.swapped());
+    assert_eq!(reply.get_ip_pair(), IP_PAIR_IN.swapped());
 
     Ok(())
 }
@@ -37,12 +37,8 @@ fn pending_segment_is_cleared_once_acked() -> TraceableResult {
     let isn = connections.try_get()?.snd_una;
 
     // Handshake ACK completes the connection and should clear the pending SYN-ACK
-    TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: isn + LOCAL_SYN_BYTE,
-        ..CLIENT_PKT
-    }
-    .create_test_reply(&mut connections)?;
+    TcpSegment { seq_num: CLIENT_ISN + SYN_BYTE_IN, ack_num: isn + SYN_BYTE_OUT, ..CLIENT_PKT }
+        .create_test_reply(&mut connections)?;
 
     assert!(
         connections.make_retransmissions().is_empty(),
@@ -57,8 +53,8 @@ fn data_echo_is_resent_unchanged() -> TraceableResult {
     let mut connections = TcpConnections::test_new(Duration::ZERO, 5).after_handshake();
 
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -71,8 +67,8 @@ fn data_echo_is_resent_unchanged() -> TraceableResult {
     assert_eq!(
         reply,
         TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }
@@ -93,8 +89,8 @@ fn fin_ack_is_resent_unchanged() -> TraceableResult {
     assert_eq!(
         reply,
         TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             flags: TcpFlags::FinAck,
             ..SERVER_REPLY
         }
@@ -113,8 +109,8 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
     // First data packet: "Hello" (5 bytes), ack=SERVER_ISN+1 -> echoed, pending segment
     // seq=SERVER_ISN+1..SERVER_ISN+6
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -123,8 +119,8 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
     // Second data packet: "Hi" (2 bytes), still ack=SERVER_ISN+1 (hasn't acked the first echo yet)
     // -> echoed, pending segment seq=SERVER_ISN+6..SERVER_ISN+8
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
@@ -138,8 +134,8 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
     assert_eq!(
         hello,
         TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }
@@ -148,8 +144,8 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
     assert_eq!(
         hi,
         TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
             payload: TcpPayload::from_test_str("Hi")?,
             ..SERVER_REPLY
         }
@@ -188,8 +184,8 @@ fn retransmissions_back_off_exponentially() -> TraceableResult {
     let mut connections = TcpConnections::test_new(Duration::from_millis(10), 3).after_handshake();
 
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }

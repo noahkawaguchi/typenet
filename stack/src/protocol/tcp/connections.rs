@@ -1,9 +1,9 @@
 use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
-        direction::Local,
+        direction::Out,
         protocol::tcp::{
-            LOCAL_FIN_BYTE, TcpSegment,
+            FIN_BYTE_OUT, TcpSegment,
             flags::TcpFlags,
             pending_segment::PendingSegment,
             send_info::SendInfo,
@@ -151,7 +151,7 @@ impl TcpConnections {
     /// Reproduces every pending unacked segment that is due for retransmission. If any connection
     /// has a due segment that has already been retried `max_retries` times, gives up and removes
     /// that connection entirely.
-    pub(crate) fn make_retransmissions(&mut self) -> Vec<TcpSegment<Local>> {
+    pub(crate) fn make_retransmissions(&mut self) -> Vec<TcpSegment<Out>> {
         let now = Instant::now();
 
         let due_keys = self
@@ -193,7 +193,7 @@ impl TcpConnections {
 
     /// Initiates active close (RFC 9293 "CLOSE" call) for every connection currently ESTABLISHED,
     /// transitioning each to FIN-WAIT-1 and returning a FIN-ACK reply for it.
-    pub(crate) fn close_established(&mut self) -> impl Iterator<Item = TcpSegment<Local>> {
+    pub(crate) fn close_established(&mut self) -> impl Iterator<Item = TcpSegment<Out>> {
         let now = Instant::now();
 
         self.table.iter_mut().filter_map(move |(key, conn)| {
@@ -209,7 +209,7 @@ impl TcpConnections {
             };
 
             conn.tcp_state = TcpState::FinWait1(established.close());
-            conn.snd_nxt += LOCAL_FIN_BYTE;
+            conn.snd_nxt += FIN_BYTE_OUT;
             conn.pending
                 .push(PendingSegment::new(send_info.clone(), now));
 
@@ -253,7 +253,7 @@ impl TcpConnections {
     pub fn with_syn_rcv_and_pkt_last_sent(mut self, sent_at: Instant) -> Self {
         use {
             crate::protocol::tcp::{
-                LOCAL_SYN_BYTE, REMOTE_SYN_BYTE,
+                SYN_BYTE_IN, SYN_BYTE_OUT,
                 reassembly::TcpReassembly,
                 state::SynReceived,
                 test_utils::{CLIENT_ISN, KEY, SERVER_ISN},
@@ -265,13 +265,13 @@ impl TcpConnections {
             KEY,
             ConnState {
                 tcp_state: TcpState::SynReceived(SynReceived),
-                snd_nxt: SERVER_ISN + LOCAL_SYN_BYTE,
-                rcv_nxt: CLIENT_ISN + REMOTE_SYN_BYTE,
+                snd_nxt: SERVER_ISN + SYN_BYTE_OUT,
+                rcv_nxt: CLIENT_ISN + SYN_BYTE_IN,
                 snd_una: SERVER_ISN,
                 pending: vec![PendingSegment::new(
                     SendInfo {
                         seq_num: SERVER_ISN,
-                        ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+                        ack_num: CLIENT_ISN + SYN_BYTE_IN,
                         flags: TcpFlags::SynAck,
                         payload: None,
                     },

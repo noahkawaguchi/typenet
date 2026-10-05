@@ -3,7 +3,7 @@ use {
         ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
         application::Application,
-        direction::{Endpoint, Local, Remote},
+        direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol},
         ipv4_header::Ipv4Header,
         protocol::{
@@ -19,12 +19,12 @@ use {
 
 /// A pretty-printable IPv4 header and protocol-specific header/payload.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-pub struct Ipv4Packet<'a, S: Endpoint> {
-    ipv4_hdr: Ipv4Header<S>,
-    router: ProtocolRouter<'a, S>,
+pub struct Ipv4Packet<'a, D: Direction> {
+    ipv4_hdr: Ipv4Header<D>,
+    router: ProtocolRouter<'a, D>,
 }
 
-impl<'a> Ipv4Packet<'a, Remote> {
+impl<'a> Ipv4Packet<'a, In> {
     /// Parses `data` as an IPv4 header followed by a protocol-specific header and payload.
     pub(crate) fn parse(data: &'a [u8]) -> TraceableResult<Self> {
         let (ipv4_hdr, ipv4_payload) = Ipv4Header::parse(data)?;
@@ -49,7 +49,7 @@ impl<'a> Ipv4Packet<'a, Remote> {
         &self,
         app: &mut impl Application,
         tcp_connections: &mut TcpConnections,
-    ) -> TraceableResult<Option<Ipv4Packet<'a, Local>>> {
+    ) -> TraceableResult<Option<Ipv4Packet<'a, Out>>> {
         match &self.router {
             // ICMP Echo Request/Reply always echoes, so there's no app to pass
             ProtocolRouter::Icmp(msg) => Some(ProtocolRouter::Icmp(msg.create_reply())),
@@ -75,7 +75,7 @@ impl<'a> Ipv4Packet<'a, Remote> {
     }
 }
 
-impl Ipv4Packet<'_, Local> {
+impl Ipv4Packet<'_, Out> {
     /// Writes the IPv4 header and protocol-specific header/payload into `buf`.
     ///
     /// # Errors
@@ -101,10 +101,10 @@ impl Ipv4Packet<'_, Local> {
     pub const fn total_len(&self) -> u16 { self.ipv4_hdr.total_len }
 }
 
-impl TryFrom<TcpSegment<Local>> for Ipv4Packet<'_, Local> {
+impl TryFrom<TcpSegment<Out>> for Ipv4Packet<'_, Out> {
     type Error = TraceableError;
 
-    fn try_from(value: TcpSegment<Local>) -> Result<Self, Self::Error> {
+    fn try_from(value: TcpSegment<Out>) -> Result<Self, Self::Error> {
         Ok(Self {
             ipv4_hdr: Ipv4Header::try_new(value.proto(), value.get_ip_pair(), value.proto_len()?)?,
             router: ProtocolRouter::Tcp(value),
@@ -112,24 +112,25 @@ impl TryFrom<TcpSegment<Local>> for Ipv4Packet<'_, Local> {
     }
 }
 
-impl<S: Endpoint> PrettyProtocol for Ipv4Packet<'_, S> {
+impl<D: Direction> PrettyProtocol for Ipv4Packet<'_, D> {
     fn pretty_payload(&self, include_content: bool) -> PrettyPayload<'_> {
         self.router.pretty_payload(include_content)
     }
 }
 
-impl<S: Endpoint> fmt::Display for Ipv4Packet<'_, S> {
+impl<D: Direction> fmt::Display for Ipv4Packet<'_, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}\n{}", self.ipv4_hdr, self.router)
     }
 }
 
-/// Enum for static dispatch over the supported protocol-specific structs. Sent from `S`.
+/// Enum for static dispatch over the supported protocol-specific structs, with traffic flowing in
+/// direction `D`.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-enum ProtocolRouter<'a, S: Endpoint> {
-    Icmp(IcmpEchoMsg<'a, S>),
-    Tcp(TcpSegment<S>),
-    Udp(UdpDatagram<'a, S>),
+enum ProtocolRouter<'a, D: Direction> {
+    Icmp(IcmpEchoMsg<'a, D>),
+    Tcp(TcpSegment<D>),
+    Udp(UdpDatagram<'a, D>),
 }
 
 /// Generates a function for a trait implementation, matching on the variant of `self` and calling
@@ -157,17 +158,17 @@ macro_rules! static_dispatch {
     };
 }
 
-impl Encode<Local> for ProtocolRouter<'_, Local> {
+impl Encode<Out> for ProtocolRouter<'_, Out> {
     static_dispatch!(write_into(&self, &mut [u8]) -> TraceableResult);
     static_dispatch!(proto(&self) -> Protocol);
-    static_dispatch!(get_ip_pair(&self) -> Ipv4AddrPair<Local>);
+    static_dispatch!(get_ip_pair(&self) -> Ipv4AddrPair<Out>);
     static_dispatch!(proto_len(&self) -> TraceableResult<u16>);
 }
 
-impl<S: Endpoint> PrettyProtocol for ProtocolRouter<'_, S> {
+impl<D: Direction> PrettyProtocol for ProtocolRouter<'_, D> {
     static_dispatch!(pretty_payload(&self, bool) -> PrettyPayload<'_>);
 }
 
-impl<S: Endpoint> fmt::Display for ProtocolRouter<'_, S> {
+impl<D: Direction> fmt::Display for ProtocolRouter<'_, D> {
     static_dispatch!(fmt(&self, &mut fmt::Formatter) -> fmt::Result);
 }

@@ -1,29 +1,29 @@
-/// One of the communicating parties, either local or remote.
+/// A direction of traffic flow, either incoming or outgoing.
 #[expect(private_bounds, reason = "Sealed trait so this module owns all implementations")]
-pub trait Endpoint: std::fmt::Debug + PartialEq + Eq + sealed::Sealed {
-    /// The party that this endpoint is communicating with.
-    type Peer: Endpoint;
+pub trait Direction: std::fmt::Debug + PartialEq + Eq + sealed::Sealed {
+    /// The reverse direction of traffic flow.
+    type Rev: Direction;
 }
 
-/// Marker type representing a local sender or receiver.
+/// Marker type representing outgoing traffic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Local;
+pub struct Out;
 
-impl Endpoint for Local {
-    type Peer = Remote;
+impl Direction for Out {
+    type Rev = In;
 }
 
-/// Marker type representing a remote sender or receiver.
+/// Marker type representing incoming traffic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Remote;
+pub struct In;
 
-impl Endpoint for Remote {
-    type Peer = Local;
+impl Direction for In {
+    type Rev = Out;
 }
 
 /// Private module used to create a sealed trait.
 mod sealed {
     pub(super) trait Sealed {}
-    impl Sealed for super::Local {}
-    impl Sealed for super::Remote {}
+    impl Sealed for super::Out {}
+    impl Sealed for super::In {}
 }

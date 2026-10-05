@@ -1,10 +1,10 @@
 use {
     crate::{
         ETHERNET_MTU,
-        direction::{Local, Remote},
+        direction::{In, Out},
         ipv4_header::Ipv4Header,
         protocol::tcp::{
-            LOCAL_SYN_BYTE, TCP_HDR_MIN_LEN, TcpSegment,
+            SYN_BYTE_OUT, TCP_HDR_MIN_LEN, TcpSegment,
             flags::TcpFlags,
             payload::TcpPayload,
             pending_segment::PendingSegment,
@@ -24,13 +24,13 @@ pub(super) struct ConnState {
     pub(super) tcp_state: TcpState,
 
     /// "SND.NXT = next sequence number to be sent" (RFC 9293, Section 3.4).
-    pub(super) snd_nxt: SeqPoint<Local>,
+    pub(super) snd_nxt: SeqPoint<Out>,
 
     /// "RCV.NXT = next sequence number expected on an incoming segment" (RFC 9293, Section 3.4).
-    pub(super) rcv_nxt: SeqPoint<Remote>,
+    pub(super) rcv_nxt: SeqPoint<In>,
 
     /// "SND.UNA = oldest unacknowledged sequence number" (RFC 9293, Section 3.4).
-    pub(super) snd_una: SeqPoint<Local>,
+    pub(super) snd_una: SeqPoint<Out>,
 
     /// Unacked segments sent by the server, kept for retransmission purposes.
     pub(super) pending: Vec<PendingSegment>,
@@ -55,7 +55,7 @@ impl ConnState {
                 // State after the initial two-way exchange
                 tcp_state: TcpState::SynReceived(SynReceived),
                 // SYN-ACK consumes one sequence number
-                snd_nxt: send_info.seq_num + LOCAL_SYN_BYTE,
+                snd_nxt: send_info.seq_num + SYN_BYTE_OUT,
                 // Our SYN-ACK's `ack_num` is the client's ISN + 1
                 rcv_nxt: send_info.ack_num,
                 // Our SYN-ACK is unacknowledged (this is our ISN)
@@ -71,7 +71,7 @@ impl ConnState {
     }
 
     #[cfg(test)]
-    pub(super) const fn test_get_snd_wnd(&self) -> Option<SeqOffset<u16, Local>> {
+    pub(super) const fn test_get_snd_wnd(&self) -> Option<SeqOffset<u16, Out>> {
         match self.tcp_state {
             TcpState::SynReceived(_) => None,
             TcpState::Established(established) => Some(established.window_state.snd_wnd),
@@ -116,28 +116,28 @@ impl PartialEq for ConnState {
 pub(super) struct WindowState {
     /// SND.WND or send window. "This represents the sequence numbers that the remote (receiving)
     /// TCP endpoint is willing to receive" (RFC 9293, Section 4).
-    snd_wnd: SeqOffset<u16, Local>,
+    snd_wnd: SeqOffset<u16, Out>,
 
     /// SND.WL1. "segment sequence number used for last window update" (RFC 9293, Section 3.3.1).
     ///
     /// Purely used for internal bookkeeping alongside `snd_wl2` to determine whether a window
     /// value is fresh or stale/reordered.
-    snd_wl1: SeqPoint<Remote>,
+    snd_wl1: SeqPoint<In>,
 
     /// SND.WL2. "segment acknowledgment number used for last window update" (RFC 9293, Section
     /// 3.3.1).
     ///
     /// Purely used for internal bookkeeping alongside `snd_wl1` to determine whether a window
     /// value is fresh or stale/reordered.
-    snd_wl2: SeqPoint<Local>,
+    snd_wl2: SeqPoint<Out>,
 }
 
 #[cfg(any(test, feature = "test-utils"))]
 impl WindowState {
     pub(super) const fn test_new(
-        snd_wnd: SeqOffset<u16, Local>,
-        snd_wl1: SeqPoint<Remote>,
-        snd_wl2: SeqPoint<Local>,
+        snd_wnd: SeqOffset<u16, Out>,
+        snd_wl1: SeqPoint<In>,
+        snd_wl2: SeqPoint<Out>,
     ) -> Self {
         Self { snd_wnd, snd_wl1, snd_wl2 }
     }
@@ -212,7 +212,7 @@ impl SynReceived {
     /// Enters ESTABLISHED, setting SND.WND, SND.WL1, and SND.WL2 (RFC 9293, Section 3.10.7.4,
     /// "Fifth, check the ACK field," "SYN-RECEIVED STATE").
     #[expect(clippy::unused_self, reason = "Require an instance for state transition")]
-    pub(super) const fn establish(self, seg: &TcpSegment<Remote>) -> SyncedState<Established> {
+    pub(super) const fn establish(self, seg: &TcpSegment<In>) -> SyncedState<Established> {
         SyncedState {
             window_state: WindowState {
                 snd_wnd: seg.window,
@@ -259,11 +259,7 @@ impl<T> SyncedState<T> {
     /// Ignores ACKs that are old (before SND.UNA) or for data not yet sent (past SND.NXT). Ignores
     /// duplicate ACKs (SND.UNA == SEG.ACK) for updates to SND.UNA and the retransmission queue.
     #[must_use = "Returns updated state as a new instance"]
-    pub(super) fn incoming_ack_update(
-        self,
-        conn: &mut ConnState,
-        seg: &TcpSegment<Remote>,
-    ) -> Self {
+    pub(super) fn incoming_ack_update(self, conn: &mut ConnState, seg: &TcpSegment<In>) -> Self {
         if conn.snd_una.precedes_or_eq(seg.ack_num) && seg.ack_num.precedes_or_eq(conn.snd_nxt) {
             // Exclude duplicate ACKs: SND.UNA < SEG.ACK <= SND.NXT
             if conn.snd_una.precedes(seg.ack_num) {
@@ -330,7 +326,7 @@ impl<T: SendSideOpen> SyncedState<T> {
             .offset_past(conn.snd_una)
             .ok_or("`drain_transmittable` called with SND.UNA not preceding or equaling SND.NXT")?;
 
-        let space_in_window = SeqOffset::<u32, Local>::from(self.window_state.snd_wnd)
+        let space_in_window = SeqOffset::<u32, Out>::from(self.window_state.snd_wnd)
             .saturating_sub(sent_but_not_acked);
 
         let bytes_to_send = usize::try_from(space_in_window)?

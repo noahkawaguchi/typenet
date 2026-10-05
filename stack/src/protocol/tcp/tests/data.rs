@@ -6,8 +6,8 @@ fn creates_valid_data_echo() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -16,8 +16,8 @@ fn creates_valid_data_echo() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         })
@@ -31,8 +31,8 @@ fn reply_payload_is_what_the_application_returns_not_just_echo() -> TraceableRes
     let mut connections = TcpConnections::default().after_handshake();
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -41,8 +41,8 @@ fn reply_payload_is_what_the_application_returns_not_just_echo() -> TraceableRes
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("HELLO")?,
             ..SERVER_REPLY
         })
@@ -60,26 +60,26 @@ fn pure_ack_on_established_connection_returns_none() -> TraceableResult {
     let mut cloned_state = connections.try_get()?.clone();
 
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
     .create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
+    cloned_state.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.rcv_nxt += HELLO_LEN_IN;
 
     // ack=SERVER_ISN + 5 bytes echoed + 1
     let pure_ack = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
         ..CLIENT_PKT
     };
 
     assert_eq!(pure_ack.create_test_reply(&mut connections)?, None);
 
-    cloned_state.snd_una += LOCAL_HELLO_LEN;
+    cloned_state.snd_una += HELLO_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         pure_ack.window,
         pure_ack.seq_num,
@@ -107,8 +107,8 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
 
     // First data packet: "Hello" (5 bytes), ack=SERVER_ISN+1 (acknowledges our ISN+1)
     let reply1 = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -117,16 +117,16 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
     assert_eq!(
         reply1,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
         "Standard reply to the first data packet"
     );
 
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
+    cloned_state.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.rcv_nxt += HELLO_LEN_IN;
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
@@ -136,8 +136,8 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
     // Second data packet: "Hi" (2 bytes), but with stale ack=SERVER_ISN+1 (hasn't ACKed our "Hello"
     // echo)
     let reply2 = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
@@ -146,8 +146,8 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
     assert_eq!(
         reply2,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
             payload: TcpPayload::from_test_str("Hi")?,
             ..SERVER_REPLY
         }),
@@ -167,13 +167,13 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     // SND.UNA=SND.NXT=SERVER_ISN+1, RCV.NXT=CLIENT_ISN+1
     let mut connections = TcpConnections::default().after_handshake();
     let mut cloned_state = connections.try_get()?.clone();
-    assert_eq!(cloned_state.snd_una, SERVER_ISN + LOCAL_SYN_BYTE);
+    assert_eq!(cloned_state.snd_una, SERVER_ISN + SYN_BYTE_OUT);
 
     // First packet: "Hello" (5 bytes), ack=SERVER_ISN+1 -> SND.UNA is SERVER_ISN+1, SND.NXT becomes
     // SERVER_ISN+6
     let reply1 = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -182,16 +182,16 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     assert_eq!(
         reply1,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
         "Standard reply to the first data packet"
     );
 
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
+    cloned_state.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.rcv_nxt += HELLO_LEN_IN;
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
@@ -201,8 +201,8 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     // Second packet: "Hi" (2 bytes), ack=SERVER_ISN+6 -> SND.UNA advances to SERVER_ISN+6, SND.NXT
     // becomes SERVER_ISN+8
     let hi_pkt = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     };
@@ -212,17 +212,17 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     assert_eq!(
         reply2,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
             payload: TcpPayload::from_test_str("Hi")?,
             ..SERVER_REPLY
         }),
         "Standard reply to the second data packet"
     );
 
-    cloned_state.snd_nxt += LOCAL_HI_LEN;
-    cloned_state.rcv_nxt += REMOTE_HI_LEN;
-    cloned_state.snd_una += LOCAL_HELLO_LEN;
+    cloned_state.snd_nxt += HI_LEN_OUT;
+    cloned_state.rcv_nxt += HI_LEN_IN;
+    cloned_state.snd_una += HELLO_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         hi_pkt.window,
         hi_pkt.seq_num,
@@ -237,8 +237,8 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
 
     // Third packet: "Hey" (3 bytes), ack=SERVER_ISN+1 (now stale, older than SND.UNA=SERVER_ISN+6)
     let reply3 = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hey")?,
         ..CLIENT_PKT
     }
@@ -249,20 +249,16 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     assert_eq!(
         reply3,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN + LOCAL_HI_LEN,
-            ack_num: CLIENT_ISN
-                + REMOTE_SYN_BYTE
-                + REMOTE_HELLO_LEN
-                + REMOTE_HI_LEN
-                + REMOTE_HEY_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT + HI_LEN_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN + HEY_LEN_IN,
             payload: TcpPayload::from_test_str("Hey")?,
             ..SERVER_REPLY
         }),
         "Stale ack_num shouldn't prevent normal processing"
     );
 
-    cloned_state.snd_nxt += LOCAL_HEY_LEN;
-    cloned_state.rcv_nxt += REMOTE_HEY_LEN;
+    cloned_state.snd_nxt += HEY_LEN_OUT;
+    cloned_state.rcv_nxt += HEY_LEN_IN;
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
@@ -282,15 +278,15 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
 
     let hello = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     };
 
     let hi = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     };
@@ -300,8 +296,8 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
     assert_eq!(
         hello.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
@@ -313,8 +309,8 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
     assert_eq!(
         hi.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
             payload: TcpPayload::from_test_str("Hi")?,
             ..SERVER_REPLY
         }),
@@ -325,8 +321,8 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
     assert_eq!(
         hello.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN + LOCAL_HI_LEN,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT + HI_LEN_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
             ..SERVER_REPLY
         }),
         "Duplicate ACK should ack rcv_nxt=CLIENT_ISN+8 with no payload, not echo \
@@ -349,7 +345,7 @@ fn stale_pure_ack_gets_duplicate_ack_without_updating_state() -> TraceableResult
     // adopted
     let stale_pure_ack = TcpSegment {
         seq_num: CLIENT_ISN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: SeqOffset::new(1234),
         ..CLIENT_PKT
     };
@@ -357,8 +353,8 @@ fn stale_pure_ack_gets_duplicate_ack_without_updating_state() -> TraceableResult
     assert_eq!(
         stale_pure_ack.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "A stale pure ACK should get a duplicate ACK reflecting current state"
@@ -386,7 +382,7 @@ fn ack_for_unsent_data_is_dropped_and_gets_current_state_reply() -> TraceableRes
 
     // seq_num == RCV.NXT, but ack_num=SERVER_ISN+20 is past SND.NXT=SERVER_ISN+1
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
         ack_num: SERVER_ISN + SeqOffset::new(20),
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
@@ -396,8 +392,8 @@ fn ack_for_unsent_data_is_dropped_and_gets_current_state_reply() -> TraceableRes
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         })
     );
@@ -418,7 +414,7 @@ fn wraparound_ack_for_unsent_data_is_still_rejected() -> TraceableResult {
     let initial_state = ConnState {
         tcp_state: TcpState::Established(SyncedState::test_new(WindowState::test_new(
             SeqOffset::new(u16::MAX),
-            CLIENT_ISN + REMOTE_SYN_BYTE,
+            CLIENT_ISN + SYN_BYTE_IN,
             SeqPoint::new(u32::MAX),
         ))),
         snd_nxt: SeqPoint::new(u32::MAX),
@@ -428,14 +424,14 @@ fn wraparound_ack_for_unsent_data_is_still_rejected() -> TraceableResult {
     connections.insert(initial_state.clone());
 
     // ack=0 wraps 1 past SND.NXT=`u32::MAX`
-    let reply = TcpSegment { seq_num: CLIENT_ISN + REMOTE_SYN_BYTE, ..CLIENT_PKT }
+    let reply = TcpSegment { seq_num: CLIENT_ISN + SYN_BYTE_IN, ..CLIENT_PKT }
         .create_test_reply(&mut connections)?;
 
     assert_eq!(
         reply,
         Some(TcpSegment {
             seq_num: SeqPoint::new(u32::MAX),
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         })
     );
@@ -452,8 +448,8 @@ fn data_pkt_for_unknown_connection_gets_rst() -> TraceableResult {
     let mut connections = TcpConnections::default(); // Empty, no known connections
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -462,7 +458,7 @@ fn data_pkt_for_unknown_connection_gets_rst() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
             flags: TcpFlags::Rst,
             ..SERVER_REPLY
         })
@@ -479,8 +475,8 @@ fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
@@ -489,8 +485,8 @@ fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "Out-of-order data should get a duplicate ACK at the current RCV.NXT, not an echo"
@@ -513,16 +509,16 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
 
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
     .create_test_reply(&mut connections)?;
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -531,8 +527,8 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
             payload: TcpPayload::from_test_str("HelloHi")?,
             ..SERVER_REPLY
         }),
@@ -557,16 +553,16 @@ fn out_of_order_reassembly_respects_app_logic() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
 
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(3),
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + SeqOffset::new(3),
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("lo")?,
         ..CLIENT_PKT
     }
     .create_reply(&mut app, &mut connections)?;
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("hel")?,
         ..CLIENT_PKT
     }
@@ -575,8 +571,8 @@ fn out_of_order_reassembly_respects_app_logic() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("HELLO")?,
             ..SERVER_REPLY
         }),
@@ -603,8 +599,8 @@ fn seq_one_before_rcv_nxt_is_rejected() -> TraceableResult {
     let initial_state = connections.try_get()?.clone();
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE - SeqOffset::new(1),
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN - SeqOffset::new(1),
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
@@ -613,8 +609,8 @@ fn seq_one_before_rcv_nxt_is_rejected() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "A segment one byte before RCV.NXT should get a challenge ACK"
@@ -641,9 +637,8 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
     let mut cloned_state = connections.try_get()?.clone();
 
     let hi = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + TcpSegment::<Local>::RCV_WND.into()
-            - SeqOffset::new(1),
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + TcpSegment::<Out>::RCV_WND.into() - SeqOffset::new(1),
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     };
@@ -651,8 +646,8 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
     assert_eq!(
         hi.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "The last in-window offset should still get a duplicate ACK, not a challenge ACK"
@@ -688,8 +683,8 @@ fn seq_at_first_unacceptable_offset_is_rejected() -> TraceableResult {
     let initial_state = connections.try_get()?.clone();
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + TcpSegment::<Local>::RCV_WND.into(),
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + TcpSegment::<Out>::RCV_WND.into(),
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
@@ -698,8 +693,8 @@ fn seq_at_first_unacceptable_offset_is_rejected() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "The first out-of-window offset should get a challenge ACK"

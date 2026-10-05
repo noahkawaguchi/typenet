@@ -6,7 +6,7 @@ use {
         time::Instant,
     },
     typenet_stack::{
-        direction::{Endpoint, Local},
+        direction::{Direction, Out},
         display::PrettyProtocol as _,
         engine::PacketOutcome,
         ipv4_packet::Ipv4Packet,
@@ -164,7 +164,7 @@ impl Logger {
     /// as a retransmission if `retransmission` is `true`.
     pub(crate) fn non_reply_transmission(
         &mut self,
-        pkt: &Ipv4Packet<Local>,
+        pkt: &Ipv4Packet<Out>,
         retransmission: bool,
     ) -> TraceableResult {
         self.divider()?;
@@ -184,7 +184,7 @@ impl Logger {
     }
 
     /// Buffers a log of receipt or transmission of a packet if and how the log level allows.
-    fn pkt_io<S: Endpoint>(&mut self, pkt: &Ipv4Packet<'_, S>) -> TraceableResult {
+    fn pkt_io<D: Direction>(&mut self, pkt: &Ipv4Packet<'_, D>) -> TraceableResult {
         if self.level >= LogLevel::PktDetails {
             writeln!(self.buf, "{pkt}\n{}", pkt.pretty_payload(self.level == LogLevel::PktFull))?;
         }

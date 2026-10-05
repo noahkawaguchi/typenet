@@ -2,7 +2,7 @@ use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
         application::Application,
-        direction::{Endpoint, Local, Remote},
+        direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol},
         protocol::{Encode, Protocol, pseudo_hdr_cksum},
     },
@@ -16,19 +16,19 @@ use {
 /// The number of bytes in a UDP header.
 const UDP_HDR_LEN: u16 = 8;
 
-/// Manages UDP headers, data, and reply logic. Sent from `S`.
+/// Manages UDP headers, data, and reply logic flowing in direction `D`.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-pub(crate) struct UdpDatagram<'a, S: Endpoint> {
+pub(crate) struct UdpDatagram<'a, D: Direction> {
     /// Not a part of the UDP header, but required for checksum calculation.
-    ip_pair: Ipv4AddrPair<S>,
+    ip_pair: Ipv4AddrPair<D>,
 
-    ports: PortPair<S>,
+    ports: PortPair<D>,
     payload: Cow<'a, [u8]>,
 }
 
-impl<'a> UdpDatagram<'a, Remote> {
+impl<'a> UdpDatagram<'a, In> {
     /// Parses `data` as a UDP header and payload.
-    pub(crate) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<Remote>) -> TraceableResult<Self> {
+    pub(crate) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<In>) -> TraceableResult<Self> {
         let (udp_hdr, payload) = data
             .split_first_chunk::<{ UDP_HDR_LEN as usize }>()
             .ok_or_else(|| format!("Too short for UDP header ({} bytes)", data.len()))?;
@@ -52,8 +52,8 @@ impl<'a> UdpDatagram<'a, Remote> {
     }
 
     /// Creates a UDP header and payload for replying to `self` according to `app`.
-    pub(crate) fn create_reply(&self, app: &mut impl Application) -> UdpDatagram<'a, Local> {
-        UdpDatagram::<Local> {
+    pub(crate) fn create_reply(&self, app: &mut impl Application) -> UdpDatagram<'a, Out> {
+        UdpDatagram::<Out> {
             ip_pair: self.ip_pair.swapped(),
             ports: self.ports.swapped(),
             payload: app.handle_udp(self.payload.clone()),
@@ -61,7 +61,7 @@ impl<'a> UdpDatagram<'a, Remote> {
     }
 }
 
-impl Encode<Local> for UdpDatagram<'_, Local> {
+impl Encode<Out> for UdpDatagram<'_, Out> {
     fn write_into(&self, buf: &mut [u8]) -> TraceableResult {
         // Source and destination ports
         buf.try_get_mut(..2)?
@@ -95,7 +95,7 @@ impl Encode<Local> for UdpDatagram<'_, Local> {
 
     fn proto(&self) -> Protocol { Protocol::Udp }
 
-    fn get_ip_pair(&self) -> Ipv4AddrPair<Local> { self.ip_pair }
+    fn get_ip_pair(&self) -> Ipv4AddrPair<Out> { self.ip_pair }
 
     fn proto_len(&self) -> TraceableResult<u16> {
         // UDP length: fixed UDP header length (8 bytes) + length of echo payload
@@ -103,13 +103,13 @@ impl Encode<Local> for UdpDatagram<'_, Local> {
     }
 }
 
-impl<S: Endpoint> PrettyProtocol for UdpDatagram<'_, S> {
+impl<D: Direction> PrettyProtocol for UdpDatagram<'_, D> {
     fn pretty_payload(&self, include_content: bool) -> PrettyPayload<'_> {
         PrettyPayload { data: &self.payload, include_content }
     }
 }
 
-impl<S: Endpoint> fmt::Display for UdpDatagram<'_, S> {
+impl<D: Direction> fmt::Display for UdpDatagram<'_, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "UDP | {}", self.ports) }
 }
 
@@ -120,7 +120,7 @@ mod tests {
         crate::{
             ETHERNET_MTU,
             application::{ShoutingTestApp, TestApp},
-            protocol::test_consts::{LOCAL_TO_REMOTE_IP_PAIR, REMOTE_TO_LOCAL_IP_PAIR},
+            protocol::test_consts::{IP_PAIR_IN, IP_PAIR_OUT},
         },
         pretty_assertions::{assert_eq, assert_matches},
     };
@@ -137,7 +137,7 @@ mod tests {
             0x6F, 0x21, 0x21, 0x21,  // Payload: "o!!!"
         ];
 
-        let dgram = UdpDatagram::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR)?;
+        let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
         assert_eq!(dgram.ports, PortPair::new(1234, 53));
         assert_eq!(dgram.payload.as_ref(), b"Hello!!!");
@@ -150,7 +150,7 @@ mod tests {
         const DATA: [u8; 3] = [0x04, 0xD2, 0x00]; // Only 3 bytes
 
         assert_matches!(
-            UdpDatagram::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR),
+            UdpDatagram::parse(&DATA, IP_PAIR_IN),
             Err(e) if e.to_string().contains("Too short")
         );
     }
@@ -168,7 +168,7 @@ mod tests {
         ];
 
         assert_matches!(
-            UdpDatagram::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR),
+            UdpDatagram::parse(&DATA, IP_PAIR_IN),
             Err(e) if e.to_string().contains("checksum")
         );
     }
@@ -185,7 +185,7 @@ mod tests {
             0x6F, 0x21, 0x21, 0x21,  // Payload: "o!!!"
         ];
 
-        let dgram = UdpDatagram::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR)?;
+        let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
         assert_eq!(dgram.ports, PortPair::new(1234, 53));
         assert_eq!(dgram.payload.as_ref(), b"Hello!!!");
@@ -203,7 +203,7 @@ mod tests {
             0xCB, 0xFB,              // Checksum (valid for this datagram and IP pair)
         ];
 
-        let dgram = UdpDatagram::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR)?;
+        let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
         assert_eq!(dgram.ports, PortPair::new(8080, 80));
         assert_eq!(dgram.payload.len(), 0);
@@ -222,7 +222,7 @@ mod tests {
             0x74, 0x65, 0x73, 0x74,  // Payload: "test"
         ];
 
-        let dgram = UdpDatagram::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR)?;
+        let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
         assert_eq!(dgram.ports, PortPair::new(65535, 1));
 
@@ -235,8 +235,8 @@ mod tests {
         // 10.0.0.1 and 10.0.0.2 (in either order) and ports 1234 and 80 (in either order).
         // However, 0xFFFF must be transmitted instead of 0x0000.
 
-        const DGRAM: UdpDatagram<Local> = UdpDatagram {
-            ip_pair: LOCAL_TO_REMOTE_IP_PAIR,
+        const DGRAM: UdpDatagram<Out> = UdpDatagram {
+            ip_pair: IP_PAIR_OUT,
             ports: PortPair::new(1234, 80),
             payload: Cow::Borrowed(&[0xE6, 0xB5]),
         };
@@ -260,13 +260,13 @@ mod tests {
             0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x21, 0x21, 0x21,  // Payload: "Hello!!!"
         ];
 
-        let dgram = UdpDatagram::parse(&REQUEST, REMOTE_TO_LOCAL_IP_PAIR)?;
+        let dgram = UdpDatagram::parse(&REQUEST, IP_PAIR_IN)?;
         let mut reply_buf = [0u8; ETHERNET_MTU];
         let reply = dgram.create_reply(&mut TestApp);
         reply.write_into(&mut reply_buf[20..])?;
 
         // IPs should be swapped
-        assert_eq!(reply.get_ip_pair(), REMOTE_TO_LOCAL_IP_PAIR.swapped());
+        assert_eq!(reply.get_ip_pair(), IP_PAIR_IN.swapped());
 
         // Verify UDP header at offset 20
         assert_eq!(&reply_buf[20..22], &[0x00, 0x35]); // Source port: 53 (swapped)
@@ -280,10 +280,7 @@ mod tests {
         assert_eq!(reply.proto_len()?, 8 + 8);
 
         // Verify checksum
-        assert_eq!(
-            pseudo_hdr_cksum(&reply_buf[20..36], REMOTE_TO_LOCAL_IP_PAIR, Protocol::Udp)?,
-            0
-        );
+        assert_eq!(pseudo_hdr_cksum(&reply_buf[20..36], IP_PAIR_IN, Protocol::Udp)?, 0);
 
         Ok(())
     }
@@ -299,7 +296,7 @@ mod tests {
             0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x21, 0x21, 0x21,  // Payload: "Hello!!!"
         ];
 
-        let dgram = UdpDatagram::parse(&REQUEST, REMOTE_TO_LOCAL_IP_PAIR)?;
+        let dgram = UdpDatagram::parse(&REQUEST, IP_PAIR_IN)?;
         let reply = dgram.create_reply(&mut ShoutingTestApp);
 
         assert_eq!(reply.payload.as_ref(), b"HELLO!!!");

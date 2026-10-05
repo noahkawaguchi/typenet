@@ -15,7 +15,7 @@ fn correct_for_valid_segment() -> TraceableResult {
             0x48, 0x65, 0x6C, 0x6C, 0x6F,        // Payload: "Hello"
         ];
 
-    let seg = TcpSegment::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR)?;
+    let seg = TcpSegment::parse(&DATA, IP_PAIR_IN)?;
 
     assert_eq!(seg.ports, PortPair::new(1234, 80));
     assert_eq!(seg.seq_num, SeqPoint::new(1));
@@ -33,7 +33,7 @@ fn fails_when_too_short() {
     const DATA: [u8; 4] = [0x04, 0xD2, 0x00, 0x50]; // Only 4 bytes
 
     assert_matches!(
-        TcpSegment::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR),
+        TcpSegment::parse(&DATA, IP_PAIR_IN),
         Err(e) if e.to_string().contains("Too short")
     );
 }
@@ -54,7 +54,7 @@ fn fails_for_invalid_cksum() {
         ];
 
     assert_matches!(
-        TcpSegment::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR),
+        TcpSegment::parse(&DATA, IP_PAIR_IN),
         Err(e) if e.to_string().contains("checksum")
     );
 }
@@ -73,7 +73,7 @@ fn handles_large_sequence_numbers() -> TraceableResult {
             0x00, 0x00,                          // Urgent pointer
         ];
 
-    let seg = TcpSegment::parse(&DATA, REMOTE_TO_LOCAL_IP_PAIR)?;
+    let seg = TcpSegment::parse(&DATA, IP_PAIR_IN)?;
 
     assert_eq!(seg.seq_num, SeqPoint::new(u32::MAX));
     assert_eq!(seg.ack_num, SeqPoint::new(0xFEDC_BA98));

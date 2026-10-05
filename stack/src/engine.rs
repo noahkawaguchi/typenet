@@ -1,7 +1,7 @@
 use {
     crate::{
         application::Application,
-        direction::{Local, Remote},
+        direction::{In, Out},
         ipv4_packet::Ipv4Packet,
         protocol::tcp::TcpConnections,
     },
@@ -13,8 +13,8 @@ use {
 /// reply if one is required.
 #[cfg_attr(test, derive(Debug))]
 pub struct PacketOutcome<'a> {
-    pub incoming: Ipv4Packet<'a, Remote>,
-    pub reply: Option<Ipv4Packet<'a, Local>>,
+    pub incoming: Ipv4Packet<'a, In>,
+    pub reply: Option<Ipv4Packet<'a, Out>>,
 }
 
 /// The result of deciding how to react to a shutdown signal.
@@ -25,7 +25,7 @@ pub enum ShutdownOutcome {
 
     /// This was the first call to result in active close, and at least one connection is still
     /// closing.
-    BeganDraining { to_send: Vec<Ipv4Packet<'static, Local>> },
+    BeganDraining { to_send: Vec<Ipv4Packet<'static, Out>> },
 
     /// This was the first call to result in active close, but no connection needed to finish
     /// closing.
@@ -100,7 +100,7 @@ impl<A: Application> Engine<A> {
     /// dropping the connection entirely if retries are exhausted.
     pub fn make_retransmissions(
         &mut self,
-    ) -> impl Iterator<Item = TraceableResult<Ipv4Packet<'static, Local>>> + use<A> {
+    ) -> impl Iterator<Item = TraceableResult<Ipv4Packet<'static, Out>>> + use<A> {
         self.tcp_connections
             .make_retransmissions()
             .into_iter()
@@ -204,8 +204,8 @@ mod tests {
             let mut buf = [0u8; ETHERNET_MTU];
 
             let ipv4_hdr =
-                Ipv4Header::test_try_new_remote(fixture.proto(), fixture.get_ip_pair(), 4)?;
-            ipv4_hdr.test_write_into_remote(&mut buf);
+                Ipv4Header::test_try_new_incoming(fixture.proto(), fixture.get_ip_pair(), 4)?;
+            ipv4_hdr.test_write_into_incoming(&mut buf);
 
             assert_matches!(
                 test_engine(TcpConnections::default())
