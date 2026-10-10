@@ -14,7 +14,8 @@ use {
     },
 };
 
-/// Pretty protocol-handling types that can also be encoded into a byte buffer.
+/// Pretty protocol-handling types that can also be encoded into a byte buffer for traffic flowing
+/// in direction `D`.
 pub(crate) trait Encode<D: Direction>: PrettyProtocol {
     /// Copies data from `self` to write the protocol-specific header and payload into `buf`.
     ///

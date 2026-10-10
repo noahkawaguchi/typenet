@@ -17,7 +17,8 @@ use {
     typenet_utils::error::{TraceableError, TraceableResult},
 };
 
-/// A pretty-printable IPv4 header and protocol-specific header/payload.
+/// A pretty-printable IPv4 header and protocol-specific header/payload for a packet flowing in
+/// direction `D`.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub struct Ipv4Packet<'a, D: Direction> {
     ipv4_hdr: Ipv4Header<D>,
