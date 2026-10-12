@@ -321,15 +321,12 @@ impl<T: SendSideOpen> SyncedState<T> {
         const MAX_PAYLOAD_LEN: usize =
             ETHERNET_MTU - Ipv4Header::REPLY_HDR_LEN - TCP_HDR_MIN_LEN as usize;
 
-        let sent_but_not_acked = conn
-            .snd_nxt
-            .offset_past(conn.snd_una)
-            .ok_or("`drain_transmittable` called with SND.UNA not preceding or equaling SND.NXT")?;
+        let sent_but_not_acked = usize::try_from(conn.snd_nxt - conn.snd_una)?;
 
-        let space_in_window = SeqOffset::<u32, Out>::from(self.window_state.snd_wnd)
-            .saturating_sub(sent_but_not_acked);
+        let space_in_window =
+            usize::from(self.window_state.snd_wnd).saturating_sub(sent_but_not_acked);
 
-        let bytes_to_send = usize::try_from(space_in_window)?
+        let bytes_to_send = space_in_window
             .min(conn.send_buffer.len())
             .min(MAX_PAYLOAD_LEN);
 

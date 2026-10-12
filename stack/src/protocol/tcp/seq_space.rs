@@ -4,7 +4,7 @@ use {
         fmt,
         marker::PhantomData,
         num::{NonZeroU16, Wrapping},
-        ops::{Add, AddAssign},
+        ops::{Add, AddAssign, Sub},
     },
 };
 
@@ -45,14 +45,6 @@ impl<D> SeqPoint<D> {
         self == other || self.precedes(other)
     }
 
-    /// Returns the unsigned offset from `rhs` to `self`, or `None` if the offset would be negative,
-    /// i.e. `rhs` does not precede or equal `self` in TCP sequence-number space (RFC 9293, Section
-    /// 3.4).
-    pub(super) fn offset_past(self, rhs: Self) -> Option<SeqOffset<u32, D>> {
-        rhs.precedes_or_eq(self)
-            .then(|| SeqOffset { wrapping: self.wrapping - rhs.wrapping, phantom: PhantomData })
-    }
-
     /// Returns whether `self` falls within the window starting at `wnd_start` (inclusive) and
     /// ending `wnd_len` sequence numbers later (exclusive), accounting for wraparound (RFC 9293,
     /// Section 3.4).
@@ -73,14 +65,24 @@ impl<D> AddAssign<SeqOffset<u32, D>> for SeqPoint<D> {
     fn add_assign(&mut self, rhs: SeqOffset<u32, D>) { *self = *self + rhs; }
 }
 
+impl<D> Sub for SeqPoint<D> {
+    type Output = SeqOffset<i32, D>;
+
+    /// Signed offset of `self` past `rhs` in TCP sequence-number space. In other words, negative if
+    /// `self` precedes `rhs`, non-negative otherwise.
+    fn sub(self, rhs: Self) -> Self::Output {
+        SeqOffset::new((self.wrapping - rhs.wrapping).0.cast_signed())
+    }
+}
+
 impl<D> fmt::Display for ThousandsSeparated<SeqPoint<D>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         ThousandsSeparated(self.0.wrapping.0).fmt(f)
     }
 }
 
-/// An offset between two points in TCP sequence number space that are both from the stream
-/// flowing in direction `D`.
+/// An offset between two points in TCP sequence number space that are both from the stream flowing
+/// in direction `D`.
 #[derive(Default, PartialEq, Eq)]
 #[cfg_attr(any(test, feature = "test-utils"), derive(Debug))]
 pub(super) struct SeqOffset<T, D> {
@@ -116,22 +118,14 @@ impl<D> SeqOffset<u16, D> {
     pub(super) const fn to_be_bytes(self) -> [u8; 2] { self.wrapping.0.to_be_bytes() }
 }
 
-impl<D> SeqOffset<u32, D> {
-    pub(super) const fn saturating_sub(self, rhs: Self) -> Self {
-        Self {
-            wrapping: Wrapping(self.wrapping.0.saturating_sub(rhs.wrapping.0)),
-            phantom: PhantomData,
-        }
-    }
+impl<D> From<SeqOffset<u16, D>> for usize {
+    fn from(value: SeqOffset<u16, D>) -> Self { Self::from(value.wrapping.0) }
 }
 
-impl<T, D> TryFrom<SeqOffset<T, D>> for usize
-where
-    Self: TryFrom<T>,
-{
-    type Error = <Self as TryFrom<T>>::Error;
+impl<D> TryFrom<SeqOffset<i32, D>> for usize {
+    type Error = <Self as TryFrom<i32>>::Error;
 
-    fn try_from(value: SeqOffset<T, D>) -> Result<Self, Self::Error> {
+    fn try_from(value: SeqOffset<i32, D>) -> Result<Self, Self::Error> {
         Self::try_from(value.wrapping.0)
     }
 }
@@ -169,7 +163,7 @@ mod test_impls {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::direction::Out, std::ops::Sub};
+    use {super::*, crate::direction::Out};
 
     impl<D> SeqPoint<D> {
         /// `self - rhs` with wrapping, but const. This should be removed once const traits are
@@ -278,22 +272,53 @@ mod tests {
         }
     }
 
-    mod offset_past {
+    mod subtraction {
         use {super::*, pretty_assertions::assert_eq};
 
         #[test]
-        fn computes_offset_when_rhs_precedes_or_equals_self() {
-            for [later, earlier, expected] in [[140, 100, 40], [0, u32::MAX, 1], [42, 42, 0]] {
+        fn zero_when_rhs_equals_self() {
+            for primitive in [0, 42, u32::MAX] {
                 assert_eq!(
-                    SeqPoint::<Out>::new(later).offset_past(SeqPoint::new(earlier)),
-                    Some(SeqOffset::new(expected))
+                    SeqPoint::<Out>::new(primitive) - SeqPoint::new(primitive),
+                    SeqOffset::new(0)
                 );
             }
         }
 
         #[test]
-        fn returns_none_when_rhs_does_not_precede_or_equal_self() {
-            assert_eq!(SeqPoint::<Out>::new(100).offset_past(SeqPoint::new(140)), None);
+        fn i32_min_for_antipodes() {
+            for [a, b] in [[0, 1 << 31], [42, (1 << 31) + 42], [u32::MAX, (1 << 31) - 1]]
+                .map(|primitives| primitives.map(SeqPoint::new))
+            {
+                const MIN: SeqOffset<i32, Out> = SeqOffset::new(i32::MIN);
+
+                assert_eq!(a - b, MIN);
+                assert_eq!(b - a, MIN);
+            }
+        }
+
+        #[test]
+        fn positive_when_rhs_precedes_self() {
+            for (later, earlier, expected) in
+                [(140, 100, 40), (0, u32::MAX, 1), (1 << 31, 42, (1i32 << 31).wrapping_sub(42))]
+            {
+                assert_eq!(
+                    SeqPoint::<Out>::new(later) - SeqPoint::new(earlier),
+                    SeqOffset::new(expected)
+                );
+            }
+        }
+
+        #[test]
+        fn negative_when_self_precedes_rhs() {
+            for (earlier, later, expected) in
+                [(100, 140, -40), (u32::MAX, 0, -1), (42, 1 << 31, 42i32.wrapping_sub(1 << 31))]
+            {
+                assert_eq!(
+                    SeqPoint::<Out>::new(earlier) - SeqPoint::new(later),
+                    SeqOffset::new(expected)
+                );
+            }
         }
     }
 
