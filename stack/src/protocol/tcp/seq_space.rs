@@ -8,73 +8,6 @@ use {
     },
 };
 
-/// An offset between two points in TCP sequence number space that are both from the stream
-/// flowing in direction `D`.
-#[derive(Default, PartialEq, Eq)]
-#[cfg_attr(any(test, feature = "test-utils"), derive(Debug))]
-pub(super) struct SeqOffset<T, D> {
-    wrapping: Wrapping<T>,
-    phantom: PhantomData<D>,
-}
-
-impl<T: Copy, D> Clone for SeqOffset<T, D> {
-    fn clone(&self) -> Self { *self }
-}
-
-impl<T: Copy, D> Copy for SeqOffset<T, D> {}
-
-impl<T, D> SeqOffset<T, D> {
-    pub(super) const fn new(primitive: T) -> Self {
-        Self { wrapping: Wrapping(primitive), phantom: PhantomData }
-    }
-}
-
-impl<D> From<SeqOffset<u16, D>> for SeqOffset<u32, D> {
-    fn from(value: SeqOffset<u16, D>) -> Self {
-        Self { wrapping: Wrapping(value.wrapping.0.into()), phantom: PhantomData }
-    }
-}
-
-impl<T: From<u16>, D> From<NonZeroU16> for SeqOffset<T, D> {
-    fn from(value: NonZeroU16) -> Self {
-        Self { wrapping: Wrapping(value.get().into()), phantom: PhantomData }
-    }
-}
-
-impl<D> SeqOffset<u16, D> {
-    pub(super) const fn to_be_bytes(self) -> [u8; 2] { self.wrapping.0.to_be_bytes() }
-}
-
-impl<D> SeqOffset<u32, D> {
-    pub(super) const fn saturating_sub(self, rhs: Self) -> Self {
-        Self {
-            wrapping: Wrapping(self.wrapping.0.saturating_sub(rhs.wrapping.0)),
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<T, D> TryFrom<SeqOffset<T, D>> for usize
-where
-    Self: TryFrom<T>,
-{
-    type Error = <Self as TryFrom<T>>::Error;
-
-    fn try_from(value: SeqOffset<T, D>) -> Result<Self, Self::Error> {
-        Self::try_from(value.wrapping.0)
-    }
-}
-
-impl<T, D> fmt::Display for ThousandsSeparated<SeqOffset<T, D>>
-where
-    T: Copy,
-    ThousandsSeparated<T>: fmt::Display,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        ThousandsSeparated(self.0.wrapping.0).fmt(f)
-    }
-}
-
 /// A specific point in TCP sequence number space from the stream flowing in direction `D`.
 #[derive(Eq)]
 #[cfg_attr(any(test, feature = "test-utils"), derive(Debug))]
@@ -146,9 +79,84 @@ impl<D> fmt::Display for ThousandsSeparated<SeqPoint<D>> {
     }
 }
 
+/// An offset between two points in TCP sequence number space that are both from the stream
+/// flowing in direction `D`.
+#[derive(Default, PartialEq, Eq)]
+#[cfg_attr(any(test, feature = "test-utils"), derive(Debug))]
+pub(super) struct SeqOffset<T, D> {
+    wrapping: Wrapping<T>,
+    phantom: PhantomData<D>,
+}
+
+impl<T: Copy, D> Clone for SeqOffset<T, D> {
+    fn clone(&self) -> Self { *self }
+}
+
+impl<T: Copy, D> Copy for SeqOffset<T, D> {}
+
+impl<T, D> SeqOffset<T, D> {
+    pub(super) const fn new(primitive: T) -> Self {
+        Self { wrapping: Wrapping(primitive), phantom: PhantomData }
+    }
+}
+
+impl<D> From<SeqOffset<u16, D>> for SeqOffset<u32, D> {
+    fn from(value: SeqOffset<u16, D>) -> Self {
+        Self { wrapping: Wrapping(value.wrapping.0.into()), phantom: PhantomData }
+    }
+}
+
+impl<T: From<u16>, D> From<NonZeroU16> for SeqOffset<T, D> {
+    fn from(value: NonZeroU16) -> Self {
+        Self { wrapping: Wrapping(value.get().into()), phantom: PhantomData }
+    }
+}
+
+impl<D> SeqOffset<u16, D> {
+    pub(super) const fn to_be_bytes(self) -> [u8; 2] { self.wrapping.0.to_be_bytes() }
+}
+
+impl<D> SeqOffset<u32, D> {
+    pub(super) const fn saturating_sub(self, rhs: Self) -> Self {
+        Self {
+            wrapping: Wrapping(self.wrapping.0.saturating_sub(rhs.wrapping.0)),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T, D> TryFrom<SeqOffset<T, D>> for usize
+where
+    Self: TryFrom<T>,
+{
+    type Error = <Self as TryFrom<T>>::Error;
+
+    fn try_from(value: SeqOffset<T, D>) -> Result<Self, Self::Error> {
+        Self::try_from(value.wrapping.0)
+    }
+}
+
+impl<T, D> fmt::Display for ThousandsSeparated<SeqOffset<T, D>>
+where
+    T: Copy,
+    ThousandsSeparated<T>: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        ThousandsSeparated(self.0.wrapping.0).fmt(f)
+    }
+}
+
 #[cfg(any(test, feature = "test-utils"))]
 mod test_impls {
     use super::*;
+
+    impl<D> SeqPoint<D> {
+        /// `self + rhs` with wrapping, but const. This should be removed once const traits are
+        /// stabilized.
+        pub(in super::super) const fn const_add(self, rhs: SeqOffset<u32, D>) -> Self {
+            Self::new(self.wrapping.0.wrapping_add(rhs.wrapping.0))
+        }
+    }
 
     impl<D> SeqOffset<u32, D> {
         /// `self + rhs` with wrapping, but const. This should be removed once const traits are
@@ -157,26 +165,11 @@ mod test_impls {
             Self::new(self.wrapping.0.wrapping_add(rhs.wrapping.0))
         }
     }
-    impl<D> SeqPoint<D> {
-        /// `self + rhs` with wrapping, but const. This should be removed once const traits are
-        /// stabilized.
-        pub(in super::super) const fn const_add(self, rhs: SeqOffset<u32, D>) -> Self {
-            Self::new(self.wrapping.0.wrapping_add(rhs.wrapping.0))
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use {super::*, crate::direction::Out, std::ops::Sub};
-
-    impl<D> Add for SeqOffset<u32, D> {
-        type Output = Self;
-
-        fn add(self, rhs: Self) -> Self::Output {
-            Self { wrapping: self.wrapping + rhs.wrapping, phantom: PhantomData }
-        }
-    }
 
     impl<D> SeqPoint<D> {
         /// `self - rhs` with wrapping, but const. This should be removed once const traits are
@@ -191,6 +184,14 @@ mod tests {
 
         fn sub(self, rhs: SeqOffset<u32, D>) -> Self::Output {
             Self { wrapping: self.wrapping - rhs.wrapping, phantom: PhantomData }
+        }
+    }
+
+    impl<D> Add for SeqOffset<u32, D> {
+        type Output = Self;
+
+        fn add(self, rhs: Self) -> Self::Output {
+            Self { wrapping: self.wrapping + rhs.wrapping, phantom: PhantomData }
         }
     }
 
