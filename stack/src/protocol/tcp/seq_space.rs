@@ -35,9 +35,7 @@ impl<D> SeqPoint<D> {
 
     /// Returns whether `self` precedes `other` in TCP sequence-number space, accounting for
     /// wraparound (RFC 9293, Section 3.4). Not transitive.
-    pub(super) fn precedes(self, other: Self) -> bool {
-        self.wrapping - other.wrapping >= Wrapping(1 << 31)
-    }
+    pub(super) fn precedes(self, other: Self) -> bool { (self - other).wrapping.0 < 0 }
 
     /// Returns whether `self` precedes or equals `other` in TCP sequence-number space, accounting
     /// for wraparound (RFC 9293, Section 3.4). Not transitive.
