@@ -1,9 +1,9 @@
 use {
     crate::{
         application::Application,
-        endpoint::{Local, Remote},
+        direction::{In, Out},
         protocol::tcp::{
-            LOCAL_FIN_BYTE, REMOTE_FIN_BYTE, REMOTE_SYN_BYTE, TcpSegment,
+            FIN_BYTE_IN, FIN_BYTE_OUT, SYN_BYTE_IN, TcpSegment,
             connections::{ConnKey, TcpConnections},
             flags::TcpFlags,
             payload::{LenOrDefault as _, TcpPayload},
@@ -23,8 +23,8 @@ use {
 #[derive(Clone)]
 #[cfg_attr(test, derive(Debug))]
 pub(super) struct SendInfo {
-    pub(super) seq_num: SeqPoint<Local>,
-    pub(super) ack_num: SeqPoint<Remote>,
+    pub(super) seq_num: SeqPoint<Out>,
+    pub(super) ack_num: SeqPoint<In>,
     pub(super) flags: TcpFlags,
     pub(super) payload: Option<TcpPayload>,
 }
@@ -42,12 +42,12 @@ enum SeqCheck {
 impl SeqCheck {
     /// Determines whether SEG.SEQ falls exactly at RCV.NXT, within RCV.WND but out of order, or
     /// outside RCV.WND.
-    fn check(seg: &TcpSegment<Remote>, conn: &ConnState) -> Self {
+    fn check(seg: &TcpSegment<In>, conn: &ConnState) -> Self {
         if seg.seq_num == conn.rcv_nxt {
             Self::InOrder
         } else if seg
             .seq_num
-            .in_window(conn.rcv_nxt, TcpSegment::<Local>::RCV_WND.into())
+            .in_window(conn.rcv_nxt, TcpSegment::<Out>::RCV_WND.into())
         {
             Self::OutOfOrder
         } else {
@@ -63,7 +63,7 @@ impl SendInfo {
     }
 
     /// Creates a RST with its SEG.SEQ set to `seg.ack_num`.
-    const fn rst(seg: &TcpSegment<Remote>) -> Self {
+    const fn rst(seg: &TcpSegment<In>) -> Self {
         Self {
             seq_num: seg.ack_num,
             // ack_num is 0 because sending bare RST with no ACK flag leaves SEG.ACK undefined
@@ -77,7 +77,7 @@ impl SendInfo {
     /// reply, updating `connections` accordingly.
     pub(super) fn decide_reply(
         app: &mut impl Application,
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         connections: &mut TcpConnections,
     ) -> TraceableResult<Option<Self>> {
         let key = ConnKey {
@@ -102,7 +102,7 @@ impl SendInfo {
     }
 
     fn handle_unknown_conn(
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         connections: &mut TcpConnections,
         key: ConnKey,
     ) -> TraceableResult<Option<Self>> {
@@ -111,7 +111,7 @@ impl SendInfo {
             TcpFlags::Syn => {
                 let send_info = Self {
                     seq_num: SeqPoint::new(sys::random_u32()?),
-                    ack_num: seg.seq_num + REMOTE_SYN_BYTE,
+                    ack_num: seg.seq_num + SYN_BYTE_IN,
                     flags: TcpFlags::SynAck,
                     payload: None,
                 };
@@ -135,7 +135,7 @@ impl SendInfo {
     /// necessary and a `bool` representing whether the connection should be removed.
     fn handle_known_conn(
         app: &mut impl Application,
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
     ) -> TraceableResult<(Option<Self>, bool)> {
         Ok(match conn.tcp_state {
@@ -155,10 +155,7 @@ impl SendInfo {
 
     /// Common fallback cases among known connections.
     #[expect(clippy::match_same_arms, reason = "Clearly express various challenge ACK scenarios")]
-    fn known_conn_common_fallback(
-        seg: &TcpSegment<Remote>,
-        conn: &ConnState,
-    ) -> (Option<Self>, bool) {
+    fn known_conn_common_fallback(seg: &TcpSegment<In>, conn: &ConnState) -> (Option<Self>, bool) {
         let challenge_ack = (Some(Self::pure_ack(conn)), false);
 
         match (seg.flags, SeqCheck::check(seg, conn)) {
@@ -199,7 +196,7 @@ impl SendInfo {
     /// reply if necessary and a `bool` representing whether the connection should be removed.
     fn handle_syn_rcv(
         app: &mut impl Application,
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         syn_received: SynReceived,
     ) -> TraceableResult<(Option<Self>, bool)> {
@@ -213,7 +210,7 @@ impl SendInfo {
             (TcpFlags::Syn, ..) => {
                 let send_info = Self {
                     seq_num: conn.snd_una, // ISN
-                    ack_num: seg.seq_num + REMOTE_SYN_BYTE,
+                    ack_num: seg.seq_num + SYN_BYTE_IN,
                     flags: TcpFlags::SynAck,
                     payload: None,
                 };
@@ -243,7 +240,7 @@ impl SendInfo {
 
                 (
                     if conn.reassembly.fin_reached(conn.rcv_nxt) {
-                        conn.rcv_nxt += REMOTE_FIN_BYTE;
+                        conn.rcv_nxt += FIN_BYTE_IN;
                         Some(Self::close_wait_or_last_ack(conn, established.rcv_fin())?)
                     } else if !conn.send_buffer.is_empty() {
                         Some(match established.drain_transmittable(conn)? {
@@ -300,7 +297,7 @@ impl SendInfo {
     /// Completes the initial three-way handshake, updating the state of `conn` and returning a copy
     /// of the inner struct that was placed inside `conn.tcp_state`.
     fn complete_handshake(
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         syn_received: SynReceived,
     ) -> SyncedState<Established> {
@@ -317,7 +314,7 @@ impl SendInfo {
     /// reply if necessary and a `bool` representing whether the connection should be removed.
     fn handle_established(
         app: &mut impl Application,
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         established: SyncedState<Established>,
     ) -> TraceableResult<(Option<Self>, bool)> {
@@ -363,7 +360,7 @@ impl SendInfo {
 
                 (
                     Some(if conn.reassembly.fin_reached(conn.rcv_nxt) {
-                        conn.rcv_nxt += REMOTE_FIN_BYTE;
+                        conn.rcv_nxt += FIN_BYTE_IN;
                         Self::close_wait_or_last_ack(conn, new_established.rcv_fin())?
                     } else {
                         match new_established.drain_transmittable(conn)? {
@@ -440,7 +437,7 @@ impl SendInfo {
     /// depending on whether all buffered data can be sent.
     fn close_on_in_order_fin(
         app: &mut impl Application,
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         maybe_payload: Option<&TcpPayload>,
         old_established: SyncedState<Established>,
@@ -450,7 +447,7 @@ impl SendInfo {
             app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
         }
 
-        conn.rcv_nxt += REMOTE_FIN_BYTE;
+        conn.rcv_nxt += FIN_BYTE_IN;
 
         let new_established = old_established.incoming_ack_update(conn, seg);
         Self::close_wait_or_last_ack(conn, new_established.rcv_fin())
@@ -479,7 +476,7 @@ impl SendInfo {
             };
 
             conn.snd_nxt += send_len;
-            conn.snd_nxt += LOCAL_FIN_BYTE;
+            conn.snd_nxt += FIN_BYTE_OUT;
 
             conn.pending
                 .push(PendingSegment::new(send_info.clone(), Instant::now()));
@@ -498,7 +495,7 @@ impl SendInfo {
     /// Handles the reply decision and state updates for a FIN-WAIT-1 connection, returning a reply
     /// if necessary and a `bool` representing whether the connection should be removed.
     fn handle_fin_wait_1(
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         fin_wait_1: SyncedState<FinWait1>,
     ) -> (Option<Self>, bool) {
@@ -538,7 +535,7 @@ impl SendInfo {
             // arriving in FIN-WAIT-1), but RCV.NXT must still advance past it.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder, true) => {
                 conn.rcv_nxt += maybe_payload.len_or_default();
-                conn.rcv_nxt += REMOTE_FIN_BYTE;
+                conn.rcv_nxt += FIN_BYTE_IN;
                 (Some(Self::pure_ack(conn)), true)
             }
 
@@ -550,7 +547,7 @@ impl SendInfo {
             // arriving in FIN-WAIT-1), but RCV.NXT must still advance past it.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder, false) => {
                 conn.rcv_nxt += maybe_payload.len_or_default();
-                conn.rcv_nxt += REMOTE_FIN_BYTE;
+                conn.rcv_nxt += FIN_BYTE_IN;
                 let send_info = Self::pure_ack(conn);
 
                 conn.tcp_state = TcpState::Closing(
@@ -569,7 +566,7 @@ impl SendInfo {
     /// Handles the reply decision and state updates for a FIN-WAIT-2 connection, returning a reply
     /// if necessary and a `bool` representing whether the connection should be removed.
     fn handle_fin_wait_2(
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         fin_wait_2: SyncedState<FinWait2>,
     ) -> (Option<Self>, bool) {
@@ -597,7 +594,7 @@ impl SendInfo {
             // reflect RCV.NXT advanced past it as well as the FIN.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder) => {
                 conn.rcv_nxt += maybe_payload.len_or_default();
-                conn.rcv_nxt += REMOTE_FIN_BYTE;
+                conn.rcv_nxt += FIN_BYTE_IN;
                 (Some(Self::pure_ack(conn)), true)
             }
 
@@ -608,7 +605,7 @@ impl SendInfo {
     /// Handles the reply decision and state updates for a CLOSE-WAIT connection, returning a reply
     /// if necessary and a `bool` representing whether the connection should be removed.
     fn handle_close_wait(
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         close_wait: SyncedState<CloseWait>,
     ) -> TraceableResult<(Option<Self>, bool)> {
@@ -627,7 +624,7 @@ impl SendInfo {
     /// Handles the reply decision and state updates for a CLOSING connection, returning a reply if
     /// necessary and a `bool` representing whether the connection should be removed.
     fn handle_closing(
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         closing: SyncedState<Closing>,
     ) -> (Option<Self>, bool) {
@@ -651,7 +648,7 @@ impl SendInfo {
     /// Handles the reply decision and state updates for a LAST-ACK connection, returning a reply if
     /// necessary and a `bool` representing whether the connection should be removed.
     fn handle_last_ack(
-        seg: &TcpSegment<Remote>,
+        seg: &TcpSegment<In>,
         conn: &mut ConnState,
         last_ack: SyncedState<LastAck>,
     ) -> (Option<Self>, bool) {

@@ -14,7 +14,7 @@ fn creates_valid_syn_ack() -> TraceableResult {
         reply,
         Some(TcpSegment {
             seq_num: stored_isn,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             flags: TcpFlags::SynAck,
             ..SERVER_REPLY
         })
@@ -39,7 +39,7 @@ fn duplicate_syn_during_syn_received_resends_same_syn_ack() -> TraceableResult {
         reply,
         Some(TcpSegment {
             seq_num: SERVER_ISN,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             flags: TcpFlags::SynAck,
             ..SERVER_REPLY
         }),
@@ -63,8 +63,8 @@ fn handshake_ack_without_data_establishes_connection_and_returns_none() -> Trace
     let mut cloned_state = connections.try_get()?.clone();
 
     let handshake_ack = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         ..CLIENT_PKT
     };
 
@@ -74,8 +74,8 @@ fn handshake_ack_without_data_establishes_connection_and_returns_none() -> Trace
     let window_state =
         WindowState::test_new(handshake_ack.window, handshake_ack.seq_num, handshake_ack.ack_num);
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(window_state));
-    cloned_state.rcv_nxt = CLIENT_ISN + REMOTE_SYN_BYTE;
-    cloned_state.snd_una += LOCAL_SYN_BYTE;
+    cloned_state.rcv_nxt = CLIENT_ISN + SYN_BYTE_IN;
+    cloned_state.snd_una += SYN_BYTE_OUT;
 
     assert_eq!(connections.try_get()?, &cloned_state);
 
@@ -91,8 +91,8 @@ fn handshake_ack_with_data_establishes_and_echoes() -> TraceableResult {
     let mut cloned_state = connections.try_get()?.clone();
 
     let handshake_ack_with_data = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     };
@@ -100,8 +100,8 @@ fn handshake_ack_with_data_establishes_and_echoes() -> TraceableResult {
     assert_eq!(
         handshake_ack_with_data.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
@@ -114,9 +114,9 @@ fn handshake_ack_with_data_establishes_and_echoes() -> TraceableResult {
         handshake_ack_with_data.ack_num,
     );
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(window_state));
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN;
-    cloned_state.snd_una += LOCAL_SYN_BYTE;
+    cloned_state.rcv_nxt += HELLO_LEN_IN;
+    cloned_state.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.snd_una += SYN_BYTE_OUT;
 
     assert_eq!(connections.try_get()?, &cloned_state);
 
@@ -136,16 +136,16 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
 
     // Correct ack_num, but seq_num doesn't match RCV.NXT = CLIENT_ISN + SYN_BYTE
     let out_of_order = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + SeqOffset::new(1),
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         ..CLIENT_PKT
     };
 
     assert_eq!(
         out_of_order.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "Reply should still reflect RCV.NXT unchanged, since nothing was delivered"
@@ -156,7 +156,7 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
         out_of_order.seq_num,
         out_of_order.ack_num,
     )));
-    cloned_state.snd_una += LOCAL_SYN_BYTE;
+    cloned_state.snd_una += SYN_BYTE_OUT;
 
     assert_eq!(
         connections.try_get()?,
@@ -175,8 +175,8 @@ fn acceptable_seq_but_unacceptable_ack_in_syn_rcv_gets_rst() -> TraceableResult 
     // unacceptable, that means a RST, not a mere current state ACK.
 
     for client_seq in [
-        CLIENT_ISN + REMOTE_SYN_BYTE, // Exact RCV.NXT in order
-        CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1), // Doesn't match RCV.NXT but in window
+        CLIENT_ISN + SYN_BYTE_IN,                     // Exact RCV.NXT in order
+        CLIENT_ISN + SYN_BYTE_IN + SeqOffset::new(1), // Doesn't match RCV.NXT but in window
     ] {
         let mut connections = TcpConnections::default().with_syn_rcv();
         let initial_state = connections.try_get()?.clone();
@@ -209,8 +209,8 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
 
     // Correct ack_num, but seq_num doesn't match RCV.NXT = CLIENT_ISN + SYN_BYTE
     let out_of_order = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + SeqOffset::new(1),
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         flags: TcpFlags::FinAck,
         ..CLIENT_PKT
     };
@@ -218,8 +218,8 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
     assert_eq!(
         out_of_order.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "Reply should still reflect RCV.NXT unchanged, since the FIN can't be processed yet"
@@ -230,7 +230,7 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
         out_of_order.seq_num,
         out_of_order.ack_num,
     )));
-    cloned_state.snd_una += LOCAL_SYN_BYTE;
+    cloned_state.snd_una += SYN_BYTE_OUT;
     cloned_state.reassembly.mark_fin(out_of_order.seq_num);
 
     assert_eq!(
@@ -255,8 +255,8 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
 
     // Correct ack_num, but seq_num doesn't match RCV.NXT = CLIENT_ISN + SYN_BYTE
     let out_of_order = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(1),
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + SeqOffset::new(1),
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     };
@@ -264,8 +264,8 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
     assert_eq!(
         out_of_order.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "Reply should still reflect RCV.NXT unchanged since there is a hole in the data"
@@ -276,7 +276,7 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
         out_of_order.seq_num,
         out_of_order.ack_num,
     )));
-    cloned_state.snd_una += LOCAL_SYN_BYTE;
+    cloned_state.snd_una += SYN_BYTE_OUT;
     cloned_state.reassembly.insert(
         out_of_order.seq_num,
         out_of_order
@@ -305,8 +305,8 @@ fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Traceabl
     let mut connections = TcpConnections::default().with_syn_rcv();
 
     let hi_reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     }
@@ -315,8 +315,8 @@ fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Traceabl
     assert_eq!(
         hi_reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "Out-of-order handshake-completing ACK should get a duplicate ACK, not an echo, since \
@@ -324,8 +324,8 @@ fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Traceabl
     );
 
     let hello_reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
@@ -334,8 +334,8 @@ fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Traceabl
     assert_eq!(
         hello_reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
             payload: TcpPayload::from_test_str("HelloHi")?,
             ..SERVER_REPLY
         }),

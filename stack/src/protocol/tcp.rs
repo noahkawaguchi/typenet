@@ -20,8 +20,8 @@ use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
         application::Application,
+        direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
-        endpoint::{Endpoint, Local, Remote},
         protocol::{
             Encode, Protocol, pseudo_hdr_cksum,
             tcp::{
@@ -42,39 +42,39 @@ use {
 /// The minimum number of bytes in a TCP header (no options).
 const TCP_HDR_MIN_LEN: u8 = 20;
 
-/// The single phantom byte consumed by SYN in the stream going in the local to remote direction.
-const LOCAL_SYN_BYTE: SeqOffset<u32, Local> = SeqOffset::new(1);
+/// The single phantom byte consumed by SYN in the outgoing stream.
+const SYN_BYTE_OUT: SeqOffset<u32, Out> = SeqOffset::new(1);
 
-/// The single phantom byte consumed by FIN in the stream going in the local to remote direction.
-const LOCAL_FIN_BYTE: SeqOffset<u32, Local> = SeqOffset::new(1);
+/// The single phantom byte consumed by FIN in the outgoing stream.
+const FIN_BYTE_OUT: SeqOffset<u32, Out> = SeqOffset::new(1);
 
-/// The single phantom byte consumed by SYN in the stream going in the remote to local direction.
-const REMOTE_SYN_BYTE: SeqOffset<u32, Remote> = SeqOffset::new(1);
+/// The single phantom byte consumed by SYN in the incoming stream.
+const SYN_BYTE_IN: SeqOffset<u32, In> = SeqOffset::new(1);
 
-/// The single phantom byte consumed by FIN in the stream going in the remote to local direction.
-const REMOTE_FIN_BYTE: SeqOffset<u32, Remote> = SeqOffset::new(1);
+/// The single phantom byte consumed by FIN in the incoming stream.
+const FIN_BYTE_IN: SeqOffset<u32, In> = SeqOffset::new(1);
 
 /// Manages TCP headers, data, and reply logic.
 ///
-/// Field definitions below from RFC 9293, Section 3.1. Endpoint `S` is the sender (values based on
-/// the sender's ISN), while endpoint `S::Peer` is the receiver (values based on the receiver's
-/// ISN).
+/// Field definitions below from RFC 9293, Section 3.1. The segment flows in direction `D`, so
+/// fields parameterized by `D` are based on the sender's ISN, while fields parameterized by
+/// `D::Rev` are based on the receiver's ISN.
 #[cfg_attr(any(test, feature = "test-utils"), derive(Debug, PartialEq, Eq, Clone))]
-pub struct TcpSegment<S: Endpoint> {
+pub struct TcpSegment<D: Direction> {
     /// Not a part of the TCP header, but required for connection state and checksum calculation.
-    ip_pair: Ipv4AddrPair<S>,
+    ip_pair: Ipv4AddrPair<D>,
 
-    ports: PortPair<S>,
+    ports: PortPair<D>,
 
     /// "The sequence number of the first data octet in this segment (except when the SYN flag is
     /// set). If SYN is set, the sequence number is the initial sequence number (ISN) and the first
     /// data octet is ISN+1."
-    seq_num: SeqPoint<S>,
+    seq_num: SeqPoint<D>,
 
     /// "If the ACK control bit is set, this field contains the value of the next sequence number
     /// the sender of the segment is expecting to receive. Once a connection is established, this
     /// is always sent."
-    ack_num: SeqPoint<S::Peer>,
+    ack_num: SeqPoint<D::Rev>,
 
     /// **This field is stored in units of bytes.**
     ///
@@ -86,14 +86,14 @@ pub struct TcpSegment<S: Endpoint> {
 
     /// "The number of data octets beginning with the one indicated in the acknowledgment field
     /// that the sender of this segment is willing to accept."
-    window: SeqOffset<u16, S::Peer>,
+    window: SeqOffset<u16, D::Rev>,
 
     payload: Option<TcpPayload>,
 }
 
-impl TcpSegment<Remote> {
-    /// Parses `data` as a TCP header and payload in the remote to local direction.
-    pub(crate) fn parse(data: &[u8], ip_pair: Ipv4AddrPair<Remote>) -> TraceableResult<Self> {
+impl TcpSegment<In> {
+    /// Parses `data` as an incoming TCP header and payload.
+    pub(crate) fn parse(data: &[u8], ip_pair: Ipv4AddrPair<In>) -> TraceableResult<Self> {
         Self::inner_parse(data, ip_pair)
     }
 
@@ -103,10 +103,10 @@ impl TcpSegment<Remote> {
         &self,
         app: &mut impl Application,
         connections: &mut TcpConnections,
-    ) -> TraceableResult<Option<TcpSegment<Local>>> {
+    ) -> TraceableResult<Option<TcpSegment<Out>>> {
         SendInfo::decide_reply(app, self, connections).map(|maybe_send_info| {
             maybe_send_info.map(|send_info| {
-                TcpSegment::<Local>::from_pairs_and_info(
+                TcpSegment::<Out>::from_pairs_and_info(
                     self.ip_pair.swapped(),
                     self.ports.swapped(),
                     send_info,
@@ -120,14 +120,14 @@ impl TcpSegment<Remote> {
     fn create_test_reply(
         &self,
         connections: &mut TcpConnections,
-    ) -> TraceableResult<Option<TcpSegment<Local>>> {
+    ) -> TraceableResult<Option<TcpSegment<Out>>> {
         use crate::application::TestApp;
 
         self.create_reply(&mut TestApp, connections)
     }
 }
 
-impl TcpSegment<Local> {
+impl TcpSegment<Out> {
     /// "This represents the sequence numbers the local (receiving) TCP endpoint is willing to
     /// receive... segments overlapping the range RCV.NXT to RCV.NXT + RCV.WND - 1 carry acceptable
     /// data or control" (RFC 9293, Section 4).
@@ -137,11 +137,11 @@ impl TcpSegment<Local> {
     /// bound the growth of the reassembly and send buffers, for example throttling the peer's
     /// sending rate if they keep sending more data than they are willing to receive in an echo
     /// application.
-    const RCV_WND: SeqOffset<u16, Remote> = SeqOffset::new(u16::MAX);
+    const RCV_WND: SeqOffset<u16, In> = SeqOffset::new(u16::MAX);
 
     fn from_pairs_and_info(
-        ip_pair: Ipv4AddrPair<Local>,
-        ports: PortPair<Local>,
+        ip_pair: Ipv4AddrPair<Out>,
+        ports: PortPair<Out>,
         SendInfo { seq_num, ack_num, flags, payload }: SendInfo,
     ) -> Self {
         Self {
@@ -157,18 +157,18 @@ impl TcpSegment<Local> {
     }
 }
 
-impl Encode<Local> for TcpSegment<Local> {
+impl Encode<Out> for TcpSegment<Out> {
     fn write_into(&self, buf: &mut [u8]) -> TraceableResult { self.inner_write_into(buf) }
     fn proto(&self) -> Protocol { Protocol::Tcp }
-    fn get_ip_pair(&self) -> Ipv4AddrPair<Local> { self.ip_pair }
+    fn get_ip_pair(&self) -> Ipv4AddrPair<Out> { self.ip_pair }
     fn proto_len(&self) -> TraceableResult<u16> { self.inner_proto_len() }
 }
 
-impl<S: Endpoint> TcpSegment<S> {
-    /// Parses `data` as a TCP header and payload, which could be local to remote or remote to
-    /// local. The local to remote direction is for tests only. Only the remote to local direction
-    /// should be exposed in production code.
-    fn inner_parse(data: &[u8], ip_pair: Ipv4AddrPair<S>) -> TraceableResult<Self> {
+impl<D: Direction> TcpSegment<D> {
+    /// Parses `data` as a TCP header and payload, which could be incoming or outgoing.
+    ///
+    /// Outgoing is for tests only. Only incoming should be exposed in production code.
+    fn inner_parse(data: &[u8], ip_pair: Ipv4AddrPair<D>) -> TraceableResult<Self> {
         let tcp_hdr = data
             .first_chunk::<{ TCP_HDR_MIN_LEN as usize }>()
             .ok_or_else(|| format!("Too short for TCP header ({} bytes)", data.len()))?;
@@ -208,10 +208,9 @@ impl<S: Endpoint> TcpSegment<S> {
     }
 
     /// Copies data from `self` to write the protocol-specific header and payload into `buf`, which
-    /// could be local to remote or remote to local, returning the number of bytes written.
+    /// could be incoming or outgoing, returning the number of bytes written.
     ///
-    /// The remote to local direction is for tests only. Only the local to remote direction
-    /// should be exposed in production code.
+    /// Incoming is for tests only. Only outgoing should be exposed in production code.
     fn inner_write_into(&self, buf: &mut [u8]) -> TraceableResult {
         // Source and destination ports
         buf.try_get_mut(..2)?
@@ -267,7 +266,7 @@ impl<S: Endpoint> TcpSegment<S> {
     }
 }
 
-impl<S: Endpoint> PrettyProtocol for TcpSegment<S> {
+impl<D: Direction> PrettyProtocol for TcpSegment<D> {
     fn pretty_payload(&self, include_content: bool) -> PrettyPayload<'_> {
         PrettyPayload {
             data: self
@@ -280,7 +279,7 @@ impl<S: Endpoint> PrettyProtocol for TcpSegment<S> {
     }
 }
 
-impl<S: Endpoint> fmt::Display for TcpSegment<S> {
+impl<D: Direction> fmt::Display for TcpSegment<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -316,7 +315,7 @@ mod tests {
             ipv4_header::Ipv4Header,
             protocol::{
                 tcp::state::{ConnState, SynReceived, SyncedState, TcpState, WindowState},
-                test_consts::{LOCAL_TO_REMOTE_IP_PAIR, REMOTE_TO_LOCAL_IP_PAIR},
+                test_consts::{IP_PAIR_IN, IP_PAIR_OUT},
             },
         },
         pretty_assertions::assert_matches,

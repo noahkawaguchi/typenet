@@ -1,6 +1,6 @@
 use {
     crate::{
-        endpoint::Remote,
+        direction::In,
         protocol::tcp::{payload::TcpPayload, seq_space::SeqPoint},
     },
     std::iter,
@@ -13,11 +13,11 @@ pub(super) struct TcpReassembly {
     // NOTE: `Vec` used here rather than a `BTreeMap` because TCP sequence space is circular, so
     // points don't have a total order (so `Ord` cannot be correctly implemented).
     /// Out-of-order segments kept to be reassembled later.
-    segments: Vec<(SeqPoint<Remote>, TcpPayload)>,
+    segments: Vec<(SeqPoint<In>, TcpPayload)>,
 
     /// The sequence position one past the last byte covered by the peer's FIN, if a FIN has been
     /// seen but not yet reached by contiguous data.
-    fin_seq: Option<SeqPoint<Remote>>,
+    fin_seq: Option<SeqPoint<In>>,
 }
 
 impl TcpReassembly {
@@ -25,11 +25,11 @@ impl TcpReassembly {
 
     /// Records the sequence position of the peer's FIN, i.e. one past the last byte covered by the
     /// FIN-carrying segment. If a FIN position has already been recorded, the existing one is kept.
-    pub(super) fn mark_fin(&mut self, seq: SeqPoint<Remote>) { self.fin_seq.get_or_insert(seq); }
+    pub(super) fn mark_fin(&mut self, seq: SeqPoint<In>) { self.fin_seq.get_or_insert(seq); }
 
     /// Returns whether a FIN has been recorded via `mark_fin` and `rcv_nxt` has caught up to its
     /// sequence position.
-    pub(super) fn fin_reached(&self, rcv_nxt: SeqPoint<Remote>) -> bool {
+    pub(super) fn fin_reached(&self, rcv_nxt: SeqPoint<In>) -> bool {
         self.fin_seq
             .is_some_and(|fin_seq| fin_seq.precedes_or_eq(rcv_nxt))
     }
@@ -37,7 +37,7 @@ impl TcpReassembly {
     /// Buffers `payload` starting at `seq` for later reassembly. If a segment starting at `seq` is
     /// already buffered (e.g. because `payload` is a retransmission), the longer of the two is
     /// kept.
-    pub(super) fn insert(&mut self, seq: SeqPoint<Remote>, payload: TcpPayload) {
+    pub(super) fn insert(&mut self, seq: SeqPoint<In>, payload: TcpPayload) {
         if let Some((_, existing)) = self
             .segments
             .iter_mut()
@@ -56,7 +56,7 @@ impl TcpReassembly {
     /// returned.
     pub(super) fn drain_contiguous(
         &mut self,
-        rcv_nxt: &mut SeqPoint<Remote>,
+        rcv_nxt: &mut SeqPoint<In>,
     ) -> impl Iterator<Item = TcpPayload> {
         iter::from_fn(|| {
             let (_, payload) = self

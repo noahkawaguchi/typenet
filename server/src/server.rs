@@ -7,7 +7,7 @@ use {
     },
     typenet_stack::{
         ETHERNET_MTU,
-        endpoint::Local,
+        direction::Out,
         engine::{Engine, ShutdownOutcome},
         ipv4_packet::Ipv4Packet,
     },
@@ -231,7 +231,7 @@ where
 
     /// Writes the protocol-specific header and payload of `outgoing` into the write buffer,
     /// prefixed with an IPv4 header, then writes the resulting packet to the device.
-    fn send_pkt(&mut self, outgoing: &Ipv4Packet<Local>) -> TraceableResult {
+    fn send_pkt(&mut self, outgoing: &Ipv4Packet<Out>) -> TraceableResult {
         outgoing.write_into(&mut self.write_buf)?;
 
         self.device

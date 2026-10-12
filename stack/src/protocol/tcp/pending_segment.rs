@@ -1,6 +1,6 @@
 use {
     crate::{
-        endpoint::Local,
+        direction::Out,
         protocol::tcp::{
             connections::RtoConfig,
             flags::TcpFlags,
@@ -21,7 +21,7 @@ pub(super) struct PendingSegment {
     /// The sequence number one past the last byte/flag consumed by the segment (`seq_num +
     /// consumed`, e.g. `seq_num + 1` for a SYN/FIN, `seq_num + payload.len()` for data). Compared
     /// against an incoming `ack_num` to tell whether the segment has been fully acknowledged.
-    end_seq: SeqPoint<Local>,
+    end_seq: SeqPoint<Out>,
 
     /// The last time at which the segment was sent.
     last_sent_at: Instant,
@@ -65,7 +65,7 @@ impl PendingSegment {
     }
 
     /// Returns whether the segment is fully covered by `ack_num`.
-    pub(super) fn is_covered_by(&self, ack_num: SeqPoint<Local>) -> bool {
+    pub(super) fn is_covered_by(&self, ack_num: SeqPoint<Out>) -> bool {
         self.end_seq.precedes_or_eq(ack_num)
     }
 

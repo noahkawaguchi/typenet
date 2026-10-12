@@ -133,7 +133,7 @@ Each variant wraps a protocol-specific struct responsible for:
 
 ### Encoding Domain Logic in the Type System
 
-A driving force throughout the codebase is the use of domain types to create and uphold static guarantees that make invalid operations unrepresentable. As just one example, the sealed trait `Endpoint` and its zero-sized implementers `Local` and `Remote` turn classes of logic bugs, such as arithmetic between `RCV.NXT` and `SND.UNA` or packets with the source and destination addresses flipped, into compile errors.
+A driving force throughout the codebase is the use of domain types to create and uphold static guarantees that make invalid operations unrepresentable. As just one example, the sealed trait `Direction` and its zero-sized implementers `In` and `Out` turn classes of logic bugs, such as arithmetic between `RCV.NXT` and `SND.UNA` or packets with the source and destination addresses flipped, into compile errors.
 
 ## Prerequisites
 

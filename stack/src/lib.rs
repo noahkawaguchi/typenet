@@ -7,8 +7,8 @@
 pub use protocol::tcp::{TcpConnections, TcpSegment};
 
 pub mod application;
+pub mod direction;
 pub mod display;
-pub mod endpoint;
 pub mod engine;
 pub mod ipv4_packet;
 

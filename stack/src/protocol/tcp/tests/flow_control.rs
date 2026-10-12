@@ -1,12 +1,12 @@
 use {super::*, pretty_assertions::assert_eq};
 
 /// Creates a `ConnState` that is the same as `AFTER_HANDSHAKE` except for a custom `snd_wnd`.
-fn after_handshake_with_snd_wnd(snd_wnd: SeqOffset<u16, Local>) -> ConnState {
+fn after_handshake_with_snd_wnd(snd_wnd: SeqOffset<u16, Out>) -> ConnState {
     ConnState {
         tcp_state: TcpState::Established(SyncedState::test_new(WindowState::test_new(
             snd_wnd,
-            CLIENT_ISN + REMOTE_SYN_BYTE,
-            SERVER_ISN + LOCAL_SYN_BYTE,
+            CLIENT_ISN + SYN_BYTE_IN,
+            SERVER_ISN + SYN_BYTE_OUT,
         ))),
         ..AFTER_HANDSHAKE
     }
@@ -14,15 +14,15 @@ fn after_handshake_with_snd_wnd(snd_wnd: SeqOffset<u16, Local>) -> ConnState {
 
 #[test]
 fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResult {
-    const WINDOW: SeqOffset<u16, Local> = SeqOffset::new(3);
+    const WINDOW: SeqOffset<u16, Out> = SeqOffset::new(3);
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(WINDOW);
     connections.insert(expected_state.clone());
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: WINDOW,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
@@ -32,8 +32,8 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResu
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("Hel")?,
             ..SERVER_REPLY
         }),
@@ -41,7 +41,7 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResu
     );
 
     expected_state.snd_nxt += WINDOW.into();
-    expected_state.rcv_nxt += REMOTE_HELLO_LEN;
+    expected_state.rcv_nxt += HELLO_LEN_IN;
     expected_state.send_buffer.extend(b"lo");
 
     assert_eq!(
@@ -60,7 +60,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     // zero unacked bytes, using the window directly without considering SND.NXT and SND.UNA would
     // pass.)
 
-    const WINDOW: SeqOffset<u16, Local> = SeqOffset::new(3);
+    const WINDOW: SeqOffset<u16, Out> = SeqOffset::new(3);
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(WINDOW);
@@ -69,8 +69,8 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     // "Hello" (5 bytes), window only allows 3 -> "Hel" sent (SND.NXT advances by 3, SND.UNA stays
     // put), "lo" buffered. 3 bytes are now sent but unacked.
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: WINDOW,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
@@ -78,7 +78,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     .create_test_reply(&mut connections)?;
 
     expected_state.snd_nxt += WINDOW.into();
-    expected_state.rcv_nxt += REMOTE_HELLO_LEN;
+    expected_state.rcv_nxt += HELLO_LEN_IN;
     expected_state.send_buffer.extend(b"lo");
 
     {
@@ -94,8 +94,8 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     // SND.WND, still at 3. With 3 bytes already sent but unacked and a window of 3, there is no
     // room left, so the buffered "lo" must stay buffered.
     let dup_ack_same_window = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: WINDOW,
         ..CLIENT_PKT
     };
@@ -123,11 +123,11 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
 
 #[test]
 fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
-    const HEL_LEN: SeqOffset<u32, Local> = SeqOffset::new(3);
-    const LO_LEN: SeqOffset<u32, Local> = SeqOffset::new(2);
+    const HEL_LEN: SeqOffset<u32, Out> = SeqOffset::new(3);
+    const LO_LEN: SeqOffset<u32, Out> = SeqOffset::new(2);
 
-    const INITIAL_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(3);
-    const LARGER_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(10);
+    const INITIAL_WINDOW: SeqOffset<u16, Out> = SeqOffset::new(3);
+    const LARGER_WINDOW: SeqOffset<u16, Out> = SeqOffset::new(10);
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(INITIAL_WINDOW);
@@ -135,8 +135,8 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
 
     // "Hello" (5 bytes), window only allows 3 -> "Hel" sent, "lo" buffered
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: INITIAL_WINDOW,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
@@ -144,15 +144,15 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
     .create_test_reply(&mut connections)?;
 
     expected_state.snd_nxt += HEL_LEN;
-    expected_state.rcv_nxt += REMOTE_HELLO_LEN;
+    expected_state.rcv_nxt += HELLO_LEN_IN;
     expected_state.send_buffer.extend(b"lo");
 
     assert_eq!(connections.try_get()?, &expected_state, "State confirmation before window update");
 
     // Client acks the 3 sent bytes and advertises a bigger window -> should drain "lo"
     let window_update = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + HEL_LEN,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT + HEL_LEN,
         window: LARGER_WINDOW,
         ..CLIENT_PKT
     };
@@ -162,8 +162,8 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE + HEL_LEN,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT + HEL_LEN,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             payload: TcpPayload::from_test_str("lo")?,
             ..SERVER_REPLY
         }),
@@ -190,15 +190,15 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
 
 #[test]
 fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
-    const ZERO_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(0);
+    const ZERO_WINDOW: SeqOffset<u16, Out> = SeqOffset::new(0);
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(ZERO_WINDOW);
     connections.insert(expected_state.clone());
 
     let reply = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: ZERO_WINDOW,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
@@ -208,14 +208,14 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
     assert_eq!(
         reply,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             ..SERVER_REPLY
         }),
         "A closed window still gets a bare ACK for the receipt, just no echoed payload"
     );
 
-    expected_state.rcv_nxt += REMOTE_HELLO_LEN;
+    expected_state.rcv_nxt += HELLO_LEN_IN;
     expected_state.send_buffer.extend(b"Hello");
 
     assert_eq!(
@@ -241,8 +241,8 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
     /// Ensures that this test is reexamined if the relevant consts change.
     const _: () = assert!(MAX_PAYLOAD_LEN == 1500 - 20 - 20);
 
-    const ZERO_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(0);
-    const WIDE_OPEN_WINDOW: SeqOffset<u16, Local> = SeqOffset::new(u16::MAX);
+    const ZERO_WINDOW: SeqOffset<u16, Out> = SeqOffset::new(0);
+    const WIDE_OPEN_WINDOW: SeqOffset<u16, Out> = SeqOffset::new(u16::MAX);
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(ZERO_WINDOW);
@@ -254,8 +254,8 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
     // Buffer the whole oversized payload behind a zero window, so the amount queued for later
     // sending isn't itself limited by window size
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: ZERO_WINDOW,
         payload: TcpPayload::from_test_str(&big_payload)?,
         ..CLIENT_PKT
@@ -268,8 +268,8 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
 
     // Client reopens the window wide enough to take everything at once
     let window_update = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + big_payload_len,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + big_payload_len,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: WIDE_OPEN_WINDOW,
         ..CLIENT_PKT
     };
@@ -277,15 +277,15 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
     assert_eq!(
         window_update.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE + big_payload_len,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN + big_payload_len,
             payload: TcpPayload::from_test_str(&"a".repeat(MAX_PAYLOAD_LEN))?,
             ..SERVER_REPLY
         }),
         "Only the first {MAX_PAYLOAD_LEN} bytes should fit in one segment"
     );
 
-    expected_state.snd_nxt += SeqOffset::<u32, Local>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
+    expected_state.snd_nxt += SeqOffset::<u32, Out>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
     expected_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         window_update.window,
         window_update.seq_num,

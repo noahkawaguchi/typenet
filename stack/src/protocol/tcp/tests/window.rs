@@ -9,7 +9,7 @@ fn new_ack_adopts_window_from_segment() -> TraceableResult {
     // segment's advertised window (RFC 9293, Section 3.10.7.4), not just leave it at whatever it
     // was seeded with at handshake time.
 
-    const NEW_WND: SeqOffset<u16, Local> = SeqOffset::new(12_345);
+    const NEW_WND: SeqOffset<u16, Out> = SeqOffset::new(12_345);
 
     let mut connections = TcpConnections::default().after_handshake();
     let mut cloned_state = connections.try_get()?.clone();
@@ -23,29 +23,29 @@ fn new_ack_adopts_window_from_segment() -> TraceableResult {
     // "Hello" data, ack=SERVER_ISN+1 == current SND.UNA, so not yet a "new" ack -> SND.NXT advances
     // to SERVER_ISN+6, but SND.WND stays untouched
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
     .create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
+    cloned_state.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.rcv_nxt += HELLO_LEN_IN;
 
     assert_eq!(connections.try_get()?, &cloned_state, "State confirmation before window update");
 
     // Pure ACK of that echo, ack=SERVER_ISN+6 (now "new"), advertising a new window
     let window_update = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
         window: NEW_WND,
         ..CLIENT_PKT
     };
 
     assert_eq!(window_update.create_test_reply(&mut connections)?, None);
 
-    cloned_state.snd_una += LOCAL_HELLO_LEN;
+    cloned_state.snd_una += HELLO_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         window_update.window,
         window_update.seq_num,
@@ -76,8 +76,8 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
     // A 10-byte gap remains before it (RCV.NXT stays at CLIENT_ISN+1), but its SEG.SEQ is fresher
     // than the handshake's SND.WL1=CLIENT_ISN+1, so it still updates the window
     let out_of_order = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(10),
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + SeqOffset::new(10),
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: SeqOffset::new(2000),
         payload: TcpPayload::from_test_str("World")?,
         ..CLIENT_PKT
@@ -86,8 +86,8 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
     assert_eq!(
         out_of_order.create_test_reply(&mut connections)?,
         Some(TcpSegment {
-            seq_num: SERVER_ISN + LOCAL_SYN_BYTE,
-            ack_num: CLIENT_ISN + REMOTE_SYN_BYTE,
+            seq_num: SERVER_ISN + SYN_BYTE_OUT,
+            ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
         "Out-of-order data should still get a duplicate ACK reflecting RCV.NXT unchanged"
@@ -117,8 +117,8 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
     // segment just set
     assert_eq!(
         TcpSegment {
-            seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + SeqOffset::new(5),
-            ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+            seq_num: CLIENT_ISN + SYN_BYTE_IN + SeqOffset::new(5),
+            ack_num: SERVER_ISN + SYN_BYTE_OUT,
             window: SeqOffset::new(9999),
             ..CLIENT_PKT
         }
@@ -150,28 +150,28 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
     // Two data packets build up room for cumulative ACKs without ever giving the client's own
     // seq_num a chance to move past CLIENT_ISN+8 again
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
     .create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
+    cloned_state.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.rcv_nxt += HELLO_LEN_IN;
     assert_eq!(connections.try_get()?, &cloned_state);
 
     let hi_pkt = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hi")?,
         ..CLIENT_PKT
     };
 
     hi_pkt.create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += LOCAL_HI_LEN;
-    cloned_state.rcv_nxt += REMOTE_HI_LEN;
+    cloned_state.snd_nxt += HI_LEN_OUT;
+    cloned_state.rcv_nxt += HI_LEN_IN;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         hi_pkt.window,
         hi_pkt.seq_num,
@@ -183,15 +183,15 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
     // First pure ACK with seq=CLIENT_ISN+8 is fresher than the handshake's SND.WL1=CLIENT_ISN+1, so
     // this legitimately sets SND.WL1=CLIENT_ISN+8, SND.WL2=SERVER_ISN+6
     let window_update_1 = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT,
         window: SeqOffset::new(1000),
         ..CLIENT_PKT
     };
 
     assert_eq!(window_update_1.create_test_reply(&mut connections)?, None);
 
-    cloned_state.snd_una += LOCAL_HELLO_LEN;
+    cloned_state.snd_una += HELLO_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         window_update_1.window,
         window_update_1.seq_num,
@@ -203,15 +203,15 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
     // Second pure ACK with identical seq_num (no new data sent), but a strictly higher ack_num and
     // a different window
     let window_update_2 = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN + REMOTE_HI_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE + LOCAL_HELLO_LEN + LOCAL_HI_LEN,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT + HELLO_LEN_OUT + HI_LEN_OUT,
         window: SeqOffset::new(2000),
         ..CLIENT_PKT
     };
 
     assert_eq!(window_update_2.create_test_reply(&mut connections)?, None);
 
-    cloned_state.snd_una += LOCAL_HI_LEN;
+    cloned_state.snd_una += HI_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         window_update_2.window,
         window_update_2.seq_num,
@@ -234,7 +234,7 @@ fn duplicate_ack_updates_window() -> TraceableResult {
     // SND.UNA <= SEG.ACK <= SND.NXT. A duplicate ACK (SEG.ACK == SND.UNA) must still be allowed
     // to update SND.WND, such as a window-opening segment that doesn't acknowledge any new data.
 
-    const NEW_WND: SeqOffset<u16, Local> = SeqOffset::new(777);
+    const NEW_WND: SeqOffset<u16, Out> = SeqOffset::new(777);
 
     // SND.UNA=SND.NXT=SERVER_ISN+1, RCV.NXT=CLIENT_ISN+1
     let mut connections = TcpConnections::default().after_handshake();
@@ -249,15 +249,15 @@ fn duplicate_ack_updates_window() -> TraceableResult {
     // "Hello" data, ack=SERVER_ISN+1 == current SND.UNA (not a "new" ACK) -> RCV.NXT advances to
     // CLIENT_ISN+6, SND.NXT advances to SERVER_ISN+6, SND.UNA stays at SERVER_ISN+1
     TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         payload: TcpPayload::from_test_str("Hello")?,
         ..CLIENT_PKT
     }
     .create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += LOCAL_HELLO_LEN;
-    cloned_state.rcv_nxt += REMOTE_HELLO_LEN;
+    cloned_state.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.rcv_nxt += HELLO_LEN_IN;
 
     assert_eq!(connections.try_get()?, &cloned_state, "State confirmation before window update");
 
@@ -265,8 +265,8 @@ fn duplicate_ack_updates_window() -> TraceableResult {
     // seq_num=CLIENT_ISN+6 is fresher than the stored SND.WL1=CLIENT_ISN+1, so this must still
     // update SND.WND to the new window
     let dup_ack_fresh_seq = TcpSegment {
-        seq_num: CLIENT_ISN + REMOTE_SYN_BYTE + REMOTE_HELLO_LEN,
-        ack_num: SERVER_ISN + LOCAL_SYN_BYTE,
+        seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+        ack_num: SERVER_ISN + SYN_BYTE_OUT,
         window: NEW_WND,
         ..CLIENT_PKT
     };

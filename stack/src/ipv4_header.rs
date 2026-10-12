@@ -3,7 +3,7 @@ use {
         ETHERNET_MTU,
         addr_pairs::Ipv4AddrPair,
         checksum,
-        endpoint::{Endpoint, Local, Remote},
+        direction::{Direction, In, Out},
         protocol::Protocol,
     },
     std::{fmt, net::Ipv4Addr},
@@ -16,49 +16,47 @@ const IPV4_HDR_MIN_LEN_U8: u8 = 20;
 /// The minimum number of bytes in an IPv4 header (no options) as a `usize`.
 const IPV4_HDR_MIN_LEN_USIZE: usize = IPV4_HDR_MIN_LEN_U8 as usize;
 
-/// Manages IPv4 header fields for a packet sent from `S`.
+/// Manages IPv4 header fields for a packet flowing in direction `D`.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
-pub(crate) struct Ipv4Header<S: Endpoint> {
+pub(crate) struct Ipv4Header<D: Direction> {
     pub total_len: u16,
     pub protocol: Protocol,
-    pub ip_pair: Ipv4AddrPair<S>,
+    pub ip_pair: Ipv4AddrPair<D>,
 }
 
-impl Ipv4Header<Remote> {
-    /// Parses `data` as an IPv4 packet going in the remote to local direction, returning the header
-    /// fields and a slice starting at the beginning of the payload.
+impl Ipv4Header<In> {
+    /// Parses `data` as an incoming IPv4 packet, returning the header fields and a slice starting
+    /// at the beginning of the payload.
     pub(crate) fn parse(data: &[u8]) -> TraceableResult<(Self, &[u8])> { Self::inner_parse(data) }
 }
 
-impl Ipv4Header<Local> {
+impl Ipv4Header<Out> {
     /// The length in bytes of an IPv4 header for a reply packet (no options).
     pub(crate) const REPLY_HDR_LEN: usize = IPV4_HDR_MIN_LEN_USIZE;
 
-    /// Creates an IPv4 header with the given `protocol` and `ip_pair` going in the local to remote
-    /// direction. Total length is the length of the IPv4 header + `proto_len`.
+    /// Creates an outgoing IPv4 header with the given `protocol` and `ip_pair`. Total length is the
+    /// length of the IPv4 header + `proto_len`.
     ///
     /// # Errors
     ///
     /// Returns `Err` if adding `proto_len` to the IPv4 header length overflows `u16`.
     pub(crate) fn try_new(
         protocol: Protocol,
-        ip_pair: Ipv4AddrPair<Local>,
+        ip_pair: Ipv4AddrPair<Out>,
         proto_len: u16,
     ) -> TraceableResult<Self> {
         Self::inner_try_new(protocol, ip_pair, proto_len)
     }
 
-    /// Writes an IPv4 header going in the local to remote direction into `buf`, copying the header
-    /// data from `self`.
+    /// Writes an outgoing IPv4 header into `buf`, copying the header data from `self`.
     pub(crate) fn write_into(&self, buf: &mut [u8; ETHERNET_MTU]) { self.inner_write_into(buf); }
 }
 
-impl<S: Endpoint> Ipv4Header<S> {
-    /// Parses `data` as an IPv4 packet that could be local to remote or remote to local, returning
-    /// the header fields and a slice starting at the beginning of the payload.
+impl<D: Direction> Ipv4Header<D> {
+    /// Parses `data` as an IPv4 packet that could be incoming or outgoing, returning the header
+    /// fields and a slice starting at the beginning of the payload.
     ///
-    /// The local to remote direction is for tests only. Only the remote to local direction should
-    /// be exposed in production code.
+    /// Outgoing is for tests only. Only incoming should be exposed in production code.
     fn inner_parse(data: &[u8]) -> TraceableResult<(Self, &[u8])> {
         let ip_hdr = data
             .first_chunk::<IPV4_HDR_MIN_LEN_USIZE>()
@@ -91,18 +89,17 @@ impl<S: Endpoint> Ipv4Header<S> {
         ))
     }
 
-    /// Creates an IPv4 header with the given `protocol` and `ip_pair`, which could be local to
-    /// remote or remote to local. Total length is the length of the IPv4 header + `proto_len`.
+    /// Creates an IPv4 header with the given `protocol` and `ip_pair`, which could be incoming or
+    /// outgoing. Total length is the length of the IPv4 header + `proto_len`.
     ///
-    /// The remote to local direction is for tests only. Only the local to remote direction should
-    /// be exposed in production code.
+    /// Incoming is for tests only. Only outgoing should be exposed in production code.
     ///
     /// # Errors
     ///
     /// Returns `Err` if adding `proto_len` to the IPv4 header length overflows `u16`.
     fn inner_try_new(
         protocol: Protocol,
-        ip_pair: Ipv4AddrPair<S>,
+        ip_pair: Ipv4AddrPair<D>,
         proto_len: u16,
     ) -> TraceableResult<Self> {
         u16::from(IPV4_HDR_MIN_LEN_U8)
@@ -110,11 +107,10 @@ impl<S: Endpoint> Ipv4Header<S> {
             .map(|total_len| Self { total_len, protocol, ip_pair })
     }
 
-    /// Writes an IPv4 header that could be local to remote or remote to local into `buf`, copying
-    /// the header data from `self`.
+    /// Writes an IPv4 header that could be incoming or outgoing into `buf`, copying the header data
+    /// from `self`.
     ///
-    /// The remote to local direction is for tests only. Only the local to remote direction should
-    /// be exposed in production code.
+    /// Incoming is for tests only. Only outgoing should be exposed in production code.
     fn inner_write_into(&self, buf: &mut [u8; ETHERNET_MTU]) {
         // IP header (no options, 20 bytes)
         buf[0] = 0x40 | (IPV4_HDR_MIN_LEN_U8 / 4); // Version 4, IHL 5 (20 bytes)
@@ -137,7 +133,7 @@ impl<S: Endpoint> Ipv4Header<S> {
     }
 }
 
-impl<S: Endpoint> fmt::Display for Ipv4Header<S> {
+impl<D: Direction> fmt::Display for Ipv4Header<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "IPv4 | {} bytes total | {} | {}", self.total_len, self.protocol, self.ip_pair)
     }
@@ -147,41 +143,40 @@ impl<S: Endpoint> fmt::Display for Ipv4Header<S> {
 mod test_impls {
     use super::*;
 
-    impl Ipv4Header<Local> {
-        /// Parses `data` as an IPv4 packet going in the local to remote direction, returning the
-        /// header fields and a slice starting at the beginning of the payload.
+    impl Ipv4Header<Out> {
+        /// Parses `data` as an outgoing IPv4 packet, returning the header fields and a slice
+        /// starting at the beginning of the payload.
         ///
-        /// This is a test-only version because a header created locally would never be parsed from
-        /// bytes in production.
-        pub(crate) fn test_parse_local(data: &[u8]) -> TraceableResult<(Self, &[u8])> {
+        /// This is a test-only version because an outgoing header would never be parsed from bytes
+        /// in production.
+        pub(crate) fn test_parse_outgoing(data: &[u8]) -> TraceableResult<(Self, &[u8])> {
             Self::inner_parse(data)
         }
     }
 
-    impl Ipv4Header<Remote> {
-        /// Creates an IPv4 header with the given `protocol` and `ip_pair` going in the remote to
-        /// local direction. Total length is the length of the IPv4 header + `proto_len`.
+    impl Ipv4Header<In> {
+        /// Creates an incoming IPv4 header with the given `protocol` and `ip_pair`. Total length
+        /// is the length of the IPv4 header + `proto_len`.
         ///
-        /// This is a test-only version because a header from the remote endpoint would never be
-        /// constructed in production (only parsed from bytes).
+        /// This is a test-only version because an incoming header would never be constructed in
+        /// production (only parsed from bytes).
         ///
         /// # Errors
         ///
         /// Returns `Err` if adding `proto_len` to the IPv4 header length overflows `u16`.
-        pub(crate) fn test_try_new_remote(
+        pub(crate) fn test_try_new_incoming(
             protocol: Protocol,
-            ip_pair: Ipv4AddrPair<Remote>,
+            ip_pair: Ipv4AddrPair<In>,
             proto_len: u16,
         ) -> TraceableResult<Self> {
             Self::inner_try_new(protocol, ip_pair, proto_len)
         }
 
-        /// Writes an IPv4 header going in the remote to local direction into `buf`, copying the
-        /// header data from `self`.
+        /// Writes an incoming IPv4 header into `buf`, copying the header data from `self`.
         ///
-        /// This is a test-only version because a header from the remote endpoint would never be
-        /// encoded into bytes in production.
-        pub(crate) fn test_write_into_remote(&self, buf: &mut [u8; ETHERNET_MTU]) {
+        /// This is a test-only version because an incoming header would never be encoded into
+        /// bytes in production.
+        pub(crate) fn test_write_into_incoming(&self, buf: &mut [u8; ETHERNET_MTU]) {
             self.inner_write_into(buf);
         }
     }

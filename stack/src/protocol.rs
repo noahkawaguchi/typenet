@@ -4,8 +4,8 @@ pub(crate) mod udp;
 
 use {
     crate::{
-        ETHERNET_MTU, addr_pairs::Ipv4AddrPair, checksum, display::PrettyProtocol,
-        endpoint::Endpoint,
+        ETHERNET_MTU, addr_pairs::Ipv4AddrPair, checksum, direction::Direction,
+        display::PrettyProtocol,
     },
     std::fmt,
     typenet_utils::{
@@ -14,8 +14,9 @@ use {
     },
 };
 
-/// Pretty protocol-handling types that can also be encoded into a byte buffer.
-pub(crate) trait Encode<S: Endpoint>: PrettyProtocol {
+/// Pretty protocol-handling types that can also be encoded into a byte buffer for traffic flowing
+/// in direction `D`.
+pub(crate) trait Encode<D: Direction>: PrettyProtocol {
     /// Copies data from `self` to write the protocol-specific header and payload into `buf`.
     ///
     /// # Errors
@@ -27,7 +28,7 @@ pub(crate) trait Encode<S: Endpoint>: PrettyProtocol {
     fn proto(&self) -> Protocol;
 
     /// Returns the pair of IPv4 addresses of `self`.
-    fn get_ip_pair(&self) -> Ipv4AddrPair<S>;
+    fn get_ip_pair(&self) -> Ipv4AddrPair<D>;
 
     /// Returns the number of bytes in `self`, including the protocol-specific header and payload.
     ///
@@ -40,9 +41,9 @@ pub(crate) trait Encode<S: Endpoint>: PrettyProtocol {
 /// Calculates the TCP/UDP checksum of the pseudo-header + `data`. `data` should cover the TCP/UDP
 /// header and payload. Does not zero out the checksum field inside the header of `data` before
 /// calculating.
-fn pseudo_hdr_cksum<S: Endpoint>(
+fn pseudo_hdr_cksum<D: Direction>(
     data: &[u8],
-    ip_pair: Ipv4AddrPair<S>,
+    ip_pair: Ipv4AddrPair<D>,
     protocol: Protocol,
 ) -> TraceableResult<u16> {
     /// The number of bytes in a TCP/UDP pseudo-header.
@@ -108,18 +109,17 @@ impl fmt::Display for Protocol {
 #[cfg(any(test, feature = "test-utils"))]
 mod test_consts {
     #[cfg(test)]
-    use crate::endpoint::Local;
+    use crate::direction::Out;
     use {
-        crate::{addr_pairs::Ipv4AddrPair, endpoint::Remote},
+        crate::{addr_pairs::Ipv4AddrPair, direction::In},
         std::net::Ipv4Addr,
     };
 
-    /// A pair of IP addresses going from 10.0.0.2 to 10.0.0.1 in the remote to local direction.
-    pub(super) const REMOTE_TO_LOCAL_IP_PAIR: Ipv4AddrPair<Remote> =
+    /// A pair of IP addresses going from 10.0.0.2 to 10.0.0.1 in the incoming direction.
+    pub(super) const IP_PAIR_IN: Ipv4AddrPair<In> =
         Ipv4AddrPair::new(Ipv4Addr::new(10, 0, 0, 2), Ipv4Addr::new(10, 0, 0, 1));
 
-    /// A pair of IP addresses going from 10.0.0.1 to 10.0.0.2 in the local to remote direction.
+    /// A pair of IP addresses going from 10.0.0.1 to 10.0.0.2 in the outgoing direction.
     #[cfg(test)]
-    pub(super) const LOCAL_TO_REMOTE_IP_PAIR: Ipv4AddrPair<Local> =
-        REMOTE_TO_LOCAL_IP_PAIR.swapped();
+    pub(super) const IP_PAIR_OUT: Ipv4AddrPair<Out> = IP_PAIR_IN.swapped();
 }

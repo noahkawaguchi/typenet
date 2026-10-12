@@ -2,8 +2,8 @@ use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn write_into_produces_correct_bytes_with_no_payload() -> TraceableResult {
-    let seg = TcpSegment::<Local> {
-        ip_pair: LOCAL_TO_REMOTE_IP_PAIR,
+    let seg = TcpSegment::<Out> {
+        ip_pair: IP_PAIR_OUT,
         ports: PortPair::new(80, 1234),
         seq_num: SeqPoint::new(0x1000_0000),
         ack_num: SeqPoint::new(0x0000_1001),
@@ -27,15 +27,15 @@ fn write_into_produces_correct_bytes_with_no_payload() -> TraceableResult {
     assert_eq!(&reply[34..36], &[0x72, 0x10]); // Window size: 29,200
     assert_eq!(&reply[38..40], &[0x00, 0x00]); // Urgent pointer
 
-    assert_eq!(pseudo_hdr_cksum(&reply[20..40], REMOTE_TO_LOCAL_IP_PAIR, Protocol::Tcp)?, 0);
+    assert_eq!(pseudo_hdr_cksum(&reply[20..40], IP_PAIR_IN, Protocol::Tcp)?, 0);
 
     Ok(())
 }
 
 #[test]
 fn write_into_produces_correct_bytes_with_payload() -> TraceableResult {
-    let seg = TcpSegment::<Local> {
-        ip_pair: LOCAL_TO_REMOTE_IP_PAIR,
+    let seg = TcpSegment::<Out> {
+        ip_pair: IP_PAIR_OUT,
         ports: PortPair::new(80, 1234),
         seq_num: SeqPoint::new(1),
         ack_num: SeqPoint::new(4102),
@@ -53,7 +53,7 @@ fn write_into_produces_correct_bytes_with_payload() -> TraceableResult {
     // Payload copied immediately after the 20-byte header
     assert_eq!(&reply[40..45], b"Hello");
 
-    assert_eq!(pseudo_hdr_cksum(&reply[20..45], REMOTE_TO_LOCAL_IP_PAIR, Protocol::Tcp)?, 0);
+    assert_eq!(pseudo_hdr_cksum(&reply[20..45], IP_PAIR_IN, Protocol::Tcp)?, 0);
 
     Ok(())
 }
