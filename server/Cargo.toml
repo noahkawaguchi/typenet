@@ -1,7 +1,7 @@
 [package]
-name    = "typenet-server"
-version = "0.1.0"
-edition = "2024"
+name              = "typenet-server"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
 libc.workspace     = true

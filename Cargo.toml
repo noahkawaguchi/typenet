@@ -2,6 +2,10 @@
 resolver = "3"
 members  = ["loadgen", "server", "stack", "utils"]
 
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
 [workspace.dependencies]
 criterion         = { version = "0.8.2", features = ["html_reports"] }
 libc              = "0.2.189"
