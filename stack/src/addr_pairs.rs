@@ -4,18 +4,13 @@ use {
 };
 
 /// A pair of source and destination IPv4 addresses for traffic flowing in direction `D`.
+#[derive(Clone, Copy)]
 #[cfg_attr(any(test, feature = "test-utils"), derive(Debug, PartialEq, Eq))]
 pub(crate) struct Ipv4AddrPair<D: Direction> {
     pub src: Ipv4Addr,
     pub dst: Ipv4Addr,
     phantom: PhantomData<D>,
 }
-
-impl<D: Direction> Clone for Ipv4AddrPair<D> {
-    fn clone(&self) -> Self { *self }
-}
-
-impl<D: Direction> Copy for Ipv4AddrPair<D> {}
 
 impl<D: Direction> Ipv4AddrPair<D> {
     pub(crate) const fn new(src: Ipv4Addr, dst: Ipv4Addr) -> Self {

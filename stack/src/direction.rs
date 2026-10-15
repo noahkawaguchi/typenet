@@ -1,6 +1,6 @@
 /// A direction of traffic flow, either incoming or outgoing.
 #[expect(private_bounds, reason = "Sealed trait so this module owns all implementations")]
-pub trait Direction: std::fmt::Debug + PartialEq + Eq + sealed::Sealed {
+pub trait Direction: std::fmt::Debug + Clone + Copy + PartialEq + Eq + sealed::Sealed {
     /// The reverse direction of traffic flow.
     type Rev: Direction;
 }
