@@ -1,5 +1,7 @@
 # Typenet
 
+[![CI](https://github.com/noahkawaguchi/typenet/actions/workflows/ci.yml/badge.svg)](https://github.com/noahkawaguchi/typenet/actions/workflows/ci.yml)
+
 Typenet is a userspace IPv4/ICMP/TCP/UDP implementation and echo server that operates over Linux TUN devices. This project demonstrates low-level networking in Rust, working at the level of packet bytes and syscalls while upholding type safety.
 
 ## Table of Contents
