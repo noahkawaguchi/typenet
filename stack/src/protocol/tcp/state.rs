@@ -265,17 +265,14 @@ impl<T> SyncedState<T> {
     /// Ignores ACKs that are old (before SND.UNA) or for data not yet sent (past SND.NXT). Ignores
     /// duplicate ACKs (SND.UNA == SEG.ACK) for updates to SND.UNA and the retransmission queue.
     #[must_use = "Returns updated state as a new instance"]
-    pub(super) fn incoming_ack_update(self, conn: &mut ConnState, seg: &TcpSegment<In>) -> Self {
-        if conn.data.snd_una.precedes_or_eq(seg.ack_num)
-            && seg.ack_num.precedes_or_eq(conn.data.snd_nxt)
-        {
+    pub(super) fn incoming_ack_update(self, conn: &mut ConnData, seg: &TcpSegment<In>) -> Self {
+        if conn.snd_una.precedes_or_eq(seg.ack_num) && seg.ack_num.precedes_or_eq(conn.snd_nxt) {
             // Exclude duplicate ACKs: SND.UNA < SEG.ACK <= SND.NXT
-            if conn.data.snd_una.precedes(seg.ack_num) {
-                conn.data.snd_una = seg.ack_num;
+            if conn.snd_una.precedes(seg.ack_num) {
+                conn.snd_una = seg.ack_num;
 
                 // ACKs are cumulative, so only keep pending segments not fully covered by SEG.ACK
-                conn.data
-                    .pending
+                conn.pending
                     .retain(|pending_seg| !pending_seg.is_covered_by(seg.ack_num));
             }
 
@@ -323,22 +320,22 @@ impl<T: SendSideOpen> SyncedState<T> {
     /// `Ok(None)` if nothing can be sent. Does not mutate any other state.
     pub(super) fn drain_transmittable(
         &self,
-        conn: &mut ConnState,
+        conn: &mut ConnData,
     ) -> TraceableResult<Option<TcpPayload>> {
         /// The maximum number of bytes that a single TCP payload can have. Constant because the
         /// current implementation never sends options in IP or TCP headers.
         const MAX_PAYLOAD_LEN: usize =
             ETHERNET_MTU - Ipv4Header::REPLY_HDR_LEN - TCP_HDR_MIN_LEN as usize;
 
-        let sent_but_not_acked = usize::try_from(conn.data.snd_nxt - conn.data.snd_una)?;
+        let sent_but_not_acked = usize::try_from(conn.snd_nxt - conn.snd_una)?;
 
         let space_in_window =
             usize::from(self.window_state.snd_wnd).saturating_sub(sent_but_not_acked);
 
         let bytes_to_send = space_in_window
-            .min(conn.data.send_buffer.len())
+            .min(conn.send_buffer.len())
             .min(MAX_PAYLOAD_LEN);
 
-        TcpPayload::try_from_iter(conn.data.send_buffer.drain(..bytes_to_send))
+        TcpPayload::try_from_iter(conn.send_buffer.drain(..bytes_to_send))
     }
 }
