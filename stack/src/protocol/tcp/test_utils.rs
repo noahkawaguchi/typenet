@@ -7,7 +7,7 @@ use {
             tcp::{
                 connections::ConnKey,
                 reassembly::TcpReassembly,
-                state::{ConnState, SyncedState, TcpState, WindowState},
+                state::{ConnData, ConnState, SyncedState, TcpState, WindowState},
             },
             test_consts::IP_PAIR_IN,
         },
@@ -41,12 +41,14 @@ pub(super) const WINDOW_AFTER_HANDSHAKE: WindowState = WindowState::test_new(
 /// `pending`/`send_buffer`.
 pub(super) const AFTER_HANDSHAKE: ConnState = ConnState {
     tcp_state: TcpState::Established(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-    snd_nxt: SERVER_ISN.const_add(SYN_BYTE_OUT),
-    rcv_nxt: CLIENT_ISN.const_add(SYN_BYTE_IN),
-    snd_una: SERVER_ISN.const_add(SYN_BYTE_OUT),
-    pending: Vec::new(),
-    send_buffer: VecDeque::new(),
-    reassembly: TcpReassembly::new(),
+    data: ConnData {
+        snd_nxt: SERVER_ISN.const_add(SYN_BYTE_OUT),
+        rcv_nxt: CLIENT_ISN.const_add(SYN_BYTE_IN),
+        snd_una: SERVER_ISN.const_add(SYN_BYTE_OUT),
+        pending: Vec::new(),
+        send_buffer: VecDeque::new(),
+        reassembly: TcpReassembly::new(),
+    },
 };
 
 /// An incoming pure ACK packet from the client (port 1234) to the server (port 80).

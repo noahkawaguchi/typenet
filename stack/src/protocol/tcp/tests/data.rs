@@ -67,8 +67,8 @@ fn pure_ack_on_established_connection_returns_none() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += HELLO_LEN_OUT;
-    cloned_state.rcv_nxt += HELLO_LEN_IN;
+    cloned_state.data.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.data.rcv_nxt += HELLO_LEN_IN;
 
     // ack=SERVER_ISN + 5 bytes echoed + 1
     let pure_ack = TcpSegment {
@@ -79,7 +79,7 @@ fn pure_ack_on_established_connection_returns_none() -> TraceableResult {
 
     assert_eq!(pure_ack.create_test_reply(&mut connections)?, None);
 
-    cloned_state.snd_una += HELLO_LEN_OUT;
+    cloned_state.data.snd_una += HELLO_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         pure_ack.window,
         pure_ack.seq_num,
@@ -125,8 +125,8 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
         "Standard reply to the first data packet"
     );
 
-    cloned_state.snd_nxt += HELLO_LEN_OUT;
-    cloned_state.rcv_nxt += HELLO_LEN_IN;
+    cloned_state.data.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.data.rcv_nxt += HELLO_LEN_IN;
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
@@ -167,7 +167,7 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     // SND.UNA=SND.NXT=SERVER_ISN+1, RCV.NXT=CLIENT_ISN+1
     let mut connections = TcpConnections::default().after_handshake();
     let mut cloned_state = connections.try_get()?.clone();
-    assert_eq!(cloned_state.snd_una, SERVER_ISN + SYN_BYTE_OUT);
+    assert_eq!(cloned_state.data.snd_una, SERVER_ISN + SYN_BYTE_OUT);
 
     // First packet: "Hello" (5 bytes), ack=SERVER_ISN+1 -> SND.UNA is SERVER_ISN+1, SND.NXT becomes
     // SERVER_ISN+6
@@ -190,8 +190,8 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
         "Standard reply to the first data packet"
     );
 
-    cloned_state.snd_nxt += HELLO_LEN_OUT;
-    cloned_state.rcv_nxt += HELLO_LEN_IN;
+    cloned_state.data.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.data.rcv_nxt += HELLO_LEN_IN;
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
@@ -220,9 +220,9 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
         "Standard reply to the second data packet"
     );
 
-    cloned_state.snd_nxt += HI_LEN_OUT;
-    cloned_state.rcv_nxt += HI_LEN_IN;
-    cloned_state.snd_una += HELLO_LEN_OUT;
+    cloned_state.data.snd_nxt += HI_LEN_OUT;
+    cloned_state.data.rcv_nxt += HI_LEN_IN;
+    cloned_state.data.snd_una += HELLO_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         hi_pkt.window,
         hi_pkt.seq_num,
@@ -257,8 +257,8 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
         "Stale ack_num shouldn't prevent normal processing"
     );
 
-    cloned_state.snd_nxt += HEY_LEN_OUT;
-    cloned_state.rcv_nxt += HEY_LEN_IN;
+    cloned_state.data.snd_nxt += HEY_LEN_OUT;
+    cloned_state.data.rcv_nxt += HEY_LEN_IN;
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
@@ -417,9 +417,11 @@ fn wraparound_ack_for_unsent_data_is_still_rejected() -> TraceableResult {
             CLIENT_ISN + SYN_BYTE_IN,
             SeqPoint::new(u32::MAX),
         ))),
-        snd_nxt: SeqPoint::new(u32::MAX),
-        snd_una: SeqPoint::new(u32::MAX),
-        ..AFTER_HANDSHAKE
+        data: ConnData {
+            snd_nxt: SeqPoint::new(u32::MAX),
+            snd_una: SeqPoint::new(u32::MAX),
+            ..AFTER_HANDSHAKE.data
+        },
     };
     connections.insert(initial_state.clone());
 
@@ -493,7 +495,7 @@ fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> TraceableResult {
     );
 
     assert_eq!(
-        connections.try_get()?.reassembly.len(),
+        connections.try_get()?.data.reassembly.len(),
         1,
         "The out-of-order segment should be buffered rather than discarded"
     );
@@ -536,7 +538,7 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
     );
 
     assert_eq!(
-        connections.try_get()?.reassembly.len(),
+        connections.try_get()?.data.reassembly.len(),
         0,
         "The reassembly buffer should be empty after draining"
     );
@@ -580,7 +582,7 @@ fn out_of_order_reassembly_respects_app_logic() -> TraceableResult {
     );
 
     assert_eq!(
-        connections.try_get()?.reassembly.len(),
+        connections.try_get()?.data.reassembly.len(),
         0,
         "The reassembly buffer should be empty after draining"
     );
@@ -656,7 +658,7 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         hi.window, hi.seq_num, hi.ack_num,
     )));
-    cloned_state.reassembly.insert(
+    cloned_state.data.reassembly.insert(
         hi.seq_num,
         hi.payload
             .clone()

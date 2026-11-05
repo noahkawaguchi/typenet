@@ -17,12 +17,18 @@ use {
     typenet_utils::error::TraceableResult,
 };
 
-/// The state of a connection in the table, including its TCP state, buffered data, and other
+/// The state of a connection in the table, including its TCP state, buffered bytes, and other
 /// locally stored information.
-#[cfg_attr(test, derive(Debug, Clone))]
+#[cfg_attr(test, derive(Debug, Clone, PartialEq))]
 pub(super) struct ConnState {
     pub(super) tcp_state: TcpState,
+    pub(super) data: ConnData,
+}
 
+/// Data for a TCP connection that isn't handled by `TcpState`, including sequence number
+/// bookkeeping and byte buffers.
+#[cfg_attr(test, derive(Debug, Clone))]
+pub(super) struct ConnData {
     /// "SND.NXT = next sequence number to be sent" (RFC 9293, Section 3.4).
     pub(super) snd_nxt: SeqPoint<Out>,
 
@@ -54,15 +60,17 @@ impl ConnState {
             .then(|| Self {
                 // State after the initial two-way exchange
                 tcp_state: TcpState::SynReceived(SynReceived),
-                // SYN-ACK consumes one sequence number
-                snd_nxt: send_info.seq_num + SYN_BYTE_OUT,
-                // Our SYN-ACK's `ack_num` is the client's ISN + 1
-                rcv_nxt: send_info.ack_num,
-                // Our SYN-ACK is unacknowledged (this is our ISN)
-                snd_una: send_info.seq_num,
-                pending: vec![PendingSegment::new(send_info, Instant::now())],
-                send_buffer: VecDeque::new(),
-                reassembly: TcpReassembly::new(),
+                data: ConnData {
+                    // SYN-ACK consumes one sequence number
+                    snd_nxt: send_info.seq_num + SYN_BYTE_OUT,
+                    // Our SYN-ACK's `ack_num` is the client's ISN + 1
+                    rcv_nxt: send_info.ack_num,
+                    // Our SYN-ACK is unacknowledged (this is our ISN)
+                    snd_una: send_info.seq_num,
+                    pending: vec![PendingSegment::new(send_info, Instant::now())],
+                    send_buffer: VecDeque::new(),
+                    reassembly: TcpReassembly::new(),
+                },
             })
             .ok_or_else(|| {
                 "Attempted to create a new `ConnState` when sending something other than SYN-ACK"
@@ -85,13 +93,12 @@ impl ConnState {
 }
 
 #[cfg(test)]
-impl PartialEq for ConnState {
+impl PartialEq for ConnData {
     fn eq(
         &self,
         &Self {
             // Include all fields except `pending` (timing dependent), explicitly destructured to
             // catch any fields added later
-            tcp_state,
             snd_nxt,
             rcv_nxt,
             snd_una,
@@ -100,8 +107,7 @@ impl PartialEq for ConnState {
             ref reassembly,
         }: &Self,
     ) -> bool {
-        self.tcp_state == tcp_state
-            && self.snd_nxt == snd_nxt
+        self.snd_nxt == snd_nxt
             && self.rcv_nxt == rcv_nxt
             && self.snd_una == snd_una
             && &self.send_buffer == send_buffer
@@ -260,13 +266,16 @@ impl<T> SyncedState<T> {
     /// duplicate ACKs (SND.UNA == SEG.ACK) for updates to SND.UNA and the retransmission queue.
     #[must_use = "Returns updated state as a new instance"]
     pub(super) fn incoming_ack_update(self, conn: &mut ConnState, seg: &TcpSegment<In>) -> Self {
-        if conn.snd_una.precedes_or_eq(seg.ack_num) && seg.ack_num.precedes_or_eq(conn.snd_nxt) {
+        if conn.data.snd_una.precedes_or_eq(seg.ack_num)
+            && seg.ack_num.precedes_or_eq(conn.data.snd_nxt)
+        {
             // Exclude duplicate ACKs: SND.UNA < SEG.ACK <= SND.NXT
-            if conn.snd_una.precedes(seg.ack_num) {
-                conn.snd_una = seg.ack_num;
+            if conn.data.snd_una.precedes(seg.ack_num) {
+                conn.data.snd_una = seg.ack_num;
 
                 // ACKs are cumulative, so only keep pending segments not fully covered by SEG.ACK
-                conn.pending
+                conn.data
+                    .pending
                     .retain(|pending_seg| !pending_seg.is_covered_by(seg.ack_num));
             }
 
@@ -321,15 +330,15 @@ impl<T: SendSideOpen> SyncedState<T> {
         const MAX_PAYLOAD_LEN: usize =
             ETHERNET_MTU - Ipv4Header::REPLY_HDR_LEN - TCP_HDR_MIN_LEN as usize;
 
-        let sent_but_not_acked = usize::try_from(conn.snd_nxt - conn.snd_una)?;
+        let sent_but_not_acked = usize::try_from(conn.data.snd_nxt - conn.data.snd_una)?;
 
         let space_in_window =
             usize::from(self.window_state.snd_wnd).saturating_sub(sent_but_not_acked);
 
         let bytes_to_send = space_in_window
-            .min(conn.send_buffer.len())
+            .min(conn.data.send_buffer.len())
             .min(MAX_PAYLOAD_LEN);
 
-        TcpPayload::try_from_iter(conn.send_buffer.drain(..bytes_to_send))
+        TcpPayload::try_from_iter(conn.data.send_buffer.drain(..bytes_to_send))
     }
 }

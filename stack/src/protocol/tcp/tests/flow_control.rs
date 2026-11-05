@@ -40,9 +40,9 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResu
         "Only the first 3 bytes fit in the advertised window of 3"
     );
 
-    expected_state.snd_nxt += WINDOW.into();
-    expected_state.rcv_nxt += HELLO_LEN_IN;
-    expected_state.send_buffer.extend(b"lo");
+    expected_state.data.snd_nxt += WINDOW.into();
+    expected_state.data.rcv_nxt += HELLO_LEN_IN;
+    expected_state.data.send_buffer.extend(b"lo");
 
     assert_eq!(
         connections.try_get()?,
@@ -77,15 +77,15 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    expected_state.snd_nxt += WINDOW.into();
-    expected_state.rcv_nxt += HELLO_LEN_IN;
-    expected_state.send_buffer.extend(b"lo");
+    expected_state.data.snd_nxt += WINDOW.into();
+    expected_state.data.rcv_nxt += HELLO_LEN_IN;
+    expected_state.data.send_buffer.extend(b"lo");
 
     {
         let state = connections.try_get()?;
         assert_eq!(state, &expected_state, "State confirmation before the dup ACK");
         assert!(
-            state.snd_una.precedes(state.snd_nxt),
+            state.data.snd_una.precedes(state.data.snd_nxt),
             "Bytes must be sent but unacked for this test to be meaningful"
         );
     }
@@ -143,9 +143,9 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    expected_state.snd_nxt += HEL_LEN;
-    expected_state.rcv_nxt += HELLO_LEN_IN;
-    expected_state.send_buffer.extend(b"lo");
+    expected_state.data.snd_nxt += HEL_LEN;
+    expected_state.data.rcv_nxt += HELLO_LEN_IN;
+    expected_state.data.send_buffer.extend(b"lo");
 
     assert_eq!(connections.try_get()?, &expected_state, "State confirmation before window update");
 
@@ -170,14 +170,14 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
         "The buffered remainder should drain once the window opens, piggybacked on the next ACK"
     );
 
-    expected_state.snd_una += HEL_LEN;
-    expected_state.snd_nxt += LO_LEN;
+    expected_state.data.snd_una += HEL_LEN;
+    expected_state.data.snd_nxt += LO_LEN;
     expected_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         LARGER_WINDOW,
         window_update.seq_num,
         window_update.ack_num,
     )));
-    expected_state.send_buffer.clear();
+    expected_state.data.send_buffer.clear();
 
     assert_eq!(
         connections.try_get()?,
@@ -215,8 +215,8 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
         "A closed window still gets a bare ACK for the receipt, just no echoed payload"
     );
 
-    expected_state.rcv_nxt += HELLO_LEN_IN;
-    expected_state.send_buffer.extend(b"Hello");
+    expected_state.data.rcv_nxt += HELLO_LEN_IN;
+    expected_state.data.send_buffer.extend(b"Hello");
 
     assert_eq!(
         connections.try_get()?,
@@ -262,8 +262,11 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
     }
     .create_test_reply(&mut connections)?;
 
-    expected_state.rcv_nxt += big_payload_len;
-    expected_state.send_buffer.extend(big_payload.as_bytes());
+    expected_state.data.rcv_nxt += big_payload_len;
+    expected_state
+        .data
+        .send_buffer
+        .extend(big_payload.as_bytes());
     assert_eq!(connections.try_get()?, &expected_state, "State confirmation before window opens");
 
     // Client reopens the window wide enough to take everything at once
@@ -285,13 +288,13 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
         "Only the first {MAX_PAYLOAD_LEN} bytes should fit in one segment"
     );
 
-    expected_state.snd_nxt += SeqOffset::<u32, Out>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
+    expected_state.data.snd_nxt += SeqOffset::<u32, Out>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
     expected_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         window_update.window,
         window_update.seq_num,
         window_update.ack_num,
     )));
-    expected_state.send_buffer.drain(..MAX_PAYLOAD_LEN);
+    expected_state.data.send_buffer.drain(..MAX_PAYLOAD_LEN);
 
     assert_eq!(
         connections.try_get()?,

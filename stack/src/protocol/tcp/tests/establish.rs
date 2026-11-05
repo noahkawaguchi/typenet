@@ -8,7 +8,7 @@ fn creates_valid_syn_ack() -> TraceableResult {
         .create_test_reply(&mut connections)?;
 
     // seq_num is the random ISN that was stored in the connection table
-    let stored_isn = connections.try_get()?.snd_una;
+    let stored_isn = connections.try_get()?.data.snd_una;
 
     assert_eq!(
         reply,
@@ -74,8 +74,8 @@ fn handshake_ack_without_data_establishes_connection_and_returns_none() -> Trace
     let window_state =
         WindowState::test_new(handshake_ack.window, handshake_ack.seq_num, handshake_ack.ack_num);
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(window_state));
-    cloned_state.rcv_nxt = CLIENT_ISN + SYN_BYTE_IN;
-    cloned_state.snd_una += SYN_BYTE_OUT;
+    cloned_state.data.rcv_nxt = CLIENT_ISN + SYN_BYTE_IN;
+    cloned_state.data.snd_una += SYN_BYTE_OUT;
 
     assert_eq!(connections.try_get()?, &cloned_state);
 
@@ -114,9 +114,9 @@ fn handshake_ack_with_data_establishes_and_echoes() -> TraceableResult {
         handshake_ack_with_data.ack_num,
     );
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(window_state));
-    cloned_state.rcv_nxt += HELLO_LEN_IN;
-    cloned_state.snd_nxt += HELLO_LEN_OUT;
-    cloned_state.snd_una += SYN_BYTE_OUT;
+    cloned_state.data.rcv_nxt += HELLO_LEN_IN;
+    cloned_state.data.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.data.snd_una += SYN_BYTE_OUT;
 
     assert_eq!(connections.try_get()?, &cloned_state);
 
@@ -156,7 +156,7 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
         out_of_order.seq_num,
         out_of_order.ack_num,
     )));
-    cloned_state.snd_una += SYN_BYTE_OUT;
+    cloned_state.data.snd_una += SYN_BYTE_OUT;
 
     assert_eq!(
         connections.try_get()?,
@@ -230,8 +230,8 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
         out_of_order.seq_num,
         out_of_order.ack_num,
     )));
-    cloned_state.snd_una += SYN_BYTE_OUT;
-    cloned_state.reassembly.mark_fin(out_of_order.seq_num);
+    cloned_state.data.snd_una += SYN_BYTE_OUT;
+    cloned_state.data.reassembly.mark_fin(out_of_order.seq_num);
 
     assert_eq!(
         connections.try_get()?,
@@ -276,8 +276,8 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
         out_of_order.seq_num,
         out_of_order.ack_num,
     )));
-    cloned_state.snd_una += SYN_BYTE_OUT;
-    cloned_state.reassembly.insert(
+    cloned_state.data.snd_una += SYN_BYTE_OUT;
+    cloned_state.data.reassembly.insert(
         out_of_order.seq_num,
         out_of_order
             .payload

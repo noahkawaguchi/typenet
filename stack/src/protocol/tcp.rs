@@ -314,7 +314,9 @@ mod tests {
             application::ShoutingTestApp,
             ipv4_header::Ipv4Header,
             protocol::{
-                tcp::state::{ConnState, SynReceived, SyncedState, TcpState, WindowState},
+                tcp::state::{
+                    ConnData, ConnState, SynReceived, SyncedState, TcpState, WindowState,
+                },
                 test_consts::{IP_PAIR_IN, IP_PAIR_OUT},
             },
         },

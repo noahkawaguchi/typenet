@@ -7,7 +7,7 @@ fn syn_ack_is_resent_while_due() -> TraceableResult {
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
         .create_test_reply(&mut connections)?;
 
-    let isn = connections.try_get()?.snd_una;
+    let isn = connections.try_get()?.data.snd_una;
 
     let mut resent = connections.make_retransmissions();
     let reply = resent.pop().ok_or("Expected one retransmitted segment")?;
@@ -34,7 +34,7 @@ fn pending_segment_is_cleared_once_acked() -> TraceableResult {
     TcpSegment { seq_num: CLIENT_ISN, flags: TcpFlags::Syn, ..CLIENT_PKT }
         .create_test_reply(&mut connections)?;
 
-    let isn = connections.try_get()?.snd_una;
+    let isn = connections.try_get()?.data.snd_una;
 
     // Handshake ACK completes the connection and should clear the pending SYN-ACK
     TcpSegment { seq_num: CLIENT_ISN + SYN_BYTE_IN, ack_num: isn + SYN_BYTE_OUT, ..CLIENT_PKT }

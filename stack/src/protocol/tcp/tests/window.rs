@@ -30,8 +30,8 @@ fn new_ack_adopts_window_from_segment() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += HELLO_LEN_OUT;
-    cloned_state.rcv_nxt += HELLO_LEN_IN;
+    cloned_state.data.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.data.rcv_nxt += HELLO_LEN_IN;
 
     assert_eq!(connections.try_get()?, &cloned_state, "State confirmation before window update");
 
@@ -45,7 +45,7 @@ fn new_ack_adopts_window_from_segment() -> TraceableResult {
 
     assert_eq!(window_update.create_test_reply(&mut connections)?, None);
 
-    cloned_state.snd_una += HELLO_LEN_OUT;
+    cloned_state.data.snd_una += HELLO_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         window_update.window,
         window_update.seq_num,
@@ -98,7 +98,7 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
         out_of_order.seq_num,
         out_of_order.ack_num,
     )));
-    cloned_state.reassembly.insert(
+    cloned_state.data.reassembly.insert(
         out_of_order.seq_num,
         out_of_order
             .payload
@@ -157,8 +157,8 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += HELLO_LEN_OUT;
-    cloned_state.rcv_nxt += HELLO_LEN_IN;
+    cloned_state.data.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.data.rcv_nxt += HELLO_LEN_IN;
     assert_eq!(connections.try_get()?, &cloned_state);
 
     let hi_pkt = TcpSegment {
@@ -170,8 +170,8 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
 
     hi_pkt.create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += HI_LEN_OUT;
-    cloned_state.rcv_nxt += HI_LEN_IN;
+    cloned_state.data.snd_nxt += HI_LEN_OUT;
+    cloned_state.data.rcv_nxt += HI_LEN_IN;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         hi_pkt.window,
         hi_pkt.seq_num,
@@ -191,7 +191,7 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
 
     assert_eq!(window_update_1.create_test_reply(&mut connections)?, None);
 
-    cloned_state.snd_una += HELLO_LEN_OUT;
+    cloned_state.data.snd_una += HELLO_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         window_update_1.window,
         window_update_1.seq_num,
@@ -211,7 +211,7 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
 
     assert_eq!(window_update_2.create_test_reply(&mut connections)?, None);
 
-    cloned_state.snd_una += HI_LEN_OUT;
+    cloned_state.data.snd_una += HI_LEN_OUT;
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
         window_update_2.window,
         window_update_2.seq_num,
@@ -256,8 +256,8 @@ fn duplicate_ack_updates_window() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    cloned_state.snd_nxt += HELLO_LEN_OUT;
-    cloned_state.rcv_nxt += HELLO_LEN_IN;
+    cloned_state.data.snd_nxt += HELLO_LEN_OUT;
+    cloned_state.data.rcv_nxt += HELLO_LEN_IN;
 
     assert_eq!(connections.try_get()?, &cloned_state, "State confirmation before window update");
 

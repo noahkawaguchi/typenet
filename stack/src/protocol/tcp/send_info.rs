@@ -43,11 +43,11 @@ impl SeqCheck {
     /// Determines whether SEG.SEQ falls exactly at RCV.NXT, within RCV.WND but out of order, or
     /// outside RCV.WND.
     fn check(seg: &TcpSegment<In>, conn: &ConnState) -> Self {
-        if seg.seq_num == conn.rcv_nxt {
+        if seg.seq_num == conn.data.rcv_nxt {
             Self::InOrder
         } else if seg
             .seq_num
-            .in_window(conn.rcv_nxt, TcpSegment::<Out>::RCV_WND.into())
+            .in_window(conn.data.rcv_nxt, TcpSegment::<Out>::RCV_WND.into())
         {
             Self::OutOfOrder
         } else {
@@ -59,7 +59,12 @@ impl SeqCheck {
 impl SendInfo {
     /// Creates a pure ACK `Self` with SEG.SEQ=SND.NXT and SEG.ACK=RCV.NXT.
     const fn pure_ack(conn: &ConnState) -> Self {
-        Self { seq_num: conn.snd_nxt, ack_num: conn.rcv_nxt, flags: TcpFlags::Ack, payload: None }
+        Self {
+            seq_num: conn.data.snd_nxt,
+            ack_num: conn.data.rcv_nxt,
+            flags: TcpFlags::Ack,
+            payload: None,
+        }
     }
 
     /// Creates a RST with its SEG.SEQ set to `seg.ack_num`.
@@ -200,8 +205,8 @@ impl SendInfo {
         conn: &mut ConnState,
         syn_received: SynReceived,
     ) -> TraceableResult<(Option<Self>, bool)> {
-        let acceptable_ack =
-            conn.snd_una.precedes(seg.ack_num) && seg.ack_num.precedes_or_eq(conn.snd_nxt);
+        let acceptable_ack = conn.data.snd_una.precedes(seg.ack_num)
+            && seg.ack_num.precedes_or_eq(conn.data.snd_nxt);
 
         Ok(match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), acceptable_ack) {
             // Duplicate SYN while awaiting the handshake ACK (client's retransmission timer resent
@@ -209,13 +214,14 @@ impl SendInfo {
             // ISN.
             (TcpFlags::Syn, ..) => {
                 let send_info = Self {
-                    seq_num: conn.snd_una, // ISN
+                    seq_num: conn.data.snd_una, // ISN
                     ack_num: seg.seq_num + SYN_BYTE_IN,
                     flags: TcpFlags::SynAck,
                     payload: None,
                 };
 
-                conn.pending
+                conn.data
+                    .pending
                     .push(PendingSegment::new(send_info.clone(), Instant::now()));
 
                 (Some(send_info), false)
@@ -230,19 +236,23 @@ impl SendInfo {
                 let established = Self::complete_handshake(seg, conn, syn_received);
 
                 if let Some(payload) = maybe_payload {
-                    conn.rcv_nxt += payload.len().into();
-                    app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
+                    conn.data.rcv_nxt += payload.len().into();
+                    app.handle_tcp(payload.as_bytes(), &mut conn.data.send_buffer);
                 }
 
-                for reassembled in conn.reassembly.drain_contiguous(&mut conn.rcv_nxt) {
-                    app.handle_tcp(reassembled.as_bytes(), &mut conn.send_buffer);
+                for reassembled in conn
+                    .data
+                    .reassembly
+                    .drain_contiguous(&mut conn.data.rcv_nxt)
+                {
+                    app.handle_tcp(reassembled.as_bytes(), &mut conn.data.send_buffer);
                 }
 
                 (
-                    if conn.reassembly.fin_reached(conn.rcv_nxt) {
-                        conn.rcv_nxt += FIN_BYTE_IN;
+                    if conn.data.reassembly.fin_reached(conn.data.rcv_nxt) {
+                        conn.data.rcv_nxt += FIN_BYTE_IN;
                         Some(Self::close_wait_or_last_ack(conn, established.rcv_fin())?)
-                    } else if !conn.send_buffer.is_empty() {
+                    } else if !conn.data.send_buffer.is_empty() {
                         Some(match established.drain_transmittable(conn)? {
                             Some(to_send) => Self::data_payload(conn, to_send),
                             None => Self::pure_ack(conn),
@@ -281,10 +291,11 @@ impl SendInfo {
             (TcpFlags::Ack | TcpFlags::FinAck, maybe_payload, SeqCheck::OutOfOrder, true) => {
                 Self::complete_handshake(seg, conn, syn_received);
                 if let Some(payload) = maybe_payload {
-                    conn.reassembly.insert(seg.seq_num, payload.clone());
+                    conn.data.reassembly.insert(seg.seq_num, payload.clone());
                 }
                 if seg.flags == TcpFlags::FinAck {
-                    conn.reassembly
+                    conn.data
+                        .reassembly
                         .mark_fin(seg.seq_num + maybe_payload.len_or_default());
                 }
                 (Some(Self::pure_ack(conn)), false)
@@ -304,8 +315,8 @@ impl SendInfo {
         let established = syn_received.establish(seg);
 
         conn.tcp_state = TcpState::Established(established);
-        conn.snd_una = seg.ack_num;
-        conn.pending.clear(); // Only the SYN-ACK just acknowledged could have been pending
+        conn.data.snd_una = seg.ack_num;
+        conn.data.pending.clear(); // Only the SYN-ACK just acknowledged could have been pending
 
         established
     }
@@ -323,7 +334,7 @@ impl SendInfo {
             // segment and reply with an ACK reflecting current state (RFC 9293, Section 3.10.7.4,
             // "Fifth, check the ACK field").
             (TcpFlags::Ack, _, SeqCheck::InOrder | SeqCheck::OutOfOrder)
-                if conn.snd_nxt.precedes(seg.ack_num) =>
+                if conn.data.snd_nxt.precedes(seg.ack_num) =>
             {
                 (Some(Self::pure_ack(conn)), false)
             }
@@ -351,16 +362,20 @@ impl SendInfo {
                 let new_established = established.incoming_ack_update(conn, seg);
 
                 conn.tcp_state = TcpState::Established(new_established);
-                conn.rcv_nxt += payload.len().into();
-                app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
+                conn.data.rcv_nxt += payload.len().into();
+                app.handle_tcp(payload.as_bytes(), &mut conn.data.send_buffer);
 
-                for reassembled in conn.reassembly.drain_contiguous(&mut conn.rcv_nxt) {
-                    app.handle_tcp(reassembled.as_bytes(), &mut conn.send_buffer);
+                for reassembled in conn
+                    .data
+                    .reassembly
+                    .drain_contiguous(&mut conn.data.rcv_nxt)
+                {
+                    app.handle_tcp(reassembled.as_bytes(), &mut conn.data.send_buffer);
                 }
 
                 (
-                    Some(if conn.reassembly.fin_reached(conn.rcv_nxt) {
-                        conn.rcv_nxt += FIN_BYTE_IN;
+                    Some(if conn.data.reassembly.fin_reached(conn.data.rcv_nxt) {
+                        conn.data.rcv_nxt += FIN_BYTE_IN;
                         Self::close_wait_or_last_ack(conn, new_established.rcv_fin())?
                     } else {
                         match new_established.drain_transmittable(conn)? {
@@ -376,7 +391,7 @@ impl SendInfo {
             // replying with a duplicate ACK so the peer knows what's still missing.
             (TcpFlags::Ack, Some(payload), SeqCheck::OutOfOrder) => {
                 conn.tcp_state = TcpState::Established(established.incoming_ack_update(conn, seg));
-                conn.reassembly.insert(seg.seq_num, payload.clone());
+                conn.data.reassembly.insert(seg.seq_num, payload.clone());
                 (Some(Self::pure_ack(conn)), false)
             }
 
@@ -402,9 +417,10 @@ impl SendInfo {
             (TcpFlags::FinAck, maybe_payload, SeqCheck::OutOfOrder) => {
                 conn.tcp_state = TcpState::Established(established.incoming_ack_update(conn, seg));
                 if let Some(payload) = maybe_payload {
-                    conn.reassembly.insert(seg.seq_num, payload.clone());
+                    conn.data.reassembly.insert(seg.seq_num, payload.clone());
                 }
-                conn.reassembly
+                conn.data
+                    .reassembly
                     .mark_fin(seg.seq_num + maybe_payload.len_or_default());
                 (Some(Self::pure_ack(conn)), false)
             }
@@ -419,14 +435,15 @@ impl SendInfo {
         let send_len = to_send.len().into();
 
         let send_info = Self {
-            seq_num: conn.snd_nxt,
-            ack_num: conn.rcv_nxt,
+            seq_num: conn.data.snd_nxt,
+            ack_num: conn.data.rcv_nxt,
             flags: TcpFlags::Ack,
             payload: Some(to_send),
         };
 
-        conn.snd_nxt += send_len;
-        conn.pending
+        conn.data.snd_nxt += send_len;
+        conn.data
+            .pending
             .push(PendingSegment::new(send_info.clone(), Instant::now()));
 
         send_info
@@ -443,11 +460,11 @@ impl SendInfo {
         old_established: SyncedState<Established>,
     ) -> TraceableResult<Self> {
         if let Some(payload) = maybe_payload {
-            conn.rcv_nxt += payload.len().into();
-            app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
+            conn.data.rcv_nxt += payload.len().into();
+            app.handle_tcp(payload.as_bytes(), &mut conn.data.send_buffer);
         }
 
-        conn.rcv_nxt += FIN_BYTE_IN;
+        conn.data.rcv_nxt += FIN_BYTE_IN;
 
         let new_established = old_established.incoming_ack_update(conn, seg);
         Self::close_wait_or_last_ack(conn, new_established.rcv_fin())
@@ -463,22 +480,23 @@ impl SendInfo {
     ) -> TraceableResult<Self> {
         let to_send = close_wait.drain_transmittable(conn)?;
 
-        Ok(if conn.send_buffer.is_empty() {
+        Ok(if conn.data.send_buffer.is_empty() {
             let send_len = to_send.len_or_default();
 
             conn.tcp_state = TcpState::LastAck(close_wait.send_fin());
 
             let send_info = Self {
-                seq_num: conn.snd_nxt,
-                ack_num: conn.rcv_nxt,
+                seq_num: conn.data.snd_nxt,
+                ack_num: conn.data.rcv_nxt,
                 flags: TcpFlags::FinAck,
                 payload: to_send,
             };
 
-            conn.snd_nxt += send_len;
-            conn.snd_nxt += FIN_BYTE_OUT;
+            conn.data.snd_nxt += send_len;
+            conn.data.snd_nxt += FIN_BYTE_OUT;
 
-            conn.pending
+            conn.data
+                .pending
                 .push(PendingSegment::new(send_info.clone(), Instant::now()));
 
             send_info
@@ -499,14 +517,14 @@ impl SendInfo {
         conn: &mut ConnState,
         fin_wait_1: SyncedState<FinWait1>,
     ) -> (Option<Self>, bool) {
-        let our_fin_acked = seg.ack_num == conn.snd_nxt;
+        let our_fin_acked = seg.ack_num == conn.data.snd_nxt;
 
         match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
             // In-order data arriving after we've sent our own FIN but before the peer's FIN has
             // arrived (half closed) -> ACK it, don't deliver to the application because we have no
             // send side left to reply on, and advance RCV.NXT.
             (TcpFlags::Ack, Some(payload), SeqCheck::InOrder, _) => {
-                conn.rcv_nxt += payload.len().into();
+                conn.data.rcv_nxt += payload.len().into();
                 let send_info = Self::pure_ack(conn);
                 conn.tcp_state = TcpState::FinWait1(fin_wait_1.incoming_ack_update(conn, seg));
                 (Some(send_info), false)
@@ -534,8 +552,8 @@ impl SendInfo {
             // application because we have no send side left to reply on (same as plain data
             // arriving in FIN-WAIT-1), but RCV.NXT must still advance past it.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder, true) => {
-                conn.rcv_nxt += maybe_payload.len_or_default();
-                conn.rcv_nxt += FIN_BYTE_IN;
+                conn.data.rcv_nxt += maybe_payload.len_or_default();
+                conn.data.rcv_nxt += FIN_BYTE_IN;
                 (Some(Self::pure_ack(conn)), true)
             }
 
@@ -546,8 +564,8 @@ impl SendInfo {
             // application because we have no send side left to reply on (same as plain data
             // arriving in FIN-WAIT-1), but RCV.NXT must still advance past it.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder, false) => {
-                conn.rcv_nxt += maybe_payload.len_or_default();
-                conn.rcv_nxt += FIN_BYTE_IN;
+                conn.data.rcv_nxt += maybe_payload.len_or_default();
+                conn.data.rcv_nxt += FIN_BYTE_IN;
                 let send_info = Self::pure_ack(conn);
 
                 conn.tcp_state = TcpState::Closing(
@@ -575,7 +593,7 @@ impl SendInfo {
             // arrived (half closed) -> ACK it, don't deliver to the application because we have no
             // send side left to reply on, and advance RCV.NXT.
             (TcpFlags::Ack, Some(payload), SeqCheck::InOrder) => {
-                conn.rcv_nxt += payload.len().into();
+                conn.data.rcv_nxt += payload.len().into();
                 let send_info = Self::pure_ack(conn);
                 conn.tcp_state = TcpState::FinWait2(fin_wait_2.incoming_ack_update(conn, seg));
                 (Some(send_info), false)
@@ -593,8 +611,8 @@ impl SendInfo {
             // because we have no send side left to reply on, but the ACK must still
             // reflect RCV.NXT advanced past it as well as the FIN.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::InOrder) => {
-                conn.rcv_nxt += maybe_payload.len_or_default();
-                conn.rcv_nxt += FIN_BYTE_IN;
+                conn.data.rcv_nxt += maybe_payload.len_or_default();
+                conn.data.rcv_nxt += FIN_BYTE_IN;
                 (Some(Self::pure_ack(conn)), true)
             }
 
@@ -628,7 +646,7 @@ impl SendInfo {
         conn: &mut ConnState,
         closing: SyncedState<Closing>,
     ) -> (Option<Self>, bool) {
-        let our_fin_acked = seg.ack_num == conn.snd_nxt;
+        let our_fin_acked = seg.ack_num == conn.data.snd_nxt;
 
         match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
             // Simultaneous close, peer's ACK of our FIN arrives -> remove connection, no reply.
@@ -652,7 +670,7 @@ impl SendInfo {
         conn: &mut ConnState,
         last_ack: SyncedState<LastAck>,
     ) -> (Option<Self>, bool) {
-        let our_fin_acked = seg.ack_num == conn.snd_nxt;
+        let our_fin_acked = seg.ack_num == conn.data.snd_nxt;
 
         match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
             // Partial ACK not yet covering our FIN -> update send-side state like a plain ACK, keep

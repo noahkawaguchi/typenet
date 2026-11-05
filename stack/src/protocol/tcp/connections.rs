@@ -143,7 +143,7 @@ impl TcpConnections {
     pub(crate) fn next_retransmit_deadline(&self) -> Option<Instant> {
         self.table
             .values()
-            .flat_map(|conn| &conn.pending)
+            .flat_map(|conn| &conn.data.pending)
             .map(|seg| seg.time_due(&self.rto_config))
             .min()
     }
@@ -158,7 +158,8 @@ impl TcpConnections {
             .table
             .iter()
             .filter_map(|(&key, conn)| {
-                conn.pending
+                conn.data
+                    .pending
                     .iter()
                     .any(|seg| seg.time_due(&self.rto_config) <= now)
                     .then_some(key)
@@ -170,14 +171,14 @@ impl TcpConnections {
         for key in due_keys {
             let Some(conn) = self.table.get_mut(&key) else { continue };
 
-            if conn.pending.iter().any(|seg| {
+            if conn.data.pending.iter().any(|seg| {
                 seg.time_due(&self.rto_config) <= now && seg.exhausted_retries(self.max_retries)
             }) {
                 self.table.remove(&key);
                 continue;
             }
 
-            retransmissions.extend(conn.pending.iter_mut().filter_map(|seg| {
+            retransmissions.extend(conn.data.pending.iter_mut().filter_map(|seg| {
                 (seg.time_due(&self.rto_config) <= now).then(|| {
                     TcpSegment::from_pairs_and_info(
                         Ipv4AddrPair::new(key.server_ip, key.client_ip),
@@ -202,15 +203,16 @@ impl TcpConnections {
             };
 
             let send_info = SendInfo {
-                seq_num: conn.snd_nxt,
-                ack_num: conn.rcv_nxt,
+                seq_num: conn.data.snd_nxt,
+                ack_num: conn.data.rcv_nxt,
                 flags: TcpFlags::FinAck,
                 payload: None,
             };
 
             conn.tcp_state = TcpState::FinWait1(established.close());
-            conn.snd_nxt += FIN_BYTE_OUT;
-            conn.pending
+            conn.data.snd_nxt += FIN_BYTE_OUT;
+            conn.data
+                .pending
                 .push(PendingSegment::new(send_info.clone(), now));
 
             Some(TcpSegment::from_pairs_and_info(
@@ -255,7 +257,7 @@ impl TcpConnections {
             crate::protocol::tcp::{
                 SYN_BYTE_IN, SYN_BYTE_OUT,
                 reassembly::TcpReassembly,
-                state::SynReceived,
+                state::{ConnData, SynReceived},
                 test_utils::{CLIENT_ISN, KEY, SERVER_ISN},
             },
             std::collections::VecDeque,
@@ -265,20 +267,22 @@ impl TcpConnections {
             KEY,
             ConnState {
                 tcp_state: TcpState::SynReceived(SynReceived),
-                snd_nxt: SERVER_ISN + SYN_BYTE_OUT,
-                rcv_nxt: CLIENT_ISN + SYN_BYTE_IN,
-                snd_una: SERVER_ISN,
-                pending: vec![PendingSegment::new(
-                    SendInfo {
-                        seq_num: SERVER_ISN,
-                        ack_num: CLIENT_ISN + SYN_BYTE_IN,
-                        flags: TcpFlags::SynAck,
-                        payload: None,
-                    },
-                    sent_at,
-                )],
-                send_buffer: VecDeque::new(),
-                reassembly: TcpReassembly::new(),
+                data: ConnData {
+                    snd_nxt: SERVER_ISN + SYN_BYTE_OUT,
+                    rcv_nxt: CLIENT_ISN + SYN_BYTE_IN,
+                    snd_una: SERVER_ISN,
+                    pending: vec![PendingSegment::new(
+                        SendInfo {
+                            seq_num: SERVER_ISN,
+                            ack_num: CLIENT_ISN + SYN_BYTE_IN,
+                            flags: TcpFlags::SynAck,
+                            payload: None,
+                        },
+                        sent_at,
+                    )],
+                    send_buffer: VecDeque::new(),
+                    reassembly: TcpReassembly::new(),
+                },
             },
         );
 
