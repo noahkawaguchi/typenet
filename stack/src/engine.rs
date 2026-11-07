@@ -120,6 +120,7 @@ impl<A: Application> Engine<A> {
             let to_send = self
                 .tcp_connections
                 .close_established()
+                .into_iter()
                 .map(TryFrom::try_from)
                 .collect::<TraceableResult<_>>()?;
 
@@ -470,14 +471,14 @@ mod tests {
         #[test]
         fn false_with_no_deadline_but_something_closing() {
             let mut tcp_connections = TcpConnections::default().after_handshake();
-            tcp_connections.close_established().for_each(drop);
+            tcp_connections.close_established();
             assert!(!test_engine(tcp_connections).draining_complete());
         }
 
         #[test]
         fn false_with_deadline_but_still_closing() {
             let mut tcp_connections = TcpConnections::default().after_handshake();
-            tcp_connections.close_established().for_each(drop);
+            tcp_connections.close_established();
 
             let mut engine = test_engine(tcp_connections);
             engine.shutdown_deadline = Some(Instant::now());

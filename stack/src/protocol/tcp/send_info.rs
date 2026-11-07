@@ -164,7 +164,11 @@ impl SendInfo {
         conn: &ConnData,
         tcp_state: TcpState,
     ) -> (Option<Self>, Option<TcpState>) {
-        let challenge_ack = (Some(Self::pure_ack(conn)), Some(tcp_state));
+        macro_rules! challenge_ack {
+            () => {
+                (Some(Self::pure_ack(conn)), Some(tcp_state))
+            };
+        }
 
         match (seg.flags, SeqCheck::check(seg, conn)) {
             // RST on a known connection -> RFC 9293, Section 3.10.7.4 has three cases for when
@@ -176,20 +180,20 @@ impl SendInfo {
             // Case 2: SEG.SEQ == RCV.NXT -> reset connection, no reply
             (TcpFlags::Rst | TcpFlags::RstAck, SeqCheck::InOrder) => (None, None),
             // Case 3: SEG.SEQ in window but != RCV.NXT -> don't reset, send challenge ACK
-            (TcpFlags::Rst | TcpFlags::RstAck, SeqCheck::OutOfOrder) => challenge_ack,
+            (TcpFlags::Rst | TcpFlags::RstAck, SeqCheck::OutOfOrder) => challenge_ack!(),
 
             // Non-RST with unacceptable SEG.SEQ -> current state ACK.
             (
                 TcpFlags::Syn | TcpFlags::SynAck | TcpFlags::Ack | TcpFlags::FinAck,
                 SeqCheck::Unacceptable,
-            ) => challenge_ack,
+            ) => challenge_ack!(),
 
             // Stray SYN/SYN-ACK on a synchronized connection -> send a challenge ACK, do not reset
             // the connection (RFC 9293, Section 3.10.7.4, "Fourth, check the SYN bit").
             (TcpFlags::Syn | TcpFlags::SynAck, _)
                 if !matches!(tcp_state, TcpState::SynReceived(_)) =>
             {
-                challenge_ack
+                challenge_ack!()
             }
 
             // Non-RST with acceptable SEG.SEQ refused at every previous point (rare) -> RST.

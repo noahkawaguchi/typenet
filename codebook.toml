@@ -68,6 +68,7 @@ words = [
     "pollfd",
     "pthread",
     "rcv",
+    "reinsertions",
     "resends",
     "revents",
     "rto",

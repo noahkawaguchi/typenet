@@ -194,33 +194,51 @@ impl TcpConnections {
 
     /// Initiates active close (RFC 9293 "CLOSE" call) for every connection currently ESTABLISHED,
     /// transitioning each to FIN-WAIT-1 and returning a FIN-ACK reply for it.
-    pub(crate) fn close_established(&mut self) -> impl Iterator<Item = TcpSegment<Out>> {
+    pub(crate) fn close_established(&mut self) -> Vec<TcpSegment<Out>> {
         let now = Instant::now();
 
-        self.table.iter_mut().filter_map(move |(key, conn)| {
-            let TcpState::Established(established) = conn.tcp_state else {
-                return None;
-            };
+        self.table
+            // Extract only established connections first as an optimization to avoid reinsertions
+            // for connections that don't need to change. The real source of truth is the `match` in
+            // the `filter_map`.
+            .extract_if(|_, conn| matches!(conn.tcp_state, TcpState::Established(_)))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|(key, ConnState { tcp_state, mut data })| {
+                let (maybe_seg, next_state) = match tcp_state {
+                    TcpState::Established(established) => {
+                        let send_info = SendInfo {
+                            seq_num: data.snd_nxt,
+                            ack_num: data.rcv_nxt,
+                            flags: TcpFlags::FinAck,
+                            payload: None,
+                        };
 
-            let send_info = SendInfo {
-                seq_num: conn.data.snd_nxt,
-                ack_num: conn.data.rcv_nxt,
-                flags: TcpFlags::FinAck,
-                payload: None,
-            };
+                        data.snd_nxt += FIN_BYTE_OUT;
+                        data.pending
+                            .push(PendingSegment::new(send_info.clone(), now));
 
-            conn.tcp_state = TcpState::FinWait1(established.close());
-            conn.data.snd_nxt += FIN_BYTE_OUT;
-            conn.data
-                .pending
-                .push(PendingSegment::new(send_info.clone(), now));
+                        (
+                            Some(TcpSegment::from_pairs_and_info(
+                                Ipv4AddrPair::new(key.server_ip, key.client_ip),
+                                PortPair::new(key.server_port, key.client_port),
+                                send_info,
+                            )),
+                            TcpState::FinWait1(established.close()),
+                        )
+                    }
 
-            Some(TcpSegment::from_pairs_and_info(
-                Ipv4AddrPair::new(key.server_ip, key.client_ip),
-                PortPair::new(key.server_port, key.client_port),
-                send_info,
-            ))
-        })
+                    other_state => (None, other_state),
+                };
+
+                self.table
+                    .insert(key, ConnState { tcp_state: next_state, data });
+
+                maybe_seg
+            })
+            // Eagerly run the closure instead of returning an iterator to ensure that all
+            // reinsertions take place
+            .collect()
     }
 
     /// Attempts to retrieve the connection in the table under `KEY`, returning `Err` if not

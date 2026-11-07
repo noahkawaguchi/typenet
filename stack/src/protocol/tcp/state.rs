@@ -80,7 +80,7 @@ impl ConnState {
 
     #[cfg(test)]
     pub(super) const fn test_get_snd_wnd(&self) -> Option<SeqOffset<u16, Out>> {
-        match self.tcp_state {
+        match &self.tcp_state {
             TcpState::SynReceived(_) => None,
             TcpState::Established(established) => Some(established.window_state.snd_wnd),
             TcpState::FinWait1(fin_wait_1) => Some(fin_wait_1.window_state.snd_wnd),
@@ -151,8 +151,8 @@ impl WindowState {
 
 /// The set of states of a TCP connection (non-exhaustive). Variant meanings below from RFC 9293,
 /// Section 3.3.2.
-#[derive(PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug, Clone))]
 pub(super) enum TcpState {
     /// "SYN-RECEIVED - represents waiting for a confirming connection request acknowledgment after
     /// having both received and sent a connection request."
@@ -205,8 +205,8 @@ pub(super) enum TcpState {
 macro_rules! tcp_state_inner_structs {
     ($($state:ident),+ $(,)?) => {
         $(
-            #[derive(PartialEq, Eq, Clone, Copy)]
-            #[cfg_attr(test, derive(Debug))]
+            #[derive(PartialEq, Eq)]
+            #[cfg_attr(test, derive(Debug, Clone))]
             pub(super) struct $state;
         )+
     };
@@ -231,8 +231,8 @@ impl SynReceived {
 }
 
 /// One of the synchronized TCP states.
-#[derive(PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[derive(PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug, Clone))]
 pub(super) struct SyncedState<T> {
     window_state: WindowState,
     phantom: PhantomData<T>,
