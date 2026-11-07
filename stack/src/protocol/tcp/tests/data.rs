@@ -423,7 +423,7 @@ fn wraparound_ack_for_unsent_data_is_still_rejected() -> TraceableResult {
             ..AFTER_HANDSHAKE.data
         },
     };
-    connections.insert(initial_state.clone());
+    connections.test_insert(initial_state.clone());
 
     // ack=0 wraps 1 past SND.NXT=`u32::MAX`
     let reply = TcpSegment { seq_num: CLIENT_ISN + SYN_BYTE_IN, ..CLIENT_PKT }

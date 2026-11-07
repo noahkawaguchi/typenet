@@ -236,7 +236,7 @@ impl TcpConnections {
 
     /// Inserts `conn` into the connection table using `KEY`.
     #[cfg(test)]
-    pub(super) fn insert(&mut self, conn: ConnState) {
+    pub(super) fn test_insert(&mut self, conn: ConnState) {
         use crate::protocol::tcp::tests::KEY;
 
         self.table.insert(KEY, conn);

@@ -343,7 +343,7 @@ fn partial_ack_after_sending_our_fin_does_not_close_or_reset() -> TraceableResul
             },
         };
 
-        connections.insert(initial_state.clone());
+        connections.test_insert(initial_state.clone());
 
         // SEG.ACK == SND.UNA, not yet SND.NXT, so this doesn't cover our FIN
         let partial_ack = TcpSegment {
@@ -857,7 +857,7 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
         ))),
         ..AFTER_HANDSHAKE
     };
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     let fin_ack_with_data = TcpSegment {
         seq_num: CLIENT_ISN + SYN_BYTE_IN,
@@ -1083,7 +1083,7 @@ fn stale_retransmission_after_sending_our_fin_gets_duplicate_ack_not_rst() -> Tr
     for tcp_state in STATES_AFTER_SENDING_FIN {
         let mut connections = TcpConnections::default();
         let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
-        connections.insert(initial_state.clone());
+        connections.test_insert(initial_state.clone());
 
         // Carries a sequence number from before RCV.NXT, i.e. data already fully processed
         let stale_retransmission = TcpSegment {
@@ -1128,7 +1128,7 @@ fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> TraceableR
             ..AFTER_HANDSHAKE.data
         },
     };
-    connections.insert(initial_state.clone());
+    connections.test_insert(initial_state.clone());
 
     let stale_retransmission = TcpSegment {
         seq_num: CLIENT_ISN,
@@ -1161,7 +1161,7 @@ fn stale_pure_ack_after_sending_our_fin_gets_duplicate_ack() -> TraceableResult 
     for tcp_state in STATES_AFTER_SENDING_FIN {
         let mut connections = TcpConnections::default();
         let initial_state = ConnState { tcp_state, ..AFTER_HANDSHAKE };
-        connections.insert(initial_state.clone());
+        connections.test_insert(initial_state.clone());
 
         // Carries a sequence number from before RCV.NXT, and a distinctive window that must not get
         // adopted
@@ -1207,7 +1207,7 @@ fn stale_pure_ack_in_close_wait_gets_duplicate_ack() -> TraceableResult {
             ..AFTER_HANDSHAKE.data
         },
     };
-    connections.insert(initial_state.clone());
+    connections.test_insert(initial_state.clone());
 
     // Carries a sequence number from before RCV.NXT, and a distinctive window that must not get
     // adopted

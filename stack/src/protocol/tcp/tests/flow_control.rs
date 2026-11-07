@@ -18,7 +18,7 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResu
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     let reply = TcpSegment {
         seq_num: CLIENT_ISN + SYN_BYTE_IN,
@@ -64,7 +64,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     // "Hello" (5 bytes), window only allows 3 -> "Hel" sent (SND.NXT advances by 3, SND.UNA stays
     // put), "lo" buffered. 3 bytes are now sent but unacked.
@@ -131,7 +131,7 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(INITIAL_WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     // "Hello" (5 bytes), window only allows 3 -> "Hel" sent, "lo" buffered
     TcpSegment {
@@ -194,7 +194,7 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(ZERO_WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     let reply = TcpSegment {
         seq_num: CLIENT_ISN + SYN_BYTE_IN,
@@ -246,7 +246,7 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(ZERO_WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     let big_payload = "a".repeat(MAX_PAYLOAD_LEN + 100);
     let big_payload_len = SeqOffset::new(u32::try_from(big_payload.len())?);
