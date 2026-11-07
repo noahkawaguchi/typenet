@@ -74,7 +74,9 @@ impl SendInfo {
     }
 
     /// Creates a `Self` for replying to `seg` according to `app`, or returns `Ok(None)` for no
-    /// reply, updating `connections` accordingly.
+    /// reply, updating `connections` accordingly. If handling a known connection fails, the
+    /// connection is dropped (not reinserted into `connections`) rather than kept in a possibly
+    /// inconsistent state, so the peer's next segment is answered with RST.
     pub(super) fn decide_reply(
         app: &mut impl Application,
         seg: &TcpSegment<In>,
@@ -87,17 +89,17 @@ impl SendInfo {
             server_port: seg.ports.dst,
         };
 
-        match connections.get_mut(&key) {
-            None => Self::handle_unknown_conn(seg, connections, key),
-
-            Some(conn) => {
-                Self::handle_known_conn(app, seg, conn).map(|(maybe_send_info, remove_conn)| {
-                    if remove_conn {
-                        connections.remove(&key);
+        if let Some(ConnState { tcp_state, mut data }) = connections.remove(&key) {
+            Self::handle_known_conn(app, seg, &mut data, tcp_state).map(
+                |(maybe_send_info, maybe_next_state)| {
+                    if let Some(next_state) = maybe_next_state {
+                        connections.insert(key, ConnState { tcp_state: next_state, data });
                     }
                     maybe_send_info
-                })
-            }
+                },
+            )
+        } else {
+            Self::handle_unknown_conn(seg, connections, key)
         }
     }
 
@@ -132,38 +134,26 @@ impl SendInfo {
     }
 
     /// Handles the reply decision and state updates for a known connection, returning a reply if
-    /// necessary and a `bool` representing whether the connection should be removed.
+    /// necessary and the next TCP state, or `None` if the connection should be removed.
     fn handle_known_conn(
         app: &mut impl Application,
         seg: &TcpSegment<In>,
-        conn: &mut ConnState,
-    ) -> TraceableResult<(Option<Self>, bool)> {
-        let data = &mut conn.data;
-
-        let (maybe_send_info, maybe_next_state) = match conn.tcp_state {
+        conn: &mut ConnData,
+        tcp_state: TcpState,
+    ) -> TraceableResult<(Option<Self>, Option<TcpState>)> {
+        Ok(match tcp_state {
             TcpState::SynReceived(syn_received) => {
-                Self::handle_syn_rcv(app, seg, data, syn_received)?
+                Self::handle_syn_rcv(app, seg, conn, syn_received)?
             }
             TcpState::Established(established) => {
-                Self::handle_established(app, seg, data, established)?
+                Self::handle_established(app, seg, conn, established)?
             }
-            TcpState::FinWait1(fin_wait_1) => Self::handle_fin_wait_1(seg, data, fin_wait_1),
-            TcpState::FinWait2(fin_wait_2) => Self::handle_fin_wait_2(seg, data, fin_wait_2),
-            TcpState::CloseWait(close_wait) => Self::handle_close_wait(seg, data, close_wait)?,
-            TcpState::Closing(closing) => Self::handle_closing(seg, data, closing),
-            TcpState::LastAck(last_ack) => Self::handle_last_ack(seg, data, last_ack),
-        };
-
-        Ok((
-            maybe_send_info,
-            match maybe_next_state {
-                Some(next_state) => {
-                    conn.tcp_state = next_state;
-                    false
-                }
-                None => true,
-            },
-        ))
+            TcpState::FinWait1(fin_wait_1) => Self::handle_fin_wait_1(seg, conn, fin_wait_1),
+            TcpState::FinWait2(fin_wait_2) => Self::handle_fin_wait_2(seg, conn, fin_wait_2),
+            TcpState::CloseWait(close_wait) => Self::handle_close_wait(seg, conn, close_wait)?,
+            TcpState::Closing(closing) => Self::handle_closing(seg, conn, closing),
+            TcpState::LastAck(last_ack) => Self::handle_last_ack(seg, conn, last_ack),
+        })
     }
 
     /// Common fallback cases among known connections, returning a reply if necessary and the next

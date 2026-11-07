@@ -102,10 +102,6 @@ impl TcpConnections {
 
     pub(crate) fn len(&self) -> usize { self.table.len() }
 
-    pub(super) fn get_mut(&mut self, key: &ConnKey) -> Option<&mut ConnState> {
-        self.table.get_mut(key)
-    }
-
     /// Adds a new SYN-RECEIVED connection to the table.
     ///
     /// # Errors
@@ -121,7 +117,11 @@ impl TcpConnections {
             })
     }
 
-    pub(super) fn remove(&mut self, key: &ConnKey) { self.table.remove(key); }
+    /// Inserts `conn` into the table under `key`, replacing any existing connection.
+    pub(super) fn insert(&mut self, key: ConnKey, conn: ConnState) { self.table.insert(key, conn); }
+
+    /// Removes and returns the connection under `key`, if present.
+    pub(super) fn remove(&mut self, key: &ConnKey) -> Option<ConnState> { self.table.remove(key) }
 
     /// Returns whether any connection is currently mid-close (FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT,
     /// CLOSING, or LAST-ACK), i.e. has sent or received a FIN but not yet completed teardown.
