@@ -4,10 +4,10 @@ use {super::*, pretty_assertions::assert_eq};
 /// FIN-WAIT-2, CLOSING, and LAST-ACK. All have the window state right after the initial three-way
 /// handshake.
 const STATES_AFTER_SENDING_FIN: [TcpState; 4] = [
-    TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-    TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-    TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-    TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
+    TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE, FinWait1)),
+    TcpState::FinWait2(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE, FinWait2)),
+    TcpState::Closing(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE, Closing)),
+    TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE, LastAck)),
 ];
 
 #[test]
@@ -39,11 +39,14 @@ fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> TraceableResu
         "Handshake-completing FIN-ACK must establish the connection then get our own FIN-ACK"
     );
 
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        client_fin_ack.window,
-        client_fin_ack.seq_num,
-        client_fin_ack.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+        WindowState::test_new(
+            client_fin_ack.window,
+            client_fin_ack.seq_num,
+            client_fin_ack.ack_num,
+        ),
+        LastAck,
+    ));
     cloned_state.data.snd_una += SYN_BYTE_OUT;
     cloned_state.data.snd_nxt += FIN_BYTE_OUT;
     cloned_state.data.rcv_nxt += FIN_BYTE_IN;
@@ -82,11 +85,14 @@ fn creates_valid_fin_ack() -> TraceableResult {
     );
 
     // Connection is now in LAST-ACK state (waiting for client's final ACK), not yet removed
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        client_fin_ack.window,
-        client_fin_ack.seq_num,
-        client_fin_ack.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+        WindowState::test_new(
+            client_fin_ack.window,
+            client_fin_ack.seq_num,
+            client_fin_ack.ack_num,
+        ),
+        LastAck,
+    ));
     cloned_state.data.snd_nxt += SYN_BYTE_OUT;
     cloned_state.data.rcv_nxt += FIN_BYTE_IN;
 
@@ -143,11 +149,14 @@ fn fin_ack_acks_prior_data_and_advances_snd_una() -> TraceableResult {
 
     client_fin_ack.create_test_reply(&mut connections)?;
 
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        client_fin_ack.window,
-        client_fin_ack.seq_num,
-        client_fin_ack.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+        WindowState::test_new(
+            client_fin_ack.window,
+            client_fin_ack.seq_num,
+            client_fin_ack.ack_num,
+        ),
+        LastAck,
+    ));
     cloned_state.data.snd_nxt += FIN_BYTE_OUT;
     cloned_state.data.rcv_nxt += FIN_BYTE_IN;
     cloned_state.data.snd_una += HELLO_LEN_OUT;
@@ -205,11 +214,14 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> TraceableResult 
          FIN-ACK in response"
     );
 
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        client_fin_ack.window,
-        client_fin_ack.seq_num,
-        client_fin_ack.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(
+            client_fin_ack.window,
+            client_fin_ack.seq_num,
+            client_fin_ack.ack_num,
+        ),
+        Established::test_empty(),
+    ));
     cloned_state
         .data
         .reassembly
@@ -254,11 +266,14 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
         "Out-of-order FIN-ACK should get a duplicate ACK, not start closing yet"
     );
 
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        fin_ack_with_data.window,
-        fin_ack_with_data.seq_num,
-        fin_ack_with_data.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(
+            fin_ack_with_data.window,
+            fin_ack_with_data.seq_num,
+            fin_ack_with_data.ack_num,
+        ),
+        Established::test_empty(),
+    ));
     cloned_state.data.reassembly.insert(
         fin_ack_with_data.seq_num,
         fin_ack_with_data
@@ -310,11 +325,14 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
 
     // The window state stays pinned to the FIN-ACK's values (not changing those of the "Hello") due
     // to the window update rules, even though "Hello" fills a gap in the data
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        fin_ack_with_data.window,
-        fin_ack_with_data.seq_num,
-        fin_ack_with_data.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+        WindowState::test_new(
+            fin_ack_with_data.window,
+            fin_ack_with_data.seq_num,
+            fin_ack_with_data.ack_num,
+        ),
+        LastAck,
+    ));
     cloned_state.data.snd_nxt += HELLO_LEN_OUT + HI_LEN_OUT + FIN_BYTE_OUT;
     cloned_state.data.rcv_nxt += HELLO_LEN_IN + HI_LEN_IN + FIN_BYTE_IN;
 
@@ -386,11 +404,14 @@ fn final_ack_after_fin_ack_removes_connection_and_returns_none() -> TraceableRes
 
     client_fin_ack.create_test_reply(&mut connections)?;
 
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        client_fin_ack.window,
-        client_fin_ack.seq_num,
-        client_fin_ack.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+        WindowState::test_new(
+            client_fin_ack.window,
+            client_fin_ack.seq_num,
+            client_fin_ack.ack_num,
+        ),
+        LastAck,
+    ));
     cloned_state.data.snd_nxt += FIN_BYTE_OUT;
     cloned_state.data.rcv_nxt += FIN_BYTE_IN;
 
@@ -435,7 +456,8 @@ fn close_established_sends_fin_ack_and_transitions_to_fin_wait_1() -> TraceableR
     // IP addresses are swapped: server -> client
     assert_eq!(reply.get_ip_pair(), IP_PAIR_IN.swapped());
 
-    cloned_state.tcp_state = TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE));
+    cloned_state.tcp_state =
+        TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE, FinWait1));
     cloned_state.data.snd_nxt += FIN_BYTE_OUT;
     assert_eq!(connections.try_get()?, &cloned_state, "FIN consumes one sequence number");
 
@@ -457,11 +479,10 @@ fn fin_wait_1_to_fin_wait_2_on_ack_of_our_fin() -> TraceableResult {
 
     assert_eq!(ack_of_fin.create_test_reply(&mut connections)?, None);
 
-    cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(WindowState::test_new(
-        ack_of_fin.window,
-        ack_of_fin.seq_num,
-        ack_of_fin.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(
+        WindowState::test_new(ack_of_fin.window, ack_of_fin.seq_num, ack_of_fin.ack_num),
+        FinWait2,
+    ));
     cloned_state.data.snd_una += FIN_BYTE_OUT;
 
     assert_eq!(connections.try_get()?, &cloned_state);
@@ -484,11 +505,10 @@ fn fin_wait_2_closes_on_fin_ack_from_peer() -> TraceableResult {
 
     assert_eq!(ack_of_fin.create_test_reply(&mut connections)?, None);
 
-    cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(WindowState::test_new(
-        ack_of_fin.window,
-        ack_of_fin.seq_num,
-        ack_of_fin.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(
+        WindowState::test_new(ack_of_fin.window, ack_of_fin.seq_num, ack_of_fin.ack_num),
+        FinWait2,
+    ));
     cloned_state.data.snd_una += FIN_BYTE_OUT;
 
     assert_eq!(connections.try_get()?, &cloned_state);
@@ -596,11 +616,10 @@ fn data_after_our_fin_in_fin_wait_2_is_acked_without_echo() -> TraceableResult {
 
     assert_eq!(ack_of_fin.create_test_reply(&mut connections)?, None);
 
-    cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(WindowState::test_new(
-        ack_of_fin.window,
-        ack_of_fin.seq_num,
-        ack_of_fin.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(
+        WindowState::test_new(ack_of_fin.window, ack_of_fin.seq_num, ack_of_fin.ack_num),
+        FinWait2,
+    ));
     cloned_state.data.snd_una += FIN_BYTE_OUT;
 
     assert_eq!(connections.try_get()?, &cloned_state);
@@ -653,11 +672,14 @@ fn simultaneous_close_transitions_through_closing_to_closed() -> TraceableResult
         })
     );
 
-    cloned_state.tcp_state = TcpState::Closing(SyncedState::test_new(WindowState::test_new(
-        client_fin_ack.window,
-        client_fin_ack.seq_num,
-        client_fin_ack.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Closing(SyncedState::test_new(
+        WindowState::test_new(
+            client_fin_ack.window,
+            client_fin_ack.seq_num,
+            client_fin_ack.ack_num,
+        ),
+        Closing,
+    ));
     cloned_state.data.rcv_nxt += FIN_BYTE_IN;
     assert_eq!(connections.try_get()?, &cloned_state);
 
@@ -706,11 +728,14 @@ fn fin_ack_with_data_in_fin_wait_1_advances_rcv_nxt_past_data_and_fin() -> Trace
         "ACK should reflect RCV.NXT advanced past both the data and the FIN, not just the FIN"
     );
 
-    cloned_state.tcp_state = TcpState::Closing(SyncedState::test_new(WindowState::test_new(
-        fin_ack_with_data.window,
-        fin_ack_with_data.seq_num,
-        fin_ack_with_data.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Closing(SyncedState::test_new(
+        WindowState::test_new(
+            fin_ack_with_data.window,
+            fin_ack_with_data.seq_num,
+            fin_ack_with_data.ack_num,
+        ),
+        Closing,
+    ));
     cloned_state.data.rcv_nxt += HELLO_LEN_IN + FIN_BYTE_IN;
     assert_eq!(connections.try_get()?, &cloned_state);
 
@@ -823,11 +848,14 @@ fn fin_ack_with_data_in_established_echoes_data_and_starts_closing() -> Traceabl
          data and the FIN"
     );
 
-    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        fin_ack_with_data.window,
-        fin_ack_with_data.seq_num,
-        fin_ack_with_data.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+        WindowState::test_new(
+            fin_ack_with_data.window,
+            fin_ack_with_data.seq_num,
+            fin_ack_with_data.ack_num,
+        ),
+        LastAck,
+    ));
     cloned_state.data.snd_nxt += HELLO_LEN_OUT + FIN_BYTE_OUT;
     cloned_state.data.rcv_nxt += HELLO_LEN_IN + FIN_BYTE_IN;
 
@@ -850,11 +878,14 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
 
     let mut connections = TcpConnections::default();
     let mut expected_state = ConnState {
-        tcp_state: TcpState::Established(SyncedState::test_new(WindowState::test_new(
-            SMALL_WINDOW,
-            CLIENT_ISN + SYN_BYTE_IN,
-            SERVER_ISN + SYN_BYTE_OUT,
-        ))),
+        tcp_state: TcpState::Established(SyncedState::test_new(
+            WindowState::test_new(
+                SMALL_WINDOW,
+                CLIENT_ISN + SYN_BYTE_IN,
+                SERVER_ISN + SYN_BYTE_OUT,
+            ),
+            Established::test_empty(),
+        )),
         ..AFTER_HANDSHAKE
     };
     connections.test_insert(expected_state.clone());
@@ -880,14 +911,16 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
          not be sent yet "
     );
 
-    expected_state.tcp_state = TcpState::CloseWait(SyncedState::test_new(WindowState::test_new(
-        fin_ack_with_data.window,
-        fin_ack_with_data.seq_num,
-        fin_ack_with_data.ack_num,
-    )));
+    expected_state.tcp_state = TcpState::CloseWait(SyncedState::test_new(
+        WindowState::test_new(
+            fin_ack_with_data.window,
+            fin_ack_with_data.seq_num,
+            fin_ack_with_data.ack_num,
+        ),
+        CloseWait::test_new(*b"lo"),
+    ));
     expected_state.data.snd_nxt += SeqOffset::<u32, Out>::from(SMALL_WINDOW);
     expected_state.data.rcv_nxt += HELLO_LEN_IN + FIN_BYTE_IN;
-    expected_state.data.send_buffer.extend(b"lo");
 
     assert_eq!(
         connections.try_get()?,
@@ -917,14 +950,13 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
          chunk"
     );
 
-    expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        window_update.window,
-        window_update.seq_num,
-        window_update.ack_num,
-    )));
+    expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+        WindowState::test_new(window_update.window, window_update.seq_num, window_update.ack_num),
+        LastAck,
+    ));
     expected_state.data.snd_una += SMALL_WINDOW.into();
     expected_state.data.snd_nxt += LO_LEN + FIN_BYTE_OUT;
-    expected_state.data.send_buffer.clear();
+    // No send buffer to check, since LAST-ACK only exists once it has been fully drained
 
     assert_eq!(
         connections.try_get()?,
@@ -1018,14 +1050,12 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
 
     // The window state stays pinned to the out-of-order FIN-ACK's values (not the gap-filling
     // chunk's, which arrives with an earlier sequence number) due to the window update rules
-    expected_state.tcp_state = TcpState::CloseWait(SyncedState::test_new(WindowState::test_new(
-        fin_ack_tail.window,
-        fin_ack_tail.seq_num,
-        fin_ack_tail.ack_num,
-    )));
+    expected_state.tcp_state = TcpState::CloseWait(SyncedState::test_new(
+        WindowState::test_new(fin_ack_tail.window, fin_ack_tail.seq_num, fin_ack_tail.ack_num),
+        CloseWait::test_new(leftover.as_bytes().to_vec()),
+    ));
     expected_state.data.snd_nxt += max_len;
     expected_state.data.rcv_nxt += gap_len + tail_len + FIN_BYTE_IN;
-    expected_state.data.send_buffer.extend(leftover.as_bytes());
 
     assert_eq!(
         connections.try_get()?,
@@ -1054,15 +1084,14 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
         "Once fully drained, the leftover 150 bytes should go out with our FIN finally attached"
     );
 
-    expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(WindowState::test_new(
-        window_update.window,
-        window_update.seq_num,
-        window_update.ack_num,
-    )));
+    expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+        WindowState::test_new(window_update.window, window_update.seq_num, window_update.ack_num),
+        LastAck,
+    ));
     expected_state.data.snd_una += max_len;
     expected_state.data.snd_nxt +=
         SeqOffset::<u32, Out>::new(u32::try_from(leftover.len())?) + FIN_BYTE_OUT;
-    expected_state.data.send_buffer.clear();
+    // No send buffer to check, since LAST-ACK only exists once it has been fully drained
 
     assert_eq!(
         connections.try_get()?,
@@ -1122,11 +1151,11 @@ fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> TraceableR
 
     let mut connections = TcpConnections::default();
     let initial_state = ConnState {
-        tcp_state: TcpState::CloseWait(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        data: ConnData {
-            send_buffer: VecDeque::from(b"leftover".to_vec()),
-            ..AFTER_HANDSHAKE.data
-        },
+        tcp_state: TcpState::CloseWait(SyncedState::test_new(
+            WINDOW_AFTER_HANDSHAKE,
+            CloseWait::test_new(*b"leftover"),
+        )),
+        ..AFTER_HANDSHAKE
     };
     connections.test_insert(initial_state.clone());
 
@@ -1201,11 +1230,11 @@ fn stale_pure_ack_in_close_wait_gets_duplicate_ack() -> TraceableResult {
 
     let mut connections = TcpConnections::default();
     let initial_state = ConnState {
-        tcp_state: TcpState::CloseWait(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-        data: ConnData {
-            send_buffer: VecDeque::from(b"leftover".to_vec()),
-            ..AFTER_HANDSHAKE.data
-        },
+        tcp_state: TcpState::CloseWait(SyncedState::test_new(
+            WINDOW_AFTER_HANDSHAKE,
+            CloseWait::test_new(*b"leftover"),
+        )),
+        ..AFTER_HANDSHAKE
     };
     connections.test_insert(initial_state.clone());
 

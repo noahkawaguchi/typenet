@@ -80,11 +80,10 @@ fn pure_ack_on_established_connection_returns_none() -> TraceableResult {
     assert_eq!(pure_ack.create_test_reply(&mut connections)?, None);
 
     cloned_state.data.snd_una += HELLO_LEN_OUT;
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        pure_ack.window,
-        pure_ack.seq_num,
-        pure_ack.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(pure_ack.window, pure_ack.seq_num, pure_ack.ack_num),
+        Established::test_empty(),
+    ));
 
     assert_eq!(
         connections.try_get()?,
@@ -223,11 +222,10 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     cloned_state.data.snd_nxt += HI_LEN_OUT;
     cloned_state.data.rcv_nxt += HI_LEN_IN;
     cloned_state.data.snd_una += HELLO_LEN_OUT;
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        hi_pkt.window,
-        hi_pkt.seq_num,
-        hi_pkt.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(hi_pkt.window, hi_pkt.seq_num, hi_pkt.ack_num),
+        Established::test_empty(),
+    ));
 
     assert_eq!(
         connections.try_get()?,
@@ -412,11 +410,14 @@ fn wraparound_ack_for_unsent_data_is_still_rejected() -> TraceableResult {
 
     let mut connections = TcpConnections::default();
     let initial_state = ConnState {
-        tcp_state: TcpState::Established(SyncedState::test_new(WindowState::test_new(
-            SeqOffset::new(u16::MAX),
-            CLIENT_ISN + SYN_BYTE_IN,
-            SeqPoint::new(u32::MAX),
-        ))),
+        tcp_state: TcpState::Established(SyncedState::test_new(
+            WindowState::test_new(
+                SeqOffset::new(u16::MAX),
+                CLIENT_ISN + SYN_BYTE_IN,
+                SeqPoint::new(u32::MAX),
+            ),
+            Established::test_empty(),
+        )),
         data: ConnData {
             snd_nxt: SeqPoint::new(u32::MAX),
             snd_una: SeqPoint::new(u32::MAX),
@@ -655,9 +656,10 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
         "The last in-window offset should still get a duplicate ACK, not a challenge ACK"
     );
 
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        hi.window, hi.seq_num, hi.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(hi.window, hi.seq_num, hi.ack_num),
+        Established::test_empty(),
+    ));
     cloned_state.data.reassembly.insert(
         hi.seq_num,
         hi.payload

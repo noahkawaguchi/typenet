@@ -315,12 +315,13 @@ mod tests {
             ipv4_header::Ipv4Header,
             protocol::{
                 tcp::state::{
-                    ConnData, ConnState, SynReceived, SyncedState, TcpState, WindowState,
+                    CloseWait, Closing, ConnData, ConnState, Established, FinWait1, FinWait2,
+                    LastAck, SynReceived, SyncedState, TcpState, WindowState,
                 },
                 test_consts::{IP_PAIR_IN, IP_PAIR_OUT},
             },
         },
         pretty_assertions::assert_matches,
-        std::{collections::VecDeque, thread, time::Duration},
+        std::{thread, time::Duration},
     };
 }

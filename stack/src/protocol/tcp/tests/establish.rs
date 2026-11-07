@@ -73,7 +73,8 @@ fn handshake_ack_without_data_establishes_connection_and_returns_none() -> Trace
     // Reproduce the state changes that should happen at connection establishment
     let window_state =
         WindowState::test_new(handshake_ack.window, handshake_ack.seq_num, handshake_ack.ack_num);
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(window_state));
+    cloned_state.tcp_state =
+        TcpState::Established(SyncedState::test_new(window_state, Established::test_empty()));
     cloned_state.data.rcv_nxt = CLIENT_ISN + SYN_BYTE_IN;
     cloned_state.data.snd_una += SYN_BYTE_OUT;
 
@@ -113,7 +114,8 @@ fn handshake_ack_with_data_establishes_and_echoes() -> TraceableResult {
         handshake_ack_with_data.seq_num,
         handshake_ack_with_data.ack_num,
     );
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(window_state));
+    cloned_state.tcp_state =
+        TcpState::Established(SyncedState::test_new(window_state, Established::test_empty()));
     cloned_state.data.rcv_nxt += HELLO_LEN_IN;
     cloned_state.data.snd_nxt += HELLO_LEN_OUT;
     cloned_state.data.snd_una += SYN_BYTE_OUT;
@@ -151,11 +153,10 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
         "Reply should still reflect RCV.NXT unchanged, since nothing was delivered"
     );
 
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        out_of_order.window,
-        out_of_order.seq_num,
-        out_of_order.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(out_of_order.window, out_of_order.seq_num, out_of_order.ack_num),
+        Established::test_empty(),
+    ));
     cloned_state.data.snd_una += SYN_BYTE_OUT;
 
     assert_eq!(
@@ -225,11 +226,10 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
         "Reply should still reflect RCV.NXT unchanged, since the FIN can't be processed yet"
     );
 
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        out_of_order.window,
-        out_of_order.seq_num,
-        out_of_order.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(out_of_order.window, out_of_order.seq_num, out_of_order.ack_num),
+        Established::test_empty(),
+    ));
     cloned_state.data.snd_una += SYN_BYTE_OUT;
     cloned_state.data.reassembly.mark_fin(out_of_order.seq_num);
 
@@ -271,11 +271,10 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
         "Reply should still reflect RCV.NXT unchanged since there is a hole in the data"
     );
 
-    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        out_of_order.window,
-        out_of_order.seq_num,
-        out_of_order.ack_num,
-    )));
+    cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(out_of_order.window, out_of_order.seq_num, out_of_order.ack_num),
+        Established::test_empty(),
+    ));
     cloned_state.data.snd_una += SYN_BYTE_OUT;
     cloned_state.data.reassembly.insert(
         out_of_order.seq_num,

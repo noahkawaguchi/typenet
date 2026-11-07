@@ -271,14 +271,11 @@ impl TcpConnections {
     #[cfg(any(test, feature = "test-utils"))]
     #[must_use]
     pub fn with_syn_rcv_and_pkt_last_sent(mut self, sent_at: Instant) -> Self {
-        use {
-            crate::protocol::tcp::{
-                SYN_BYTE_IN, SYN_BYTE_OUT,
-                reassembly::TcpReassembly,
-                state::{ConnData, SynReceived},
-                test_utils::{CLIENT_ISN, KEY, SERVER_ISN},
-            },
-            std::collections::VecDeque,
+        use crate::protocol::tcp::{
+            SYN_BYTE_IN, SYN_BYTE_OUT,
+            reassembly::TcpReassembly,
+            state::{ConnData, SynReceived},
+            test_utils::{CLIENT_ISN, KEY, SERVER_ISN},
         };
 
         self.table.insert(
@@ -298,7 +295,6 @@ impl TcpConnections {
                         },
                         sent_at,
                     )],
-                    send_buffer: VecDeque::new(),
                     reassembly: TcpReassembly::new(),
                 },
             },

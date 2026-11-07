@@ -239,15 +239,15 @@ impl SendInfo {
             // peer's window allows). If the peer's previously buffered FIN has now been reached,
             // enter LAST-ACK instead of continuing normally.
             (TcpFlags::Ack, maybe_payload, SeqCheck::InOrder, true) => {
-                let established = Self::complete_handshake(seg, conn, syn_received);
+                let mut established = Self::complete_handshake(seg, conn, syn_received);
 
                 if let Some(payload) = maybe_payload {
                     conn.rcv_nxt += payload.len().into();
-                    app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
+                    app.handle_tcp(payload.as_bytes(), established.send_buf_mut());
                 }
 
                 for reassembled in conn.reassembly.drain_contiguous(&mut conn.rcv_nxt) {
-                    app.handle_tcp(reassembled.as_bytes(), &mut conn.send_buffer);
+                    app.handle_tcp(reassembled.as_bytes(), established.send_buf_mut());
                 }
 
                 if conn.reassembly.fin_reached(conn.rcv_nxt) {
@@ -255,7 +255,7 @@ impl SendInfo {
                     let (send_info, next_state) =
                         Self::close_wait_or_last_ack(conn, established.rcv_fin())?;
                     (Some(send_info), Some(next_state))
-                } else if !conn.send_buffer.is_empty() {
+                } else if established.has_unsent_data() {
                     (
                         Some(match established.drain_transmittable(conn)? {
                             Some(to_send) => Self::data_payload(conn, to_send),
@@ -339,7 +339,7 @@ impl SendInfo {
             // Pure ACK (acknowledgment of data sent by the server) -> advance SND.UNA, then send
             // however much the window allows from the data queued to be sent, if any.
             (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder) => {
-                let new_established = established.incoming_ack_update(conn, seg);
+                let mut new_established = established.incoming_ack_update(conn, seg);
                 (
                     new_established
                         .drain_transmittable(conn)?
@@ -355,13 +355,13 @@ impl SendInfo {
             // If the peer's previously buffered FIN has now been reached, enter LAST-ACK (passive
             // close) instead of continuing normally.
             (TcpFlags::Ack, Some(payload), SeqCheck::InOrder) => {
-                let new_established = established.incoming_ack_update(conn, seg);
+                let mut new_established = established.incoming_ack_update(conn, seg);
 
                 conn.rcv_nxt += payload.len().into();
-                app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
+                app.handle_tcp(payload.as_bytes(), new_established.send_buf_mut());
 
                 for reassembled in conn.reassembly.drain_contiguous(&mut conn.rcv_nxt) {
-                    app.handle_tcp(reassembled.as_bytes(), &mut conn.send_buffer);
+                    app.handle_tcp(reassembled.as_bytes(), new_established.send_buf_mut());
                 }
 
                 if conn.reassembly.fin_reached(conn.rcv_nxt) {
@@ -449,11 +449,11 @@ impl SendInfo {
         seg: &TcpSegment<In>,
         conn: &mut ConnData,
         maybe_payload: Option<&TcpPayload>,
-        old_established: SyncedState<Established>,
+        mut old_established: SyncedState<Established>,
     ) -> TraceableResult<(Self, TcpState)> {
         if let Some(payload) = maybe_payload {
             conn.rcv_nxt += payload.len().into();
-            app.handle_tcp(payload.as_bytes(), &mut conn.send_buffer);
+            app.handle_tcp(payload.as_bytes(), old_established.send_buf_mut());
         }
 
         conn.rcv_nxt += FIN_BYTE_IN;
@@ -462,18 +462,25 @@ impl SendInfo {
         Self::close_wait_or_last_ack(conn, new_established.rcv_fin())
     }
 
-    /// Drains as much of `send_buffer` as the peer's window currently allows. If that empties the
-    /// buffer, our own FIN is sent (piggybacked on any final chunk of data) and the next state is
-    /// LAST-ACK. Otherwise, the drained chunk is sent as a plain data ACK, and the connection
+    /// Drains as much of the send buffer as the peer's window currently allows. If that empties
+    /// the buffer, our own FIN is sent (piggybacked on any final chunk of data) and the next state
+    /// is LAST-ACK. Otherwise, the drained chunk is sent as a plain data ACK, and the connection
     /// remains in CLOSE-WAIT, to be drained further once the peer sends more ACKs. Returns the
     /// reply and the next TCP state.
     fn close_wait_or_last_ack(
         conn: &mut ConnData,
-        close_wait: SyncedState<CloseWait>,
+        mut close_wait: SyncedState<CloseWait>,
     ) -> TraceableResult<(Self, TcpState)> {
         let to_send = close_wait.drain_transmittable(conn)?;
 
-        Ok(if conn.send_buffer.is_empty() {
+        Ok(if close_wait.has_unsent_data() {
+            let send_info = match to_send {
+                Some(payload) => Self::data_payload(conn, payload),
+                None => Self::pure_ack(conn),
+            };
+
+            (send_info, TcpState::CloseWait(close_wait))
+        } else {
             let send_len = to_send.len_or_default();
 
             let send_info = Self {
@@ -490,13 +497,6 @@ impl SendInfo {
                 .push(PendingSegment::new(send_info.clone(), Instant::now()));
 
             (send_info, TcpState::LastAck(close_wait.send_fin()))
-        } else {
-            let send_info = match to_send {
-                Some(payload) => Self::data_payload(conn, payload),
-                None => Self::pure_ack(conn),
-            };
-
-            (send_info, TcpState::CloseWait(close_wait))
         })
     }
 
