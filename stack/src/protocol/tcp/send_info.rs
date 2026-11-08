@@ -3,7 +3,7 @@ use {
         application::Application,
         direction::{In, Out},
         protocol::tcp::{
-            FIN_BYTE_IN, FIN_BYTE_OUT, SYN_BYTE_IN, TcpSegment,
+            FIN_BYTE_IN, FIN_BYTE_OUT, SYN_BYTE_IN, SYN_BYTE_OUT, TcpSegment,
             connections::{ConnKey, TcpConnections},
             flags::TcpFlags,
             payload::{LenOrDefault as _, TcpPayload},
@@ -118,7 +118,21 @@ impl SendInfo {
                     payload: None,
                 };
 
-                connections.insert_syn_rcv(key, ConnState::from_syn_ack(send_info.clone())?)?;
+                connections.insert(
+                    key,
+                    ConnState {
+                        tcp_state: TcpState::SynReceived(SynReceived),
+                        data: ConnData {
+                            // SYN-ACK consumes one sequence number
+                            snd_nxt: send_info.seq_num + SYN_BYTE_OUT,
+                            // Our SYN-ACK's `ack_num` is the client's ISN + 1
+                            rcv_nxt: send_info.ack_num,
+                            // Our SYN-ACK is unacknowledged (this is our ISN)
+                            snd_una: send_info.seq_num,
+                            pending: vec![PendingSegment::new(send_info.clone(), Instant::now())],
+                        },
+                    },
+                );
 
                 Some(send_info)
             }

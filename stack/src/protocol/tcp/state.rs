@@ -4,16 +4,14 @@ use {
         direction::{In, Out},
         ipv4_header::Ipv4Header,
         protocol::tcp::{
-            SYN_BYTE_OUT, TCP_HDR_MIN_LEN, TcpSegment,
-            flags::TcpFlags,
+            TCP_HDR_MIN_LEN, TcpSegment,
             payload::TcpPayload,
             pending_segment::PendingSegment,
             reassembly::TcpReassembly,
-            send_info::SendInfo,
             seq_space::{SeqOffset, SeqPoint},
         },
     },
-    std::{collections::VecDeque, time::Instant},
+    std::collections::VecDeque,
     typenet_utils::error::TraceableResult,
 };
 
@@ -42,34 +40,8 @@ pub(super) struct ConnData {
     pub(super) pending: Vec<PendingSegment>,
 }
 
+#[cfg(test)]
 impl ConnState {
-    /// Creates a new `Self` in the state right after receiving a SYN and sending a SYN-ACK.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if the flags are not SYN-ACK.
-    pub(super) fn from_syn_ack(send_info: SendInfo) -> TraceableResult<Self> {
-        (send_info.flags == TcpFlags::SynAck)
-            .then(|| Self {
-                // State after the initial two-way exchange
-                tcp_state: TcpState::SynReceived(SynReceived),
-                data: ConnData {
-                    // SYN-ACK consumes one sequence number
-                    snd_nxt: send_info.seq_num + SYN_BYTE_OUT,
-                    // Our SYN-ACK's `ack_num` is the client's ISN + 1
-                    rcv_nxt: send_info.ack_num,
-                    // Our SYN-ACK is unacknowledged (this is our ISN)
-                    snd_una: send_info.seq_num,
-                    pending: vec![PendingSegment::new(send_info, Instant::now())],
-                },
-            })
-            .ok_or_else(|| {
-                "Attempted to create a new `ConnState` when sending something other than SYN-ACK"
-                    .into()
-            })
-    }
-
-    #[cfg(test)]
     pub(super) const fn test_get_snd_wnd(&self) -> Option<SeqOffset<u16, Out>> {
         match &self.tcp_state {
             TcpState::SynReceived(_) => None,
@@ -84,7 +56,6 @@ impl ConnState {
 
     /// Returns a mutable reference to the send buffer if the TCP state has one (ESTABLISHED or
     /// CLOSE-WAIT), or `Err` otherwise.
-    #[cfg(test)]
     pub(super) fn test_send_buf_mut(&mut self) -> TraceableResult<&mut VecDeque<u8>> {
         match &mut self.tcp_state {
             TcpState::Established(established) => Ok(established.send_buf_mut()),
@@ -99,7 +70,6 @@ impl ConnState {
 
     /// Returns the number of segments held for reassembly if the TCP state has a reassembly buffer
     /// (ESTABLISHED), or `Err` otherwise.
-    #[cfg(test)]
     pub(super) fn test_reassembly_len(&self) -> TraceableResult<usize> {
         match &self.tcp_state {
             TcpState::Established(established) => Ok(established.inner.reassembly.len()),

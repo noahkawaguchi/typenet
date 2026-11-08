@@ -1,3 +1,5 @@
+#[cfg(test)]
+use typenet_utils::error::TraceableResult;
 use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
@@ -15,7 +17,6 @@ use {
         net::Ipv4Addr,
         time::{Duration, Instant},
     },
-    typenet_utils::error::TraceableResult,
 };
 
 /// The minimum allowed TCP retransmission timeout (same as the Linux kernel as defined in
@@ -101,21 +102,6 @@ impl TcpConnections {
     }
 
     pub(crate) fn len(&self) -> usize { self.table.len() }
-
-    /// Adds a new SYN-RECEIVED connection to the table.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if the connection's TCP state is not SYN-RECEIVED.
-    pub(super) fn insert_syn_rcv(&mut self, key: ConnKey, state: ConnState) -> TraceableResult {
-        matches!(state.tcp_state, TcpState::SynReceived(_))
-            .then(|| {
-                self.table.insert(key, state);
-            })
-            .ok_or_else(|| {
-                "Attempted to insert a connection with a state other than SYN-RECEIVED".into()
-            })
-    }
 
     /// Inserts `conn` into the table under `key`, replacing any existing connection.
     pub(super) fn insert(&mut self, key: ConnKey, conn: ConnState) { self.table.insert(key, conn); }
