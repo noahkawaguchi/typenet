@@ -73,6 +73,15 @@ impl TcpReassembly {
 
     #[cfg(test)]
     pub(super) const fn len(&self) -> usize { self.segments.len() }
+
+    /// Creates a `Self` holding `segments` in the order given and `fin_seq`.
+    #[cfg(test)]
+    pub(super) fn test_new(
+        segments: impl Into<Vec<(SeqPoint<In>, TcpPayload)>>,
+        fin_seq: Option<SeqPoint<In>>,
+    ) -> Self {
+        Self { segments: segments.into(), fin_seq }
+    }
 }
 
 #[cfg(test)]

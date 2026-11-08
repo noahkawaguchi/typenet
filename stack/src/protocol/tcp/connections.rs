@@ -1,3 +1,5 @@
+#[cfg(test)]
+use typenet_utils::error::TraceableResult;
 use {
     crate::{
         addr_pairs::{Ipv4AddrPair, PortPair},
@@ -15,7 +17,6 @@ use {
         net::Ipv4Addr,
         time::{Duration, Instant},
     },
-    typenet_utils::error::TraceableResult,
 };
 
 /// The minimum allowed TCP retransmission timeout (same as the Linux kernel as defined in
@@ -102,26 +103,11 @@ impl TcpConnections {
 
     pub(crate) fn len(&self) -> usize { self.table.len() }
 
-    pub(super) fn get_mut(&mut self, key: &ConnKey) -> Option<&mut ConnState> {
-        self.table.get_mut(key)
-    }
+    /// Inserts `conn` into the table under `key`, replacing any existing connection.
+    pub(super) fn insert(&mut self, key: ConnKey, conn: ConnState) { self.table.insert(key, conn); }
 
-    /// Adds a new SYN-RECEIVED connection to the table.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if the connection's TCP state is not SYN-RECEIVED.
-    pub(super) fn insert_syn_rcv(&mut self, key: ConnKey, state: ConnState) -> TraceableResult {
-        matches!(state.tcp_state, TcpState::SynReceived(_))
-            .then(|| {
-                self.table.insert(key, state);
-            })
-            .ok_or_else(|| {
-                "Attempted to insert a connection with a state other than SYN-RECEIVED".into()
-            })
-    }
-
-    pub(super) fn remove(&mut self, key: &ConnKey) { self.table.remove(key); }
+    /// Removes and returns the connection under `key`, if present.
+    pub(super) fn remove(&mut self, key: &ConnKey) -> Option<ConnState> { self.table.remove(key) }
 
     /// Returns whether any connection is currently mid-close (FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT,
     /// CLOSING, or LAST-ACK), i.e. has sent or received a FIN but not yet completed teardown.
@@ -143,7 +129,7 @@ impl TcpConnections {
     pub(crate) fn next_retransmit_deadline(&self) -> Option<Instant> {
         self.table
             .values()
-            .flat_map(|conn| &conn.pending)
+            .flat_map(|conn| &conn.data.pending)
             .map(|seg| seg.time_due(&self.rto_config))
             .min()
     }
@@ -158,7 +144,8 @@ impl TcpConnections {
             .table
             .iter()
             .filter_map(|(&key, conn)| {
-                conn.pending
+                conn.data
+                    .pending
                     .iter()
                     .any(|seg| seg.time_due(&self.rto_config) <= now)
                     .then_some(key)
@@ -170,14 +157,14 @@ impl TcpConnections {
         for key in due_keys {
             let Some(conn) = self.table.get_mut(&key) else { continue };
 
-            if conn.pending.iter().any(|seg| {
+            if conn.data.pending.iter().any(|seg| {
                 seg.time_due(&self.rto_config) <= now && seg.exhausted_retries(self.max_retries)
             }) {
                 self.table.remove(&key);
                 continue;
             }
 
-            retransmissions.extend(conn.pending.iter_mut().filter_map(|seg| {
+            retransmissions.extend(conn.data.pending.iter_mut().filter_map(|seg| {
                 (seg.time_due(&self.rto_config) <= now).then(|| {
                     TcpSegment::from_pairs_and_info(
                         Ipv4AddrPair::new(key.server_ip, key.client_ip),
@@ -193,32 +180,51 @@ impl TcpConnections {
 
     /// Initiates active close (RFC 9293 "CLOSE" call) for every connection currently ESTABLISHED,
     /// transitioning each to FIN-WAIT-1 and returning a FIN-ACK reply for it.
-    pub(crate) fn close_established(&mut self) -> impl Iterator<Item = TcpSegment<Out>> {
+    pub(crate) fn close_established(&mut self) -> Vec<TcpSegment<Out>> {
         let now = Instant::now();
 
-        self.table.iter_mut().filter_map(move |(key, conn)| {
-            let TcpState::Established(established) = conn.tcp_state else {
-                return None;
-            };
+        self.table
+            // Extract only established connections first as an optimization to avoid reinsertions
+            // for connections that don't need to change. The real source of truth is the `match` in
+            // the `filter_map`.
+            .extract_if(|_, conn| matches!(conn.tcp_state, TcpState::Established(_)))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|(key, ConnState { tcp_state, mut data })| {
+                let (maybe_seg, next_state) = match tcp_state {
+                    TcpState::Established(established) => {
+                        let send_info = SendInfo {
+                            seq_num: data.snd_nxt,
+                            ack_num: data.rcv_nxt,
+                            flags: TcpFlags::FinAck,
+                            payload: None,
+                        };
 
-            let send_info = SendInfo {
-                seq_num: conn.snd_nxt,
-                ack_num: conn.rcv_nxt,
-                flags: TcpFlags::FinAck,
-                payload: None,
-            };
+                        data.snd_nxt += FIN_BYTE_OUT;
+                        data.pending
+                            .push(PendingSegment::new(send_info.clone(), now));
 
-            conn.tcp_state = TcpState::FinWait1(established.close());
-            conn.snd_nxt += FIN_BYTE_OUT;
-            conn.pending
-                .push(PendingSegment::new(send_info.clone(), now));
+                        (
+                            Some(TcpSegment::from_pairs_and_info(
+                                Ipv4AddrPair::new(key.server_ip, key.client_ip),
+                                PortPair::new(key.server_port, key.client_port),
+                                send_info,
+                            )),
+                            TcpState::FinWait1(established.close()),
+                        )
+                    }
 
-            Some(TcpSegment::from_pairs_and_info(
-                Ipv4AddrPair::new(key.server_ip, key.client_ip),
-                PortPair::new(key.server_port, key.client_port),
-                send_info,
-            ))
-        })
+                    other_state => (None, other_state),
+                };
+
+                self.table
+                    .insert(key, ConnState { tcp_state: next_state, data });
+
+                maybe_seg
+            })
+            // Eagerly run the closure instead of returning an iterator to ensure that all
+            // reinsertions take place
+            .collect()
     }
 
     /// Attempts to retrieve the connection in the table under `KEY`, returning `Err` if not
@@ -234,7 +240,7 @@ impl TcpConnections {
 
     /// Inserts `conn` into the connection table using `KEY`.
     #[cfg(test)]
-    pub(super) fn insert(&mut self, conn: ConnState) {
+    pub(super) fn test_insert(&mut self, conn: ConnState) {
         use crate::protocol::tcp::tests::KEY;
 
         self.table.insert(KEY, conn);
@@ -251,34 +257,30 @@ impl TcpConnections {
     #[cfg(any(test, feature = "test-utils"))]
     #[must_use]
     pub fn with_syn_rcv_and_pkt_last_sent(mut self, sent_at: Instant) -> Self {
-        use {
-            crate::protocol::tcp::{
-                SYN_BYTE_IN, SYN_BYTE_OUT,
-                reassembly::TcpReassembly,
-                state::SynReceived,
-                test_utils::{CLIENT_ISN, KEY, SERVER_ISN},
-            },
-            std::collections::VecDeque,
+        use crate::protocol::tcp::{
+            SYN_BYTE_IN, SYN_BYTE_OUT,
+            state::{ConnData, SynReceived},
+            test_utils::{CLIENT_ISN, KEY, SERVER_ISN},
         };
 
         self.table.insert(
             KEY,
             ConnState {
                 tcp_state: TcpState::SynReceived(SynReceived),
-                snd_nxt: SERVER_ISN + SYN_BYTE_OUT,
-                rcv_nxt: CLIENT_ISN + SYN_BYTE_IN,
-                snd_una: SERVER_ISN,
-                pending: vec![PendingSegment::new(
-                    SendInfo {
-                        seq_num: SERVER_ISN,
-                        ack_num: CLIENT_ISN + SYN_BYTE_IN,
-                        flags: TcpFlags::SynAck,
-                        payload: None,
-                    },
-                    sent_at,
-                )],
-                send_buffer: VecDeque::new(),
-                reassembly: TcpReassembly::new(),
+                data: ConnData {
+                    snd_nxt: SERVER_ISN + SYN_BYTE_OUT,
+                    rcv_nxt: CLIENT_ISN + SYN_BYTE_IN,
+                    snd_una: SERVER_ISN,
+                    pending: vec![PendingSegment::new(
+                        SendInfo {
+                            seq_num: SERVER_ISN,
+                            ack_num: CLIENT_ISN + SYN_BYTE_IN,
+                            flags: TcpFlags::SynAck,
+                            payload: None,
+                        },
+                        sent_at,
+                    )],
+                },
             },
         );
 
