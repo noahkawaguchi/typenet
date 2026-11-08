@@ -496,7 +496,7 @@ fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> TraceableResult {
     );
 
     assert_eq!(
-        connections.try_get()?.data.reassembly.len(),
+        connections.try_get()?.test_reassembly_len()?,
         1,
         "The out-of-order segment should be buffered rather than discarded"
     );
@@ -539,7 +539,7 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
     );
 
     assert_eq!(
-        connections.try_get()?.data.reassembly.len(),
+        connections.try_get()?.test_reassembly_len()?,
         0,
         "The reassembly buffer should be empty after draining"
     );
@@ -583,7 +583,7 @@ fn out_of_order_reassembly_respects_app_logic() -> TraceableResult {
     );
 
     assert_eq!(
-        connections.try_get()?.data.reassembly.len(),
+        connections.try_get()?.test_reassembly_len()?,
         0,
         "The reassembly buffer should be empty after draining"
     );
@@ -658,14 +658,19 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
         WindowState::test_new(hi.window, hi.seq_num, hi.ack_num),
-        Established::test_empty(),
+        Established::test_new(
+            [],
+            TcpReassembly::test_new(
+                [(
+                    hi.seq_num,
+                    hi.payload
+                        .clone()
+                        .ok_or("Expected \"Hi\" segment to carry a payload")?,
+                )],
+                None,
+            ),
+        ),
     ));
-    cloned_state.data.reassembly.insert(
-        hi.seq_num,
-        hi.payload
-            .clone()
-            .ok_or("Expected \"Hi\" segment to carry a payload")?,
-    );
 
     assert_eq!(
         connections.try_get()?,

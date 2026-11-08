@@ -273,7 +273,6 @@ impl TcpConnections {
     pub fn with_syn_rcv_and_pkt_last_sent(mut self, sent_at: Instant) -> Self {
         use crate::protocol::tcp::{
             SYN_BYTE_IN, SYN_BYTE_OUT,
-            reassembly::TcpReassembly,
             state::{ConnData, SynReceived},
             test_utils::{CLIENT_ISN, KEY, SERVER_ISN},
         };
@@ -295,7 +294,6 @@ impl TcpConnections {
                         },
                         sent_at,
                     )],
-                    reassembly: TcpReassembly::new(),
                 },
             },
         );

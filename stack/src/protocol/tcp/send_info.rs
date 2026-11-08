@@ -234,10 +234,10 @@ impl SendInfo {
             }
 
             // Acceptable handshake-completing ACK (step 3), arriving in order -> transition to
-            // ESTABLISHED, delivering any payload and/or previously buffered out-of-order data that
-            // is now contiguous to the application, sending back whatever it responds with (if the
-            // peer's window allows). If the peer's previously buffered FIN has now been reached,
-            // enter LAST-ACK instead of continuing normally.
+            // ESTABLISHED, delivering any payload to the application, sending back whatever it
+            // responds with (if the peer's window allows). Nothing can have been buffered for
+            // reassembly yet, since out-of-order data is only accepted after the handshake
+            // completes.
             (TcpFlags::Ack, maybe_payload, SeqCheck::InOrder, true) => {
                 let mut established = Self::complete_handshake(seg, conn, syn_received);
 
@@ -246,16 +246,7 @@ impl SendInfo {
                     app.handle_tcp(payload.as_bytes(), established.send_buf_mut());
                 }
 
-                for reassembled in conn.reassembly.drain_contiguous(&mut conn.rcv_nxt) {
-                    app.handle_tcp(reassembled.as_bytes(), established.send_buf_mut());
-                }
-
-                if conn.reassembly.fin_reached(conn.rcv_nxt) {
-                    conn.rcv_nxt += FIN_BYTE_IN;
-                    let (send_info, next_state) =
-                        Self::close_wait_or_last_ack(conn, established.rcv_fin())?;
-                    (Some(send_info), Some(next_state))
-                } else if established.has_unsent_data() {
+                if established.has_unsent_data() {
                     (
                         Some(match established.drain_transmittable(conn)? {
                             Some(to_send) => Self::data_payload(conn, to_send),
@@ -291,12 +282,15 @@ impl SendInfo {
             // can't be delivered yet, since data before it is still missing, so buffer it for later
             // reassembly. Any FIN also can't be processed yet, so buffer its position.
             (TcpFlags::Ack | TcpFlags::FinAck, maybe_payload, SeqCheck::OutOfOrder, true) => {
-                let established = Self::complete_handshake(seg, conn, syn_received);
+                let mut established = Self::complete_handshake(seg, conn, syn_received);
                 if let Some(payload) = maybe_payload {
-                    conn.reassembly.insert(seg.seq_num, payload.clone());
+                    established
+                        .reassembly_mut()
+                        .insert(seg.seq_num, payload.clone());
                 }
                 if seg.flags == TcpFlags::FinAck {
-                    conn.reassembly
+                    established
+                        .reassembly_mut()
                         .mark_fin(seg.seq_num + maybe_payload.len_or_default());
                 }
                 (Some(Self::pure_ack(conn)), Some(TcpState::Established(established)))
@@ -360,11 +354,16 @@ impl SendInfo {
                 conn.rcv_nxt += payload.len().into();
                 app.handle_tcp(payload.as_bytes(), new_established.send_buf_mut());
 
-                for reassembled in conn.reassembly.drain_contiguous(&mut conn.rcv_nxt) {
-                    app.handle_tcp(reassembled.as_bytes(), new_established.send_buf_mut());
+                {
+                    // Scope to ensure it isn't possible to access the split for longer than
+                    // necessary
+                    let (reassembly, send_buffer) = new_established.buffers_mut();
+                    for reassembled in reassembly.drain_contiguous(&mut conn.rcv_nxt) {
+                        app.handle_tcp(reassembled.as_bytes(), send_buffer);
+                    }
                 }
 
-                if conn.reassembly.fin_reached(conn.rcv_nxt) {
+                if new_established.reassembly().fin_reached(conn.rcv_nxt) {
                     conn.rcv_nxt += FIN_BYTE_IN;
                     let (send_info, next_state) =
                         Self::close_wait_or_last_ack(conn, new_established.rcv_fin())?;
@@ -383,8 +382,10 @@ impl SendInfo {
             // Out-of-order data still within the receive window -> buffer it for later reassembly,
             // replying with a duplicate ACK so the peer knows what's still missing.
             (TcpFlags::Ack, Some(payload), SeqCheck::OutOfOrder) => {
-                let new_established = established.incoming_ack_update(conn, seg);
-                conn.reassembly.insert(seg.seq_num, payload.clone());
+                let mut new_established = established.incoming_ack_update(conn, seg);
+                new_established
+                    .reassembly_mut()
+                    .insert(seg.seq_num, payload.clone());
                 (Some(Self::pure_ack(conn)), Some(TcpState::Established(new_established)))
             }
 
@@ -408,11 +409,14 @@ impl SendInfo {
             // remember the FIN's position for later reassembly, replying with a duplicate ACK, same
             // as out-of-order data-only segments.
             (TcpFlags::FinAck, maybe_payload, SeqCheck::OutOfOrder) => {
-                let new_established = established.incoming_ack_update(conn, seg);
+                let mut new_established = established.incoming_ack_update(conn, seg);
                 if let Some(payload) = maybe_payload {
-                    conn.reassembly.insert(seg.seq_num, payload.clone());
+                    new_established
+                        .reassembly_mut()
+                        .insert(seg.seq_num, payload.clone());
                 }
-                conn.reassembly
+                new_established
+                    .reassembly_mut()
                     .mark_fin(seg.seq_num + maybe_payload.len_or_default());
                 (Some(Self::pure_ack(conn)), Some(TcpState::Established(new_established)))
             }

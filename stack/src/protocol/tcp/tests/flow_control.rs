@@ -111,7 +111,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
             dup_ack_same_window.seq_num,
             dup_ack_same_window.ack_num,
         ),
-        Established::test_new(*b"lo"), // "lo" must still be queued
+        Established::test_new(*b"lo", TcpReassembly::new()), // "lo" must still be queued
     ));
 
     assert_eq!(
@@ -291,7 +291,10 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
     expected_state.tcp_state = TcpState::Established(SyncedState::test_new(
         WindowState::test_new(window_update.window, window_update.seq_num, window_update.ack_num),
         // Only what didn't fit in the first segment is still queued
-        Established::test_new(big_payload.as_bytes().try_get(MAX_PAYLOAD_LEN..)?.to_vec()),
+        Established::test_new(
+            big_payload.as_bytes().try_get(MAX_PAYLOAD_LEN..)?.to_vec(),
+            TcpReassembly::new(),
+        ),
     ));
 
     assert_eq!(

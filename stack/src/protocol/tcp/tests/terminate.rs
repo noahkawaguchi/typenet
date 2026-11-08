@@ -220,12 +220,8 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> TraceableResult 
             client_fin_ack.seq_num,
             client_fin_ack.ack_num,
         ),
-        Established::test_empty(),
+        Established::test_new([], TcpReassembly::test_new([], Some(client_fin_ack.seq_num))),
     ));
-    cloned_state
-        .data
-        .reassembly
-        .mark_fin(client_fin_ack.seq_num);
 
     assert_eq!(
         connections.try_get()?,
@@ -272,19 +268,20 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
             fin_ack_with_data.seq_num,
             fin_ack_with_data.ack_num,
         ),
-        Established::test_empty(),
+        Established::test_new(
+            [],
+            TcpReassembly::test_new(
+                [(
+                    fin_ack_with_data.seq_num,
+                    fin_ack_with_data
+                        .payload
+                        .clone()
+                        .ok_or("Expected fin_ack_with_data to carry a payload")?,
+                )],
+                Some(fin_ack_with_data.seq_num + HI_LEN_IN),
+            ),
+        ),
     ));
-    cloned_state.data.reassembly.insert(
-        fin_ack_with_data.seq_num,
-        fin_ack_with_data
-            .payload
-            .clone()
-            .ok_or("Expected fin_ack_with_data to carry a payload")?,
-    );
-    cloned_state
-        .data
-        .reassembly
-        .mark_fin(fin_ack_with_data.seq_num + HI_LEN_IN);
 
     assert_eq!(
         connections.try_get()?,
@@ -313,15 +310,6 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
         "Filling the gap should reveal the peer's previously buffered FIN, echoing both segments' \
          data together and replying with our FIN"
     );
-
-    // Mirror what the implementation should do internally by advancing past "Hello", then draining
-    // "Hi" now that it's contiguous, leaving the buffer empty but the FIN position still
-    // remembered.
-    cloned_state
-        .data
-        .reassembly
-        .drain_contiguous(&mut (hello.seq_num + HELLO_LEN_IN))
-        .for_each(drop);
 
     // The window state stays pinned to the FIN-ACK's values (not changing those of the "Hello") due
     // to the window update rules, even though "Hello" fills a gap in the data
@@ -1002,18 +990,6 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
 
     fin_ack_tail.create_test_reply(&mut connections)?;
 
-    expected_state.data.reassembly.insert(
-        fin_ack_tail.seq_num,
-        fin_ack_tail
-            .payload
-            .clone()
-            .ok_or("Expected fin_ack_tail to carry a payload")?,
-    );
-    expected_state
-        .data
-        .reassembly
-        .mark_fin(fin_ack_tail.seq_num + tail_len);
-
     // Gap-filling segment reveals the whole backlog and the FIN at once
     let gap_filler = TcpSegment {
         seq_num: CLIENT_ISN + SYN_BYTE_IN,
@@ -1038,15 +1014,6 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
     );
 
     let leftover = "a".repeat(50) + &tail_payload;
-
-    // Mirror what the implementation does internally by advancing past the gap-filling chunk, then
-    // draining the now-contiguous trailing chunk out of reassembly, leaving its FIN position
-    // remembered
-    expected_state
-        .data
-        .reassembly
-        .drain_contiguous(&mut (gap_filler.seq_num + gap_len))
-        .for_each(drop);
 
     // The window state stays pinned to the out-of-order FIN-ACK's values (not the gap-filling
     // chunk's, which arrives with an earlier sequence number) due to the window update rules

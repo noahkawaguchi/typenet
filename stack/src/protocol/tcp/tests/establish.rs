@@ -228,10 +228,9 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
         WindowState::test_new(out_of_order.window, out_of_order.seq_num, out_of_order.ack_num),
-        Established::test_empty(),
+        Established::test_new([], TcpReassembly::test_new([], Some(out_of_order.seq_num))),
     ));
     cloned_state.data.snd_una += SYN_BYTE_OUT;
-    cloned_state.data.reassembly.mark_fin(out_of_order.seq_num);
 
     assert_eq!(
         connections.try_get()?,
@@ -273,16 +272,21 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
         WindowState::test_new(out_of_order.window, out_of_order.seq_num, out_of_order.ack_num),
-        Established::test_empty(),
+        Established::test_new(
+            [],
+            TcpReassembly::test_new(
+                [(
+                    out_of_order.seq_num,
+                    out_of_order
+                        .payload
+                        .clone()
+                        .ok_or("Expected segment to carry a payload")?,
+                )],
+                None,
+            ),
+        ),
     ));
     cloned_state.data.snd_una += SYN_BYTE_OUT;
-    cloned_state.data.reassembly.insert(
-        out_of_order.seq_num,
-        out_of_order
-            .payload
-            .clone()
-            .ok_or("Expected segment to carry a payload")?,
-    );
 
     assert_eq!(
         connections.try_get()?,

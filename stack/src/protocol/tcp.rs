@@ -314,9 +314,12 @@ mod tests {
             application::ShoutingTestApp,
             ipv4_header::Ipv4Header,
             protocol::{
-                tcp::state::{
-                    CloseWait, Closing, ConnData, ConnState, Established, FinWait1, FinWait2,
-                    LastAck, SynReceived, SyncedState, TcpState, WindowState,
+                tcp::{
+                    reassembly::TcpReassembly,
+                    state::{
+                        CloseWait, Closing, ConnData, ConnState, Established, FinWait1, FinWait2,
+                        LastAck, SynReceived, SyncedState, TcpState, WindowState,
+                    },
                 },
                 test_consts::{IP_PAIR_IN, IP_PAIR_OUT},
             },

@@ -6,7 +6,6 @@ use {
         protocol::{
             tcp::{
                 connections::ConnKey,
-                reassembly::TcpReassembly,
                 state::{ConnData, ConnState, Established, SyncedState, TcpState, WindowState},
             },
             test_consts::IP_PAIR_IN,
@@ -36,8 +35,8 @@ pub(super) const WINDOW_AFTER_HANDSHAKE: WindowState = WindowState::test_new(
 );
 
 /// An ESTABLISHED connection as if the initial three-way handshake had just completed. Uses the
-/// test constants `CLIENT_ISN` and `SERVER_ISN`. Has the maximum SND.WND and empty `pending` and
-/// send buffer.
+/// test constants `CLIENT_ISN` and `SERVER_ISN`. Has the maximum SND.WND and empty `pending`, send
+/// buffer, and reassembly buffer.
 pub(super) const AFTER_HANDSHAKE: ConnState = ConnState {
     tcp_state: TcpState::Established(SyncedState::test_new(
         WINDOW_AFTER_HANDSHAKE,
@@ -48,7 +47,6 @@ pub(super) const AFTER_HANDSHAKE: ConnState = ConnState {
         rcv_nxt: CLIENT_ISN.const_add(SYN_BYTE_IN),
         snd_una: SERVER_ISN.const_add(SYN_BYTE_OUT),
         pending: Vec::new(),
-        reassembly: TcpReassembly::new(),
     },
 };
 

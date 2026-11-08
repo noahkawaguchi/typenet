@@ -94,15 +94,20 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
         WindowState::test_new(out_of_order.window, out_of_order.seq_num, out_of_order.ack_num),
-        Established::test_empty(),
+        Established::test_new(
+            [],
+            TcpReassembly::test_new(
+                [(
+                    out_of_order.seq_num,
+                    out_of_order
+                        .payload
+                        .clone()
+                        .ok_or("Expected segment to carry a payload")?,
+                )],
+                None,
+            ),
+        ),
     ));
-    cloned_state.data.reassembly.insert(
-        out_of_order.seq_num,
-        out_of_order
-            .payload
-            .clone()
-            .ok_or("Expected segment to carry a payload")?,
-    );
 
     assert_eq!(
         connections.try_get()?,
