@@ -4,25 +4,29 @@ use {
         direction::{In, Out},
         ipv4_header::Ipv4Header,
         protocol::tcp::{
-            SYN_BYTE_OUT, TCP_HDR_MIN_LEN, TcpSegment,
-            flags::TcpFlags,
+            TCP_HDR_MIN_LEN, TcpSegment,
             payload::TcpPayload,
             pending_segment::PendingSegment,
             reassembly::TcpReassembly,
-            send_info::SendInfo,
             seq_space::{SeqOffset, SeqPoint},
         },
     },
-    std::{collections::VecDeque, marker::PhantomData, time::Instant},
+    std::collections::VecDeque,
     typenet_utils::error::TraceableResult,
 };
 
-/// The state of a connection in the table, including its TCP state, buffered data, and other
-/// locally stored information.
-#[cfg_attr(test, derive(Debug, Clone))]
+/// The state of a connection in the table, including its TCP state (with any per-state buffers) and
+/// other locally stored data.
+#[cfg_attr(test, derive(Debug, Clone, PartialEq))]
 pub(super) struct ConnState {
     pub(super) tcp_state: TcpState,
+    pub(super) data: ConnData,
+}
 
+/// Data for a TCP connection that isn't specific to certain TCP states, including sequence number
+/// bookkeeping and pending segments.
+#[cfg_attr(test, derive(Debug, Clone))]
+pub(super) struct ConnData {
     /// "SND.NXT = next sequence number to be sent" (RFC 9293, Section 3.4).
     pub(super) snd_nxt: SeqPoint<Out>,
 
@@ -34,45 +38,12 @@ pub(super) struct ConnState {
 
     /// Unacked segments sent by the server, kept for retransmission purposes.
     pub(super) pending: Vec<PendingSegment>,
-
-    /// Bytes received from the application that are queued to be sent once SND.WND has enough
-    /// room for them.
-    pub(super) send_buffer: VecDeque<u8>,
-
-    /// Segments received ahead of RCV.NXT, held until the gap before them closes.
-    pub(super) reassembly: TcpReassembly,
 }
 
+#[cfg(test)]
 impl ConnState {
-    /// Creates a new `Self` in the state right after receiving a SYN and sending a SYN-ACK.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` if the flags are not SYN-ACK.
-    pub(super) fn from_syn_ack(send_info: SendInfo) -> TraceableResult<Self> {
-        (send_info.flags == TcpFlags::SynAck)
-            .then(|| Self {
-                // State after the initial two-way exchange
-                tcp_state: TcpState::SynReceived(SynReceived),
-                // SYN-ACK consumes one sequence number
-                snd_nxt: send_info.seq_num + SYN_BYTE_OUT,
-                // Our SYN-ACK's `ack_num` is the client's ISN + 1
-                rcv_nxt: send_info.ack_num,
-                // Our SYN-ACK is unacknowledged (this is our ISN)
-                snd_una: send_info.seq_num,
-                pending: vec![PendingSegment::new(send_info, Instant::now())],
-                send_buffer: VecDeque::new(),
-                reassembly: TcpReassembly::new(),
-            })
-            .ok_or_else(|| {
-                "Attempted to create a new `ConnState` when sending something other than SYN-ACK"
-                    .into()
-            })
-    }
-
-    #[cfg(test)]
     pub(super) const fn test_get_snd_wnd(&self) -> Option<SeqOffset<u16, Out>> {
-        match self.tcp_state {
+        match &self.tcp_state {
             TcpState::SynReceived(_) => None,
             TcpState::Established(established) => Some(established.window_state.snd_wnd),
             TcpState::FinWait1(fin_wait_1) => Some(fin_wait_1.window_state.snd_wnd),
@@ -82,30 +53,50 @@ impl ConnState {
             TcpState::LastAck(last_ack) => Some(last_ack.window_state.snd_wnd),
         }
     }
+
+    /// Returns a mutable reference to the send buffer if the TCP state has one (ESTABLISHED or
+    /// CLOSE-WAIT), or `Err` otherwise.
+    pub(super) fn test_send_buf_mut(&mut self) -> TraceableResult<&mut VecDeque<u8>> {
+        match &mut self.tcp_state {
+            TcpState::Established(established) => Ok(established.send_buf_mut()),
+            TcpState::CloseWait(close_wait) => Ok(close_wait.send_buf_mut()),
+            TcpState::SynReceived(_)
+            | TcpState::FinWait1(_)
+            | TcpState::FinWait2(_)
+            | TcpState::Closing(_)
+            | TcpState::LastAck(_) => Err("TCP state has no send buffer".into()),
+        }
+    }
+
+    /// Returns the number of segments held for reassembly if the TCP state has a reassembly buffer
+    /// (ESTABLISHED), or `Err` otherwise.
+    pub(super) fn test_reassembly_len(&self) -> TraceableResult<usize> {
+        match &self.tcp_state {
+            TcpState::Established(established) => Ok(established.inner.reassembly.len()),
+            TcpState::SynReceived(_)
+            | TcpState::FinWait1(_)
+            | TcpState::FinWait2(_)
+            | TcpState::CloseWait(_)
+            | TcpState::Closing(_)
+            | TcpState::LastAck(_) => Err("TCP state has no reassembly buffer".into()),
+        }
+    }
 }
 
 #[cfg(test)]
-impl PartialEq for ConnState {
+impl PartialEq for ConnData {
     fn eq(
         &self,
         &Self {
             // Include all fields except `pending` (timing dependent), explicitly destructured to
             // catch any fields added later
-            tcp_state,
             snd_nxt,
             rcv_nxt,
             snd_una,
             pending: _,
-            ref send_buffer,
-            ref reassembly,
         }: &Self,
     ) -> bool {
-        self.tcp_state == tcp_state
-            && self.snd_nxt == snd_nxt
-            && self.rcv_nxt == rcv_nxt
-            && self.snd_una == snd_una
-            && &self.send_buffer == send_buffer
-            && &self.reassembly == reassembly
+        self.snd_nxt == snd_nxt && self.rcv_nxt == rcv_nxt && self.snd_una == snd_una
     }
 }
 
@@ -145,8 +136,7 @@ impl WindowState {
 
 /// The set of states of a TCP connection (non-exhaustive). Variant meanings below from RFC 9293,
 /// Section 3.3.2.
-#[derive(PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Debug, Clone, PartialEq))]
 pub(super) enum TcpState {
     /// "SYN-RECEIVED - represents waiting for a confirming connection request acknowledgment after
     /// having both received and sent a connection request."
@@ -174,7 +164,7 @@ pub(super) enum TcpState {
     /// "CLOSE-WAIT - represents waiting for a connection termination request from the local user."
     ///
     /// Reached via passive close, once the remote peer's FIN has been received. Any data still
-    /// queued in `send_buffer` continues draining here and our own FIN is only sent (moving to
+    /// queued in the send buffer continues draining here and our own FIN is only sent (moving to
     /// LAST-ACK) once the buffer is fully drained.
     CloseWait(SyncedState<CloseWait>),
 
@@ -196,17 +186,61 @@ pub(super) enum TcpState {
 
 /// Defines unit structs for all identifiers passed as comma-separated arguments, including the
 /// appropriate derives and visibility for use in `TcpState`.
-macro_rules! tcp_state_inner_structs {
+macro_rules! tcp_state_unit_structs {
     ($($state:ident),+ $(,)?) => {
         $(
-            #[derive(PartialEq, Eq, Clone, Copy)]
-            #[cfg_attr(test, derive(Debug))]
+            #[cfg_attr(test, derive(Debug, Clone, PartialEq))]
             pub(super) struct $state;
         )+
     };
 }
 
-tcp_state_inner_structs!(SynReceived, Established, FinWait1, FinWait2, CloseWait, Closing, LastAck);
+tcp_state_unit_structs!(SynReceived, FinWait1, FinWait2, Closing, LastAck);
+
+/// The ESTABLISHED-specific data of a connection.
+#[cfg_attr(test, derive(Debug, Clone, PartialEq))]
+pub(super) struct Established {
+    /// Bytes received from the application that are queued to be sent once SND.WND has enough room
+    /// for them.
+    send_buffer: VecDeque<u8>,
+
+    /// Segments received ahead of RCV.NXT, held until the gap before them closes.
+    reassembly: TcpReassembly,
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl Established {
+    /// Creates a `Self` with an empty send buffer and reassembly buffer. Unlike `test_new`, usable
+    /// in `const` contexts.
+    pub(super) const fn test_empty() -> Self {
+        Self { send_buffer: VecDeque::new(), reassembly: TcpReassembly::new() }
+    }
+}
+
+#[cfg(test)]
+impl Established {
+    pub(super) fn test_new(
+        send_buffer: impl Into<VecDeque<u8>>,
+        reassembly: TcpReassembly,
+    ) -> Self {
+        Self { send_buffer: send_buffer.into(), reassembly }
+    }
+}
+
+/// The CLOSE-WAIT-specific data of a connection.
+#[cfg_attr(test, derive(Debug, Clone, PartialEq))]
+pub(super) struct CloseWait {
+    /// Bytes still queued from ESTABLISHED, sent before our FIN once SND.WND has enough room for
+    /// them.
+    send_buffer: VecDeque<u8>,
+}
+
+#[cfg(test)]
+impl CloseWait {
+    pub(super) fn test_new(send_buffer: impl Into<VecDeque<u8>>) -> Self {
+        Self { send_buffer: send_buffer.into() }
+    }
+}
 
 impl SynReceived {
     /// Enters ESTABLISHED, setting SND.WND, SND.WL1, and SND.WL2 (RFC 9293, Section 3.10.7.4,
@@ -219,36 +253,68 @@ impl SynReceived {
                 snd_wl1: seg.seq_num,
                 snd_wl2: seg.ack_num,
             },
-            phantom: PhantomData,
+            // Nothing can have been buffered yet, since out-of-order data is only accepted after
+            // the handshake completes
+            inner: Established { send_buffer: VecDeque::new(), reassembly: TcpReassembly::new() },
         }
     }
 }
 
-/// One of the synchronized TCP states.
-#[derive(PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+/// One of the synchronized TCP states, including the window state shared by all of them and any
+/// data specific to state `T`.
+#[cfg_attr(test, derive(Debug, Clone, PartialEq))]
 pub(super) struct SyncedState<T> {
     window_state: WindowState,
-    phantom: PhantomData<T>,
+    inner: T,
 }
 
-/// Given the pattern `($from:ty => $fn_name:ident => $to:ty)`, creates a method on
-/// `SyncedState<$from>` called `$fn_name` that returns `SyncedState<$to>`.
-macro_rules! synced_state_transition {
-    ($from:ty => $fn_name:ident => $to:ty) => {
+/// Given the pattern `($from:ty => $fn_name:ident => $to:ident)`, where `$to` is a unit struct,
+/// creates a method on `SyncedState<$from>` called `$fn_name` that returns `SyncedState<$to>`,
+/// keeping the window state and dropping any data specific to `$from`.
+macro_rules! synced_state_transition_to_unit {
+    ($from:ty => $fn_name:ident => $to:ident) => {
         impl SyncedState<$from> {
-            pub(super) const fn $fn_name(self) -> SyncedState<$to> {
-                SyncedState { window_state: self.window_state, phantom: PhantomData }
+            #[expect(clippy::allow_attributes, reason = "Only some macro expansions linted")]
+            #[allow(clippy::missing_const_for_fn, reason = "Some transitions deallocate")]
+            pub(super) fn $fn_name(self) -> SyncedState<$to> {
+                SyncedState { window_state: self.window_state, inner: $to }
             }
         }
     };
 }
 
-synced_state_transition!(Established => rcv_fin => CloseWait);
-synced_state_transition!(CloseWait => send_fin => LastAck);
-synced_state_transition!(Established => close => FinWait1);
-synced_state_transition!(FinWait1 => rcv_ack_of_fin => FinWait2);
-synced_state_transition!(FinWait1 => rcv_fin_before_fin_is_acked => Closing);
+// Any data still in the send buffer is discarded rather than sent before the FIN
+synced_state_transition_to_unit!(Established => close => FinWait1);
+// Only called once the send buffer has been fully drained
+synced_state_transition_to_unit!(CloseWait => send_fin => LastAck);
+synced_state_transition_to_unit!(FinWait1 => rcv_ack_of_fin => FinWait2);
+synced_state_transition_to_unit!(FinWait1 => rcv_fin_before_fin_is_acked => Closing);
+
+impl SyncedState<Established> {
+    /// Returns a reference to the buffer for segments received ahead of RCV.NXT.
+    pub(super) const fn reassembly(&self) -> &TcpReassembly { &self.inner.reassembly }
+
+    /// Returns a mutable reference to the buffer for segments received ahead of RCV.NXT.
+    pub(super) const fn reassembly_mut(&mut self) -> &mut TcpReassembly {
+        &mut self.inner.reassembly
+    }
+
+    /// Returns mutable references to both the reassembly buffer and the send buffer at once,
+    /// allowing a split borrow that separate calls to individual accessors can't express.
+    pub(super) const fn buffers_mut(&mut self) -> (&mut TcpReassembly, &mut VecDeque<u8>) {
+        (&mut self.inner.reassembly, &mut self.inner.send_buffer)
+    }
+
+    /// Enters CLOSE-WAIT, keeping the send buffer so that it can finish draining before our FIN.
+    /// Drops the reassembly buffer, since it has nothing left to reassemble once the peer's FIN has
+    /// been reached.
+    pub(super) fn rcv_fin(self) -> SyncedState<CloseWait> {
+        SyncedState {
+            window_state: self.window_state,
+            inner: CloseWait { send_buffer: self.inner.send_buffer },
+        }
+    }
+}
 
 impl<T> SyncedState<T> {
     /// Per RFC 9293, Section 3.10.7.4, "Fifth, check the ACK field," "ESTABLISHED STATE," processes
@@ -259,7 +325,7 @@ impl<T> SyncedState<T> {
     /// Ignores ACKs that are old (before SND.UNA) or for data not yet sent (past SND.NXT). Ignores
     /// duplicate ACKs (SND.UNA == SEG.ACK) for updates to SND.UNA and the retransmission queue.
     #[must_use = "Returns updated state as a new instance"]
-    pub(super) fn incoming_ack_update(self, conn: &mut ConnState, seg: &TcpSegment<In>) -> Self {
+    pub(super) fn incoming_ack_update(self, conn: &mut ConnData, seg: &TcpSegment<In>) -> Self {
         if conn.snd_una.precedes_or_eq(seg.ack_num) && seg.ack_num.precedes_or_eq(conn.snd_nxt) {
             // Exclude duplicate ACKs: SND.UNA < SEG.ACK <= SND.NXT
             if conn.snd_una.precedes(seg.ack_num) {
@@ -284,7 +350,7 @@ impl<T> SyncedState<T> {
                         snd_wl1: seg.seq_num,
                         snd_wl2: seg.ack_num,
                     },
-                    phantom: PhantomData,
+                    inner: self.inner,
                 }
             } else {
                 self
@@ -293,28 +359,49 @@ impl<T> SyncedState<T> {
             self
         }
     }
+}
 
-    #[cfg(any(test, feature = "test-utils"))]
-    pub(super) const fn test_new(window_state: WindowState) -> Self {
-        Self { window_state, phantom: PhantomData }
+#[cfg(any(test, feature = "test-utils"))]
+impl<T> SyncedState<T> {
+    /// Creates a `Self` from `window_state` and the per-state data `inner`.
+    pub(super) const fn test_new(window_state: WindowState, inner: T) -> Self {
+        Self { window_state, inner }
     }
 }
 
-/// Represents being in a state where data is allowed to go out on the wire because our send side is
-/// open, i.e. a synchronized state before our FIN has been sent. Private to this module to uphold
-/// the invariant that this is only allowed in ESTABLISHED and CLOSE-WAIT.
-trait SendSideOpen {}
-impl SendSideOpen for Established {}
-impl SendSideOpen for CloseWait {}
+/// Provides send buffer access for TCP states where data is allowed to go out on the wire because
+/// our send side is open (i.e. synchronized states before our FIN has been sent). Private to this
+/// module to uphold the invariant that this is only allowed in ESTABLISHED and CLOSE-WAIT.
+trait SendSideOpen {
+    fn send_buf(&self) -> &VecDeque<u8>;
+    fn send_buf_mut(&mut self) -> &mut VecDeque<u8>;
+}
+
+impl SendSideOpen for Established {
+    fn send_buf(&self) -> &VecDeque<u8> { &self.send_buffer }
+    fn send_buf_mut(&mut self) -> &mut VecDeque<u8> { &mut self.send_buffer }
+}
+
+impl SendSideOpen for CloseWait {
+    fn send_buf(&self) -> &VecDeque<u8> { &self.send_buffer }
+    fn send_buf_mut(&mut self) -> &mut VecDeque<u8> { &mut self.send_buffer }
+}
 
 #[expect(private_bounds, reason = "Ensure only states allowed in this module can send data")]
 impl<T: SendSideOpen> SyncedState<T> {
+    /// Returns whether any bytes are queued to be sent.
+    pub(super) fn has_unsent_data(&self) -> bool { !self.inner.send_buf().is_empty() }
+
+    /// Returns a mutable reference to the buffer for bytes from the application that are queued to
+    /// be sent.
+    pub(super) fn send_buf_mut(&mut self) -> &mut VecDeque<u8> { self.inner.send_buf_mut() }
+
     /// Removes and returns as many bytes as possible from the front of the send buffer, bounded by
     /// the peer's currently advertised window and the maximum length of a segment, or returns
-    /// `Ok(None)` if nothing can be sent. Does not mutate any other state.
+    /// `Ok(None)` if nothing can be sent.
     pub(super) fn drain_transmittable(
-        &self,
-        conn: &mut ConnState,
+        &mut self,
+        conn: &ConnData,
     ) -> TraceableResult<Option<TcpPayload>> {
         /// The maximum number of bytes that a single TCP payload can have. Constant because the
         /// current implementation never sends options in IP or TCP headers.
@@ -327,9 +414,9 @@ impl<T: SendSideOpen> SyncedState<T> {
             usize::from(self.window_state.snd_wnd).saturating_sub(sent_but_not_acked);
 
         let bytes_to_send = space_in_window
-            .min(conn.send_buffer.len())
+            .min(self.inner.send_buf().len())
             .min(MAX_PAYLOAD_LEN);
 
-        TcpPayload::try_from_iter(conn.send_buffer.drain(..bytes_to_send))
+        TcpPayload::try_from_iter(self.inner.send_buf_mut().drain(..bytes_to_send))
     }
 }

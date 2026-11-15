@@ -6,13 +6,11 @@ use {
         protocol::{
             tcp::{
                 connections::ConnKey,
-                reassembly::TcpReassembly,
-                state::{ConnState, SyncedState, TcpState, WindowState},
+                state::{ConnData, ConnState, Established, SyncedState, TcpState, WindowState},
             },
             test_consts::IP_PAIR_IN,
         },
     },
-    std::collections::VecDeque,
 };
 
 /// Fixed value to use as the ISN randomly chosen by the client.
@@ -37,16 +35,19 @@ pub(super) const WINDOW_AFTER_HANDSHAKE: WindowState = WindowState::test_new(
 );
 
 /// An ESTABLISHED connection as if the initial three-way handshake had just completed. Uses the
-/// test constants `CLIENT_ISN` and `SERVER_ISN`. Has the maximum SND.WND and empty
-/// `pending`/`send_buffer`.
+/// test constants `CLIENT_ISN` and `SERVER_ISN`. Has the maximum SND.WND and empty `pending`, send
+/// buffer, and reassembly buffer.
 pub(super) const AFTER_HANDSHAKE: ConnState = ConnState {
-    tcp_state: TcpState::Established(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE)),
-    snd_nxt: SERVER_ISN.const_add(SYN_BYTE_OUT),
-    rcv_nxt: CLIENT_ISN.const_add(SYN_BYTE_IN),
-    snd_una: SERVER_ISN.const_add(SYN_BYTE_OUT),
-    pending: Vec::new(),
-    send_buffer: VecDeque::new(),
-    reassembly: TcpReassembly::new(),
+    tcp_state: TcpState::Established(SyncedState::test_new(
+        WINDOW_AFTER_HANDSHAKE,
+        Established::test_empty(),
+    )),
+    data: ConnData {
+        snd_nxt: SERVER_ISN.const_add(SYN_BYTE_OUT),
+        rcv_nxt: CLIENT_ISN.const_add(SYN_BYTE_IN),
+        snd_una: SERVER_ISN.const_add(SYN_BYTE_OUT),
+        pending: Vec::new(),
+    },
 };
 
 /// An incoming pure ACK packet from the client (port 1234) to the server (port 80).

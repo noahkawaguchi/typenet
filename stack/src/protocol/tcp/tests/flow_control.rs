@@ -3,11 +3,10 @@ use {super::*, pretty_assertions::assert_eq};
 /// Creates a `ConnState` that is the same as `AFTER_HANDSHAKE` except for a custom `snd_wnd`.
 fn after_handshake_with_snd_wnd(snd_wnd: SeqOffset<u16, Out>) -> ConnState {
     ConnState {
-        tcp_state: TcpState::Established(SyncedState::test_new(WindowState::test_new(
-            snd_wnd,
-            CLIENT_ISN + SYN_BYTE_IN,
-            SERVER_ISN + SYN_BYTE_OUT,
-        ))),
+        tcp_state: TcpState::Established(SyncedState::test_new(
+            WindowState::test_new(snd_wnd, CLIENT_ISN + SYN_BYTE_IN, SERVER_ISN + SYN_BYTE_OUT),
+            Established::test_empty(),
+        )),
         ..AFTER_HANDSHAKE
     }
 }
@@ -18,7 +17,7 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResu
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     let reply = TcpSegment {
         seq_num: CLIENT_ISN + SYN_BYTE_IN,
@@ -40,9 +39,9 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResu
         "Only the first 3 bytes fit in the advertised window of 3"
     );
 
-    expected_state.snd_nxt += WINDOW.into();
-    expected_state.rcv_nxt += HELLO_LEN_IN;
-    expected_state.send_buffer.extend(b"lo");
+    expected_state.data.snd_nxt += WINDOW.into();
+    expected_state.data.rcv_nxt += HELLO_LEN_IN;
+    expected_state.test_send_buf_mut()?.extend(b"lo");
 
     assert_eq!(
         connections.try_get()?,
@@ -64,7 +63,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     // "Hello" (5 bytes), window only allows 3 -> "Hel" sent (SND.NXT advances by 3, SND.UNA stays
     // put), "lo" buffered. 3 bytes are now sent but unacked.
@@ -77,15 +76,15 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    expected_state.snd_nxt += WINDOW.into();
-    expected_state.rcv_nxt += HELLO_LEN_IN;
-    expected_state.send_buffer.extend(b"lo");
+    expected_state.data.snd_nxt += WINDOW.into();
+    expected_state.data.rcv_nxt += HELLO_LEN_IN;
+    expected_state.test_send_buf_mut()?.extend(b"lo");
 
     {
         let state = connections.try_get()?;
         assert_eq!(state, &expected_state, "State confirmation before the dup ACK");
         assert!(
-            state.snd_una.precedes(state.snd_nxt),
+            state.data.snd_una.precedes(state.data.snd_nxt),
             "Bytes must be sent but unacked for this test to be meaningful"
         );
     }
@@ -106,11 +105,14 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
         "No room left in the window while the first 3 bytes remain unacked"
     );
 
-    expected_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        dup_ack_same_window.window,
-        dup_ack_same_window.seq_num,
-        dup_ack_same_window.ack_num,
-    )));
+    expected_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(
+            dup_ack_same_window.window,
+            dup_ack_same_window.seq_num,
+            dup_ack_same_window.ack_num,
+        ),
+        Established::test_new(*b"lo", TcpReassembly::new()), // "lo" must still be queued
+    ));
 
     assert_eq!(
         connections.try_get()?,
@@ -131,7 +133,7 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(INITIAL_WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     // "Hello" (5 bytes), window only allows 3 -> "Hel" sent, "lo" buffered
     TcpSegment {
@@ -143,9 +145,9 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    expected_state.snd_nxt += HEL_LEN;
-    expected_state.rcv_nxt += HELLO_LEN_IN;
-    expected_state.send_buffer.extend(b"lo");
+    expected_state.data.snd_nxt += HEL_LEN;
+    expected_state.data.rcv_nxt += HELLO_LEN_IN;
+    expected_state.test_send_buf_mut()?.extend(b"lo");
 
     assert_eq!(connections.try_get()?, &expected_state, "State confirmation before window update");
 
@@ -170,14 +172,12 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
         "The buffered remainder should drain once the window opens, piggybacked on the next ACK"
     );
 
-    expected_state.snd_una += HEL_LEN;
-    expected_state.snd_nxt += LO_LEN;
-    expected_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        LARGER_WINDOW,
-        window_update.seq_num,
-        window_update.ack_num,
-    )));
-    expected_state.send_buffer.clear();
+    expected_state.data.snd_una += HEL_LEN;
+    expected_state.data.snd_nxt += LO_LEN;
+    expected_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(LARGER_WINDOW, window_update.seq_num, window_update.ack_num),
+        Established::test_empty(), // Fully drained
+    ));
 
     assert_eq!(
         connections.try_get()?,
@@ -194,7 +194,7 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(ZERO_WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     let reply = TcpSegment {
         seq_num: CLIENT_ISN + SYN_BYTE_IN,
@@ -215,8 +215,8 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
         "A closed window still gets a bare ACK for the receipt, just no echoed payload"
     );
 
-    expected_state.rcv_nxt += HELLO_LEN_IN;
-    expected_state.send_buffer.extend(b"Hello");
+    expected_state.data.rcv_nxt += HELLO_LEN_IN;
+    expected_state.test_send_buf_mut()?.extend(b"Hello");
 
     assert_eq!(
         connections.try_get()?,
@@ -246,7 +246,7 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
 
     let mut connections = TcpConnections::default();
     let mut expected_state = after_handshake_with_snd_wnd(ZERO_WINDOW);
-    connections.insert(expected_state.clone());
+    connections.test_insert(expected_state.clone());
 
     let big_payload = "a".repeat(MAX_PAYLOAD_LEN + 100);
     let big_payload_len = SeqOffset::new(u32::try_from(big_payload.len())?);
@@ -262,8 +262,10 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
     }
     .create_test_reply(&mut connections)?;
 
-    expected_state.rcv_nxt += big_payload_len;
-    expected_state.send_buffer.extend(big_payload.as_bytes());
+    expected_state.data.rcv_nxt += big_payload_len;
+    expected_state
+        .test_send_buf_mut()?
+        .extend(big_payload.as_bytes());
     assert_eq!(connections.try_get()?, &expected_state, "State confirmation before window opens");
 
     // Client reopens the window wide enough to take everything at once
@@ -285,13 +287,15 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
         "Only the first {MAX_PAYLOAD_LEN} bytes should fit in one segment"
     );
 
-    expected_state.snd_nxt += SeqOffset::<u32, Out>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
-    expected_state.tcp_state = TcpState::Established(SyncedState::test_new(WindowState::test_new(
-        window_update.window,
-        window_update.seq_num,
-        window_update.ack_num,
-    )));
-    expected_state.send_buffer.drain(..MAX_PAYLOAD_LEN);
+    expected_state.data.snd_nxt += SeqOffset::<u32, Out>::new(u32::try_from(MAX_PAYLOAD_LEN)?);
+    expected_state.tcp_state = TcpState::Established(SyncedState::test_new(
+        WindowState::test_new(window_update.window, window_update.seq_num, window_update.ack_num),
+        // Only what didn't fit in the first segment is still queued
+        Established::test_new(
+            big_payload.as_bytes().try_get(MAX_PAYLOAD_LEN..)?.to_vec(),
+            TcpReassembly::new(),
+        ),
+    ));
 
     assert_eq!(
         connections.try_get()?,
