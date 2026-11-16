@@ -1516,3 +1516,138 @@ fn data_or_fin_after_peers_fin_acking_our_fin_removes_connection() -> TraceableR
 
     Ok(())
 }
+
+#[test]
+fn data_or_fin_in_close_wait_is_ignored_with_duplicate_ack() -> TraceableResult {
+    // In CLOSE-WAIT, the peer's FIN has already been received, so a segment carrying new data or
+    // another FIN means a misbehaving peer. RFC 9293, Section 3.10.7.4 says to ignore the segment
+    // text ("Seventh, process the segment text") and remain in CLOSE-WAIT ("Eighth, check the FIN
+    // bit"), not to send a RST. The ACK field is still processed ("Fifth, check the ACK field"),
+    // here advertising a zero window, so none of the queued data can be sent and the reply is a
+    // pure ACK at the unchanged RCV.NXT.
+
+    for (flags, payload_str, offset) in DATA_OR_FIN_AFTER_PEERS_FIN {
+        let mut connections = TcpConnections::default();
+
+        // The peer's FIN has been received, and ours hasn't been sent yet
+        let mut expected_state = ConnState {
+            tcp_state: TcpState::CloseWait(SyncedState::test_new(
+                WINDOW_AFTER_HANDSHAKE,
+                CloseWait::test_new(*b"leftover"),
+            )),
+            data: ConnData {
+                rcv_nxt: AFTER_HANDSHAKE.data.rcv_nxt + FIN_BYTE_IN,
+                ..AFTER_HANDSHAKE.data
+            },
+        };
+        connections.test_insert(expected_state.clone());
+
+        let after_peers_fin = TcpSegment {
+            seq_num: CLIENT_ISN + SYN_BYTE_IN + FIN_BYTE_IN + offset,
+            ack_num: SERVER_ISN + SYN_BYTE_OUT,
+            window: SeqOffset::new(0),
+            flags,
+            payload: TcpPayload::from_test_str(payload_str)?,
+            ..CLIENT_PKT
+        };
+
+        assert_eq!(
+            after_peers_fin.create_test_reply(&mut connections)?,
+            Some(TcpSegment {
+                seq_num: SERVER_ISN + SYN_BYTE_OUT,
+                ack_num: CLIENT_ISN + SYN_BYTE_IN + FIN_BYTE_IN,
+                ..SERVER_REPLY
+            }),
+            "Data or a FIN after the peer's FIN should get a pure ACK at the unchanged RCV.NXT, \
+             not a RST (flags {flags:?}, payload {payload_str:?}, offset {offset:?})"
+        );
+
+        // The ACK field is still processed, so the window state is updated, but RCV.NXT is not
+        // advanced and the queued data stays queued
+        expected_state.tcp_state = TcpState::CloseWait(SyncedState::test_new(
+            WindowState::test_new(
+                after_peers_fin.window,
+                after_peers_fin.seq_num,
+                after_peers_fin.ack_num,
+            ),
+            CloseWait::test_new(*b"leftover"),
+        ));
+
+        assert_eq!(
+            connections.try_get()?,
+            &expected_state,
+            "The connection should stay in CLOSE-WAIT with RCV.NXT and the send buffer unchanged \
+             (flags {flags:?}, payload {payload_str:?}, offset {offset:?})"
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn data_or_fin_in_close_wait_opening_window_drains_and_sends_our_fin() -> TraceableResult {
+    // The ACK field of a segment carrying data or a FIN after the peer's own FIN is still processed
+    // even though its text is ignored (RFC 9293, Section 3.10.7.4, "Fifth, check the ACK field"),
+    // so if it opens the window enough, CLOSE-WAIT drains the rest of its queued data and sends our
+    // FIN with it, just like a pure ACK would.
+
+    const LEFTOVER_LEN_OUT: SeqOffset<u32, Out> = SeqOffset::new(8);
+
+    for (flags, payload_str, offset) in DATA_OR_FIN_AFTER_PEERS_FIN {
+        let mut connections = TcpConnections::default();
+
+        // The peer's FIN has been received, and ours hasn't been sent yet
+        let mut expected_state = ConnState {
+            tcp_state: TcpState::CloseWait(SyncedState::test_new(
+                WINDOW_AFTER_HANDSHAKE,
+                CloseWait::test_new(*b"leftover"),
+            )),
+            data: ConnData {
+                rcv_nxt: AFTER_HANDSHAKE.data.rcv_nxt + FIN_BYTE_IN,
+                ..AFTER_HANDSHAKE.data
+            },
+        };
+        connections.test_insert(expected_state.clone());
+
+        // Advertises the maximum window, enough for all the queued data
+        let after_peers_fin = TcpSegment {
+            seq_num: CLIENT_ISN + SYN_BYTE_IN + FIN_BYTE_IN + offset,
+            ack_num: SERVER_ISN + SYN_BYTE_OUT,
+            flags,
+            payload: TcpPayload::from_test_str(payload_str)?,
+            ..CLIENT_PKT
+        };
+
+        assert_eq!(
+            after_peers_fin.create_test_reply(&mut connections)?,
+            Some(TcpSegment {
+                seq_num: SERVER_ISN + SYN_BYTE_OUT,
+                ack_num: CLIENT_ISN + SYN_BYTE_IN + FIN_BYTE_IN,
+                flags: TcpFlags::FinAck,
+                payload: TcpPayload::from_test_str("leftover")?,
+                ..SERVER_REPLY
+            }),
+            "The queued data should go out with our FIN, ACKing the unchanged RCV.NXT, not a RST \
+             (flags {flags:?}, payload {payload_str:?}, offset {offset:?})"
+        );
+
+        expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
+            WindowState::test_new(
+                after_peers_fin.window,
+                after_peers_fin.seq_num,
+                after_peers_fin.ack_num,
+            ),
+            LastAck,
+        ));
+        expected_state.data.snd_nxt += LEFTOVER_LEN_OUT + FIN_BYTE_OUT;
+
+        assert_eq!(
+            connections.try_get()?,
+            &expected_state,
+            "The connection should move to LAST-ACK with RCV.NXT unchanged (flags {flags:?}, \
+             payload {payload_str:?}, offset {offset:?})"
+        );
+    }
+
+    Ok(())
+}

@@ -673,10 +673,16 @@ impl SendInfo {
         conn: &mut ConnData,
         close_wait: SyncedState<CloseWait>,
     ) -> TraceableResult<(Option<Self>, Option<TcpState>)> {
-        Ok(match (seg.flags, &seg.payload, SeqCheck::check(seg, conn)) {
+        // The peer's FIN has already been received, so any segment text or FIN is ignored and the
+        // connection remains in CLOSE-WAIT (RFC 9293, Section 3.10.7.4, "Seventh, process the
+        // segment text" and "Eighth, check the FIN bit"). Only the ACK field is processed ("Fifth,
+        // check the ACK field"), so the arm below covers any payload and FIN.
+        Ok(match (seg.flags, SeqCheck::check(seg, conn)) {
             // ACK of previously sent data (or a window update) while still draining the send buffer
-            // -> update send-side state, then try to send more and/or proceed to LAST-ACK.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder) => {
+            // -> update send-side state, then try to send more and/or proceed to LAST-ACK. Every
+            // reply ACKs the unchanged RCV.NXT, so any ignored text is effectively answered with a
+            // duplicate ACK.
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder) => {
                 let new_close_wait = close_wait.incoming_ack_update(conn, seg);
                 let (send_info, next_state) = Self::close_wait_or_last_ack(conn, new_close_wait)?;
                 (Some(send_info), Some(next_state))
