@@ -553,6 +553,31 @@ impl SendInfo {
                 (None, Some(TcpState::FinWait1(fin_wait_1.incoming_ack_update(conn, seg))))
             }
 
+            // Out-of-order data and/or FIN still within the receive window, not acknowledging our
+            // FIN -> the segment SHOULD be held for later processing (RFC 9293, Section 3.10.7.4,
+            // "First, check sequence number"), but this state has no reassembly buffer, so its text
+            // and FIN are never processed (peer must retransmit). Its ACK field is still processed
+            // right away, as in ESTABLISHED and common practice (e.g. Linux), even though a strict
+            // reading of the RFC would defer that too. Reply with a duplicate ACK so the peer knows
+            // what's still missing.
+            (TcpFlags::Ack, Some(_), SeqCheck::OutOfOrder, false)
+            | (TcpFlags::FinAck, _, SeqCheck::OutOfOrder, false) => (
+                Some(Self::pure_ack(conn)),
+                Some(TcpState::FinWait1(fin_wait_1.incoming_ack_update(conn, seg))),
+            ),
+
+            // Out-of-order data and/or FIN still within the receive window, also acknowledging our
+            // FIN -> handled the same as the case where it doesn't acknowledge our FIN, except that
+            // processing the ACK field means entering FIN-WAIT-2 (RFC 9293, Section 3.10.7.4,
+            // "Fifth, check the ACK field").
+            (TcpFlags::Ack, Some(_), SeqCheck::OutOfOrder, true)
+            | (TcpFlags::FinAck, _, SeqCheck::OutOfOrder, true) => (
+                Some(Self::pure_ack(conn)),
+                Some(TcpState::FinWait2(
+                    fin_wait_1.incoming_ack_update(conn, seg).rcv_ack_of_fin(),
+                )),
+            ),
+
             // Peer's FIN arrives before ours is acknowledged (simultaneous close), and it also
             // acknowledges our FIN -> ACK it and remove the connection (skipping
             // FIN-WAIT-2/TIME-WAIT).
@@ -613,6 +638,19 @@ impl SendInfo {
             (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder) => {
                 (None, Some(TcpState::FinWait2(fin_wait_2.incoming_ack_update(conn, seg))))
             }
+
+            // Out-of-order data and/or FIN still within the receive window -> the segment SHOULD be
+            // held for later processing (RFC 9293, Section 3.10.7.4, "First, check sequence
+            // number"), but this state has no reassembly buffer, so its text and FIN are never
+            // processed (peer must retransmit). Its ACK field is still processed right away, as in
+            // ESTABLISHED and common practice (e.g. Linux), even though a strict reading of the RFC
+            // would defer that too. Reply with a duplicate ACK so the peer knows what's still
+            // missing.
+            (TcpFlags::Ack, Some(_), SeqCheck::OutOfOrder)
+            | (TcpFlags::FinAck, _, SeqCheck::OutOfOrder) => (
+                Some(Self::pure_ack(conn)),
+                Some(TcpState::FinWait2(fin_wait_2.incoming_ack_update(conn, seg))),
+            ),
 
             // Peer's FIN arrives in order -> ACK it and finish closing (no TIME-WAIT). Our own FIN
             // has already been sent, so any trailing data isn't delivered to the application

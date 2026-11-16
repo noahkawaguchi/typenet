@@ -10,6 +10,11 @@ const STATES_AFTER_SENDING_FIN: [TcpState; 4] = [
     TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE, LastAck)),
 ];
 
+/// Flag and payload combinations for out-of-order segments that carry data and/or a FIN, where an
+/// empty string means no payload.
+const OUT_OF_ORDER_DATA_OR_FIN: [(TcpFlags, &str); 3] =
+    [(TcpFlags::Ack, "Hi"), (TcpFlags::FinAck, ""), (TcpFlags::FinAck, "Hi")];
+
 #[test]
 fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> TraceableResult {
     // A FIN-ACK arriving in SYN-RECEIVED can legitimately complete the handshake and initiate
@@ -1225,6 +1230,165 @@ fn stale_pure_ack_in_close_wait_gets_duplicate_ack() -> TraceableResult {
     );
 
     assert_eq!(connections.try_get()?, &initial_state, "The connection should be untouched");
+
+    Ok(())
+}
+
+#[test]
+fn out_of_order_data_or_fin_in_fin_wait_gets_duplicate_ack() -> TraceableResult {
+    // While in FIN-WAIT-1 or FIN-WAIT-2, the peer may still be sending, so a reordered segment
+    // carrying data and/or its FIN can arrive ahead of earlier data and in the window. Since these
+    // states have no reassembly buffer, it should get a duplicate ACK at the unchanged RCV.NXT,
+    // without its data being accepted or its FIN starting the close. The in-order retransmission of
+    // the missing data must then still be accepted normally, proving the connection was not
+    // disturbed.
+
+    /// Constructors for FIN-WAIT-1 and FIN-WAIT-2 with a given window state, for building the same
+    /// state both before and after a window update.
+    const FIN_WAIT_STATES: [fn(WindowState) -> TcpState; 2] = [
+        |window| TcpState::FinWait1(SyncedState::test_new(window, FinWait1)),
+        |window| TcpState::FinWait2(SyncedState::test_new(window, FinWait2)),
+    ];
+
+    for make_state in FIN_WAIT_STATES {
+        for (flags, payload_str) in OUT_OF_ORDER_DATA_OR_FIN {
+            let mut connections = TcpConnections::default();
+
+            // SND.NXT includes our own already-sent FIN, one past SND.UNA
+            let mut expected_state = ConnState {
+                tcp_state: make_state(WINDOW_AFTER_HANDSHAKE),
+                data: ConnData {
+                    snd_nxt: AFTER_HANDSHAKE.data.snd_nxt + FIN_BYTE_OUT,
+                    ..AFTER_HANDSHAKE.data
+                },
+            };
+            connections.test_insert(expected_state.clone());
+
+            // Arrives 5 bytes ahead of RCV.NXT, as if "Hello" had been lost, and doesn't
+            // acknowledge our FIN
+            let out_of_order = TcpSegment {
+                seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+                ack_num: SERVER_ISN + SYN_BYTE_OUT,
+                flags,
+                payload: TcpPayload::from_test_str(payload_str)?,
+                ..CLIENT_PKT
+            };
+
+            assert_eq!(
+                out_of_order.create_test_reply(&mut connections)?,
+                Some(TcpSegment {
+                    seq_num: SERVER_ISN + SYN_BYTE_OUT + FIN_BYTE_OUT,
+                    ack_num: CLIENT_ISN + SYN_BYTE_IN,
+                    ..SERVER_REPLY
+                }),
+                "An out-of-order segment should get a duplicate ACK at the unchanged RCV.NXT, not \
+                 a RST (in state {:?}, flags {flags:?}, payload {payload_str:?})",
+                expected_state.tcp_state,
+            );
+
+            // The ACK field is still processed, so the window state is updated, but RCV.NXT is not
+            // advanced and the FIN (if any) is not acted on
+            expected_state.tcp_state = make_state(WindowState::test_new(
+                out_of_order.window,
+                out_of_order.seq_num,
+                out_of_order.ack_num,
+            ));
+
+            assert_eq!(
+                connections.try_get()?,
+                &expected_state,
+                "The connection should stay in the same state with RCV.NXT unchanged (flags \
+                 {flags:?}, payload {payload_str:?})"
+            );
+
+            // The missing "Hello" finally arrives in order
+            let gap_filler = TcpSegment {
+                seq_num: CLIENT_ISN + SYN_BYTE_IN,
+                ack_num: SERVER_ISN + SYN_BYTE_OUT,
+                payload: TcpPayload::from_test_str("Hello")?,
+                ..CLIENT_PKT
+            };
+
+            assert_eq!(
+                gap_filler.create_test_reply(&mut connections)?,
+                Some(TcpSegment {
+                    seq_num: SERVER_ISN + SYN_BYTE_OUT + FIN_BYTE_OUT,
+                    ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+                    ..SERVER_REPLY
+                }),
+                "The in-order retransmission should be ACKed normally, covering only itself since \
+                 the out-of-order segment was dropped (flags {flags:?}, payload {payload_str:?})"
+            );
+
+            // The window state stays pinned to the out-of-order segment's values, since "Hello" has
+            // an earlier SEG.SEQ
+            expected_state.data.rcv_nxt += HELLO_LEN_IN;
+
+            assert_eq!(
+                connections.try_get()?,
+                &expected_state,
+                "The connection should still be in the same state, not closing (flags {flags:?}, \
+                 payload {payload_str:?})"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+fn out_of_order_data_or_fin_acking_our_fin_moves_fin_wait_1_to_fin_wait_2() -> TraceableResult {
+    // The ACK field of an acceptable segment is processed even if its text can't be yet (RFC 9293,
+    // Section 3.10.7.4, "Fifth, check the ACK field"). In FIN-WAIT-1, that includes entering
+    // FIN-WAIT-2 if our FIN is now acknowledged, while the out-of-order text itself still only gets
+    // a duplicate ACK.
+
+    for (flags, payload_str) in OUT_OF_ORDER_DATA_OR_FIN {
+        let mut connections = TcpConnections::default();
+
+        // SND.NXT includes our own already-sent FIN, one past SND.UNA
+        let mut expected_state = ConnState {
+            tcp_state: TcpState::FinWait1(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE, FinWait1)),
+            data: ConnData {
+                snd_nxt: AFTER_HANDSHAKE.data.snd_nxt + FIN_BYTE_OUT,
+                ..AFTER_HANDSHAKE.data
+            },
+        };
+        connections.test_insert(expected_state.clone());
+
+        // Arrives 5 bytes ahead of RCV.NXT and acknowledges our FIN
+        let out_of_order = TcpSegment {
+            seq_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
+            ack_num: SERVER_ISN + SYN_BYTE_OUT + FIN_BYTE_OUT,
+            flags,
+            payload: TcpPayload::from_test_str(payload_str)?,
+            ..CLIENT_PKT
+        };
+
+        assert_eq!(
+            out_of_order.create_test_reply(&mut connections)?,
+            Some(TcpSegment {
+                seq_num: SERVER_ISN + SYN_BYTE_OUT + FIN_BYTE_OUT,
+                ack_num: CLIENT_ISN + SYN_BYTE_IN,
+                ..SERVER_REPLY
+            }),
+            "An out-of-order segment should get a duplicate ACK at the unchanged RCV.NXT, not a \
+             RST (flags {flags:?}, payload {payload_str:?})"
+        );
+
+        expected_state.tcp_state = TcpState::FinWait2(SyncedState::test_new(
+            WindowState::test_new(out_of_order.window, out_of_order.seq_num, out_of_order.ack_num),
+            FinWait2,
+        ));
+        expected_state.data.snd_una += FIN_BYTE_OUT;
+
+        assert_eq!(
+            connections.try_get()?,
+            &expected_state,
+            "The ACK of our FIN should move the connection to FIN-WAIT-2, with RCV.NXT unchanged \
+             (flags {flags:?}, payload {payload_str:?})"
+        );
+    }
 
     Ok(())
 }
