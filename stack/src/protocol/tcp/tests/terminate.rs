@@ -10,6 +10,24 @@ const STATES_AFTER_SENDING_FIN: [TcpState; 4] = [
     TcpState::LastAck(SyncedState::test_new(WINDOW_AFTER_HANDSHAKE, LastAck)),
 ];
 
+/// Constructors for CLOSING and LAST-ACK (the states after sending our FIN where the peer's FIN has
+/// also been received) with a given window state, for tests that need to build the same state both
+/// before and after a window update.
+const PEER_FIN_RECEIVED_STATES: [fn(WindowState) -> TcpState; 2] = [
+    |window| TcpState::Closing(SyncedState::test_new(window, Closing)),
+    |window| TcpState::LastAck(SyncedState::test_new(window, LastAck)),
+];
+
+/// Flag, payload, and offset from RCV.NXT combinations for segments carrying data and/or a FIN,
+/// both in order and out of order, where an empty string means no payload.
+const DATA_OR_FIN_AFTER_PEERS_FIN: [(TcpFlags, &str, SeqOffset<u32, In>); 5] = [
+    (TcpFlags::Ack, "Hi", SeqOffset::new(0)),
+    (TcpFlags::Ack, "Hi", HELLO_LEN_IN),
+    (TcpFlags::FinAck, "", SeqOffset::new(0)),
+    (TcpFlags::FinAck, "Hi", SeqOffset::new(0)),
+    (TcpFlags::FinAck, "Hi", HELLO_LEN_IN),
+];
+
 /// Flag and payload combinations for out-of-order segments that carry data and/or a FIN, where an
 /// empty string means no payload.
 const OUT_OF_ORDER_DATA_OR_FIN: [(TcpFlags, &str); 3] =
@@ -1388,6 +1406,112 @@ fn out_of_order_data_or_fin_acking_our_fin_moves_fin_wait_1_to_fin_wait_2() -> T
             "The ACK of our FIN should move the connection to FIN-WAIT-2, with RCV.NXT unchanged \
              (flags {flags:?}, payload {payload_str:?})"
         );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn data_or_fin_after_peers_fin_is_ignored() -> TraceableResult {
+    // In CLOSING and LAST-ACK, the peer's FIN has already been received, so a segment carrying new
+    // data or another FIN means a misbehaving peer. RFC 9293, Section 3.10.7.4 says to ignore the
+    // segment text ("Seventh, process the segment text") and remain in the same state ("Eighth,
+    // check the FIN bit"), not to send a RST. The ACK field is still processed ("Fifth, check the
+    // ACK field"), here not yet covering our FIN.
+
+    for make_state in PEER_FIN_RECEIVED_STATES {
+        for (flags, payload_str, offset) in DATA_OR_FIN_AFTER_PEERS_FIN {
+            let mut connections = TcpConnections::default();
+
+            // Both FINs have been sent, and SND.NXT is one past SND.UNA since ours is unacked
+            let mut expected_state = ConnState {
+                tcp_state: make_state(WINDOW_AFTER_HANDSHAKE),
+                data: ConnData {
+                    snd_nxt: AFTER_HANDSHAKE.data.snd_nxt + FIN_BYTE_OUT,
+                    rcv_nxt: AFTER_HANDSHAKE.data.rcv_nxt + FIN_BYTE_IN,
+                    ..AFTER_HANDSHAKE.data
+                },
+            };
+            connections.test_insert(expected_state.clone());
+
+            let after_peers_fin = TcpSegment {
+                seq_num: CLIENT_ISN + SYN_BYTE_IN + FIN_BYTE_IN + offset,
+                ack_num: SERVER_ISN + SYN_BYTE_OUT,
+                flags,
+                payload: TcpPayload::from_test_str(payload_str)?,
+                ..CLIENT_PKT
+            };
+
+            assert_eq!(
+                after_peers_fin.create_test_reply(&mut connections)?,
+                None,
+                "Data or a FIN after the peer's FIN should be ignored, not get a RST (in state \
+                 {:?}, flags {flags:?}, payload {payload_str:?}, offset {offset:?})",
+                expected_state.tcp_state,
+            );
+
+            // The ACK field is still processed, so the window state is updated, but RCV.NXT is not
+            // advanced
+            expected_state.tcp_state = make_state(WindowState::test_new(
+                after_peers_fin.window,
+                after_peers_fin.seq_num,
+                after_peers_fin.ack_num,
+            ));
+
+            assert_eq!(
+                connections.try_get()?,
+                &expected_state,
+                "The connection should stay in the same state with RCV.NXT unchanged (flags \
+                 {flags:?}, payload {payload_str:?}, offset {offset:?})"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+fn data_or_fin_after_peers_fin_acking_our_fin_removes_connection() -> TraceableResult {
+    // The ACK field of a segment carrying data or a FIN after the peer's own FIN is still processed
+    // even though its text is ignored (RFC 9293, Section 3.10.7.4, "Fifth, check the ACK field"),
+    // so if it acknowledges our FIN, it completes the close just like a pure ACK would.
+
+    for make_state in PEER_FIN_RECEIVED_STATES {
+        for (flags, payload_str, offset) in DATA_OR_FIN_AFTER_PEERS_FIN {
+            let mut connections = TcpConnections::default();
+            let initial_tcp_state = make_state(WINDOW_AFTER_HANDSHAKE);
+
+            // Both FINs have been sent, and SND.NXT is one past SND.UNA since ours is unacked
+            connections.test_insert(ConnState {
+                tcp_state: initial_tcp_state.clone(),
+                data: ConnData {
+                    snd_nxt: AFTER_HANDSHAKE.data.snd_nxt + FIN_BYTE_OUT,
+                    rcv_nxt: AFTER_HANDSHAKE.data.rcv_nxt + FIN_BYTE_IN,
+                    ..AFTER_HANDSHAKE.data
+                },
+            });
+
+            assert_eq!(
+                TcpSegment {
+                    seq_num: CLIENT_ISN + SYN_BYTE_IN + FIN_BYTE_IN + offset,
+                    ack_num: SERVER_ISN + SYN_BYTE_OUT + FIN_BYTE_OUT,
+                    flags,
+                    payload: TcpPayload::from_test_str(payload_str)?,
+                    ..CLIENT_PKT
+                }
+                .create_test_reply(&mut connections)?,
+                None,
+                "No reply expected, not a RST (in state {initial_tcp_state:?}, flags {flags:?}, \
+                 payload {payload_str:?}, offset {offset:?})"
+            );
+
+            assert_matches!(
+                connections.try_get(),
+                Err(_),
+                "The ACK of our FIN should remove the connection (in state {initial_tcp_state:?}, \
+                 flags {flags:?}, payload {payload_str:?}, offset {offset:?})"
+            );
+        }
     }
 
     Ok(())

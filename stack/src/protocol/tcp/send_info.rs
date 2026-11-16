@@ -695,13 +695,19 @@ impl SendInfo {
     ) -> (Option<Self>, Option<TcpState>) {
         let our_fin_acked = seg.ack_num == conn.snd_nxt;
 
-        match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
+        // The peer's FIN has already been received, so any segment text or FIN is ignored and the
+        // connection remains in CLOSING (RFC 9293, Section 3.10.7.4, "Seventh, process the segment
+        // text" and "Eighth, check the FIN bit"). Only the ACK field is processed ("Fifth, check
+        // the ACK field"), so each arm below covers any payload and FIN.
+        match (seg.flags, SeqCheck::check(seg, conn), our_fin_acked) {
             // Simultaneous close, peer's ACK of our FIN arrives -> remove connection, no reply.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder, true) => (None, None),
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder, true) => {
+                (None, None)
+            }
 
             // Partial ACK not yet covering our FIN -> update send-side state like a plain ACK, keep
             // waiting in CLOSING for the ACK that covers it.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder, false) => {
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder, false) => {
                 (None, Some(TcpState::Closing(closing.incoming_ack_update(conn, seg))))
             }
 
@@ -718,16 +724,22 @@ impl SendInfo {
     ) -> (Option<Self>, Option<TcpState>) {
         let our_fin_acked = seg.ack_num == conn.snd_nxt;
 
-        match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
+        // The peer's FIN has already been received, so any segment text or FIN is ignored and the
+        // connection remains in LAST-ACK (RFC 9293, Section 3.10.7.4, "Seventh, process the segment
+        // text" and "Eighth, check the FIN bit"). Only the ACK field is processed ("Fifth, check
+        // the ACK field"), so each arm below covers any payload and FIN.
+        match (seg.flags, SeqCheck::check(seg, conn), our_fin_acked) {
             // Partial ACK not yet covering our FIN -> update send-side state like a plain ACK, keep
             // waiting in LAST-ACK for the real final ACK.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder, false) => {
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder, false) => {
                 (None, Some(TcpState::LastAck(last_ack.incoming_ack_update(conn, seg))))
             }
 
             // Final ACK completing passive close, fully acknowledging our FIN -> remove connection,
             // no reply.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder, true) => (None, None),
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder, true) => {
+                (None, None)
+            }
 
             _ => Self::known_conn_common_fallback(seg, conn, TcpState::LastAck(last_ack)),
         }
