@@ -296,13 +296,16 @@ impl<D: Direction> fmt::Display for TcpSegment<D> {
 #[cfg(test)]
 mod tests {
     mod abort;
+    mod active_close;
+    mod close_robustness;
     mod data;
     mod establish;
     mod flow_control;
     mod parse;
+    mod passive_close;
     mod retransmit;
+    mod simultaneous_close;
     mod stray_syn;
-    mod terminate;
     mod window;
     mod write;
 
