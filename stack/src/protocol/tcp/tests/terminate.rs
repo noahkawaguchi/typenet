@@ -549,8 +549,9 @@ fn fin_wait_2_closes_on_fin_ack_from_peer() -> TraceableResult {
 
 #[test]
 fn fin_wait_1_closes_immediately_if_peers_fin_also_acks_ours() -> TraceableResult {
-    // Simultaneous close where the peer's FIN, arriving while we're still in FIN-WAIT-1, also
-    // acknowledges our FIN -> fully closed immediately, skipping FIN-WAIT-2/CLOSING.
+    // The peer's FIN, arriving while we're still in FIN-WAIT-1, also acknowledges our FIN -> fully
+    // closed immediately, skipping FIN-WAIT-2/CLOSING. (This is not a simultaneous close, since the
+    // peer had already received our FIN before sending its own.)
 
     let mut connections = TcpConnections::default().after_handshake();
     connections.close_established(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2

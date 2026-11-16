@@ -578,9 +578,9 @@ impl SendInfo {
                 )),
             ),
 
-            // Peer's FIN arrives before ours is acknowledged (simultaneous close), and it also
-            // acknowledges our FIN -> ACK it and remove the connection (skipping
-            // FIN-WAIT-2/TIME-WAIT).
+            // Peer's FIN arrives in the same segment as its ACK of our FIN (not a simultaneous
+            // close, since the peer had already received our FIN) -> ACK it and remove
+            // the connection (skipping FIN-WAIT-2/TIME-WAIT).
             //
             // Our own FIN has already been sent, so any trailing data isn't delivered to the
             // application because we have no send side left to reply on (same as plain data
