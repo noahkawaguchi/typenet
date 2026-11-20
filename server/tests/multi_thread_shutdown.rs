@@ -8,7 +8,10 @@ use {
         ShutdownSignal,
         poll::{self, PollOutcome},
     },
-    typenet_utils::error::{TraceableResult, thread_panic_msg},
+    typenet_utils::{
+        error::{TraceableResult, thread_panic_msg},
+        sys::should_return_0,
+    },
 };
 
 #[test]
@@ -40,9 +43,7 @@ fn eventfd_wakes_a_thread_that_never_receives_sigint_directly() -> TraceableResu
 
         // SAFETY: `tid` names the still-alive targeted thread (joined below), and `SIGINT` is a
         // valid signal number.
-        if unsafe { libc::pthread_kill(targeted_tid, libc::SIGINT) } != 0 {
-            return Err(io::Error::last_os_error().into());
-        }
+        should_return_0(unsafe { libc::pthread_kill(targeted_tid, libc::SIGINT) })?;
 
         let targeted_result = targeted.join().map_err(thread_panic_msg)?;
         let bystander_result = bystander.join().map_err(thread_panic_msg)?;

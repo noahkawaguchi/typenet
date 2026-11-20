@@ -8,7 +8,7 @@ use {
     },
     std::{borrow::Cow, fmt},
     typenet_utils::{
-        error::TraceableResult,
+        error::{TraceableResult, ensure},
         try_ops::{TryAdd as _, TryGet as _, TryGetMut as _},
     },
 };
@@ -31,15 +31,15 @@ impl<'a> UdpDatagram<'a, In> {
     pub(crate) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<In>) -> TraceableResult<Self> {
         let (udp_hdr, payload) = data
             .split_first_chunk::<{ UDP_HDR_LEN as usize }>()
-            .ok_or_else(|| format!("Too short for UDP header ({} bytes)", data.len()))?;
+            .ok_or_else(|| format!("too short for UDP header ({} bytes)", data.len()))?;
 
         // A receiver should not treat a checksum field of all zeros as invalid because it means the
         // sender chose not to compute one (RFC 768, RFC 1122, Section 4.1.3.4).
-        if u16::from_be_bytes([udp_hdr[6], udp_hdr[7]]) != 0
-            && pseudo_hdr_cksum(data, ip_pair, Protocol::Udp)? != 0
-        {
-            return Err("Invalid UDP checksum".into());
-        }
+        ensure(
+            u16::from_be_bytes([udp_hdr[6], udp_hdr[7]]) == 0
+                || pseudo_hdr_cksum(data, ip_pair, Protocol::Udp)? == 0,
+            || "invalid UDP checksum",
+        )?;
 
         Ok(Self {
             ip_pair,
@@ -151,7 +151,7 @@ mod tests {
 
         assert_matches!(
             UdpDatagram::parse(&DATA, IP_PAIR_IN),
-            Err(e) if e.to_string().contains("Too short")
+            Err(e) if e.to_string().contains("too short")
         );
     }
 

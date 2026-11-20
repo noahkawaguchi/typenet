@@ -1,6 +1,13 @@
 use {
-    crate::error::TraceableResult,
-    std::{any::type_name, env, fmt, fs::File, io::Read as _, num::NonZeroUsize, str::FromStr},
+    crate::error::{TraceableResult, ensure},
+    std::{
+        any::type_name,
+        env, fmt,
+        fs::File,
+        io::{self, Read as _},
+        num::NonZeroUsize,
+        str::FromStr,
+    },
 };
 
 const URANDOM: &str = "/dev/urandom";
@@ -57,6 +64,13 @@ where
             })
             .map(Some),
     }
+}
+
+/// # Errors
+///
+/// Returns `Err` (the last OS error, from reading `errno`) if `ret` is not `0`.
+pub fn should_return_0<T: From<u8> + PartialEq + Copy>(ret: T) -> io::Result<()> {
+    ensure(ret == 0u8.into(), io::Error::last_os_error)
 }
 
 #[cfg(test)]

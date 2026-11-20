@@ -34,7 +34,7 @@ use {
     },
     std::fmt,
     typenet_utils::{
-        error::TraceableResult,
+        error::{TraceableResult, ensure},
         try_ops::{TryAdd as _, TryGet as _, TryGetMut as _},
     },
 };
@@ -171,11 +171,9 @@ impl<D: Direction> TcpSegment<D> {
     fn inner_parse(data: &[u8], ip_pair: Ipv4AddrPair<D>) -> TraceableResult<Self> {
         let tcp_hdr = data
             .first_chunk::<{ TCP_HDR_MIN_LEN as usize }>()
-            .ok_or_else(|| format!("Too short for TCP header ({} bytes)", data.len()))?;
+            .ok_or_else(|| format!("too short for TCP header ({} bytes)", data.len()))?;
 
-        if pseudo_hdr_cksum(data, ip_pair, Protocol::Tcp)? != 0 {
-            return Err("Invalid TCP checksum".into());
-        }
+        ensure(pseudo_hdr_cksum(data, ip_pair, Protocol::Tcp)? == 0, || "invalid TCP checksum")?;
 
         // Convert length in 32-bit words in the upper 4 bits to length in bytes in the full 8 bits
         let offset_bytes = tcp_hdr[12] >> 4 << 2;
@@ -269,11 +267,7 @@ impl<D: Direction> TcpSegment<D> {
 impl<D: Direction> PrettyProtocol for TcpSegment<D> {
     fn pretty_payload(&self, include_content: bool) -> PrettyPayload<'_> {
         PrettyPayload {
-            data: self
-                .payload
-                .as_ref()
-                .map(TcpPayload::as_bytes)
-                .unwrap_or_default(),
+            data: self.payload.as_ref().map_or_default(TcpPayload::as_bytes),
             include_content,
         }
     }

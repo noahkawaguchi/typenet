@@ -80,7 +80,7 @@ pub fn always_folded_cksum(data: &[u8]) -> u16 {
     !byte_pairs.iter().fold(
         maybe_odd_byte
             .first()
-            .map_or(0, |&b| u16::from_be_bytes([b, 0])),
+            .map_or_default(|&b| u16::from_be_bytes([b, 0])),
         |sum, &byte_pair| {
             let (new_sum, overflowed) = sum.overflowing_add(u16::from_be_bytes(byte_pair));
             new_sum.wrapping_add(u16::from(overflowed))
@@ -102,7 +102,7 @@ pub fn naive_wrapping_cksum(data: &[u8]) -> u16 {
     let sum = byte_pairs.iter().fold(
         maybe_odd_byte
             .first()
-            .map_or(0, |&b| u32::from_be_bytes([0, 0, b, 0])),
+            .map_or_default(|&b| u32::from_be_bytes([0, 0, b, 0])),
         |sum, &[high_byte, low_byte]| {
             sum.wrapping_add(u32::from_be_bytes([0, 0, high_byte, low_byte]))
         },
@@ -126,7 +126,7 @@ pub fn range_checked_cksum(data: &[u8]) -> u16 {
     let sum = byte_pairs.iter().fold(
         maybe_odd_byte
             .first()
-            .map_or(0, |&b| u32::from_be_bytes([0, 0, b, 0])),
+            .map_or_default(|&b| u32::from_be_bytes([0, 0, b, 0])),
         |sum, &[high_byte, low_byte]| {
             /// The lowest `u32` value that would overflow if `u16::MAX` was added to it.
             const WOULD_OVERFLOW: u32 = u32::MAX - u16::MAX as u32 + 1;
