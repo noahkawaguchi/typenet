@@ -30,10 +30,6 @@ jobs:
           primary-key: >-
             nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
-          # Purge matching prefixes last accessed more than 7 days ago
-          purge: true
-          purge-prefixes: nix-${{ runner.os }}-${{ runner.arch }}-
-          purge-last-accessed: P7D
 
       # Load the flake's devShell environment so rust-cache finds the correct rustc version
       - &nix-develop
