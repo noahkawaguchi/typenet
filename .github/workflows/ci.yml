@@ -28,10 +28,12 @@ jobs:
         uses: nix-community/cache-nix-action@v7
         with:
           primary-key: >-
-            nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+            nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix',
+            '**/flake.lock') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
 
-      # Load the flake's devShell environment so rust-cache finds the correct rustc version
+      # Load the flake's devShell environment so rust-cache finds the correct
+      # rustc version
       - &nix-develop
         name: Load flake devShell
         uses: nicknovitski/nix-develop@v1
@@ -73,12 +75,12 @@ jobs:
       - name: Check spelling
         run: nix develop --command just spell-check
 
-  # Verify the Docker toolchain installation method by building the image and running the server
-  # end to end inside the container.
+  # Verify the Docker toolchain installation method by building the image and
+  # running the server end to end inside the container.
   #
-  # Note: no caching here because caching with buildx and bake took multiple GB of cache space and
-  # was actually slower than this (~1.5 min), of course uncached (~7.5 min), but also even with a
-  # full cache hit (~2.5 min).
+  # Note: no caching here because caching with buildx and bake took multiple
+  # GB of cache space and was actually slower than this (~1.5 min), of course
+  # uncached (~7.5 min), but also even with a full cache hit (~2.5 min).
   docker:
     strategy: *os-matrix
     runs-on: ${{ matrix.os }}
