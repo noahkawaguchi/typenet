@@ -269,11 +269,7 @@ impl<D: Direction> TcpSegment<D> {
 impl<D: Direction> PrettyProtocol for TcpSegment<D> {
     fn pretty_payload(&self, include_content: bool) -> PrettyPayload<'_> {
         PrettyPayload {
-            data: self
-                .payload
-                .as_ref()
-                .map(TcpPayload::as_bytes)
-                .unwrap_or_default(),
+            data: self.payload.as_ref().map_or_default(TcpPayload::as_bytes),
             include_content,
         }
     }
