@@ -553,9 +553,34 @@ impl SendInfo {
                 (None, Some(TcpState::FinWait1(fin_wait_1.incoming_ack_update(conn, seg))))
             }
 
-            // Peer's FIN arrives before ours is acknowledged (simultaneous close), and it also
-            // acknowledges our FIN -> ACK it and remove the connection (skipping
-            // FIN-WAIT-2/TIME-WAIT).
+            // Out-of-order data and/or FIN still within the receive window, not acknowledging our
+            // FIN -> the segment SHOULD be held for later processing (RFC 9293, Section 3.10.7.4,
+            // "First, check sequence number"), but this state has no reassembly buffer, so its text
+            // and FIN are never processed (peer must retransmit). Its ACK field is still processed
+            // right away, as in ESTABLISHED and common practice (e.g. Linux), even though a strict
+            // reading of the RFC would defer that too. Reply with a duplicate ACK so the peer knows
+            // what's still missing.
+            (TcpFlags::Ack, Some(_), SeqCheck::OutOfOrder, false)
+            | (TcpFlags::FinAck, _, SeqCheck::OutOfOrder, false) => (
+                Some(Self::pure_ack(conn)),
+                Some(TcpState::FinWait1(fin_wait_1.incoming_ack_update(conn, seg))),
+            ),
+
+            // Out-of-order data and/or FIN still within the receive window, also acknowledging our
+            // FIN -> handled the same as the case where it doesn't acknowledge our FIN, except that
+            // processing the ACK field means entering FIN-WAIT-2 (RFC 9293, Section 3.10.7.4,
+            // "Fifth, check the ACK field").
+            (TcpFlags::Ack, Some(_), SeqCheck::OutOfOrder, true)
+            | (TcpFlags::FinAck, _, SeqCheck::OutOfOrder, true) => (
+                Some(Self::pure_ack(conn)),
+                Some(TcpState::FinWait2(
+                    fin_wait_1.incoming_ack_update(conn, seg).rcv_ack_of_fin(),
+                )),
+            ),
+
+            // Peer's FIN arrives in the same segment as its ACK of our FIN (not a simultaneous
+            // close, since the peer had already received our FIN) -> ACK it and remove
+            // the connection (skipping FIN-WAIT-2/TIME-WAIT).
             //
             // Our own FIN has already been sent, so any trailing data isn't delivered to the
             // application because we have no send side left to reply on (same as plain data
@@ -614,6 +639,19 @@ impl SendInfo {
                 (None, Some(TcpState::FinWait2(fin_wait_2.incoming_ack_update(conn, seg))))
             }
 
+            // Out-of-order data and/or FIN still within the receive window -> the segment SHOULD be
+            // held for later processing (RFC 9293, Section 3.10.7.4, "First, check sequence
+            // number"), but this state has no reassembly buffer, so its text and FIN are never
+            // processed (peer must retransmit). Its ACK field is still processed right away, as in
+            // ESTABLISHED and common practice (e.g. Linux), even though a strict reading of the RFC
+            // would defer that too. Reply with a duplicate ACK so the peer knows what's still
+            // missing.
+            (TcpFlags::Ack, Some(_), SeqCheck::OutOfOrder)
+            | (TcpFlags::FinAck, _, SeqCheck::OutOfOrder) => (
+                Some(Self::pure_ack(conn)),
+                Some(TcpState::FinWait2(fin_wait_2.incoming_ack_update(conn, seg))),
+            ),
+
             // Peer's FIN arrives in order -> ACK it and finish closing (no TIME-WAIT). Our own FIN
             // has already been sent, so any trailing data isn't delivered to the application
             // because we have no send side left to reply on, but the ACK must still
@@ -635,10 +673,16 @@ impl SendInfo {
         conn: &mut ConnData,
         close_wait: SyncedState<CloseWait>,
     ) -> TraceableResult<(Option<Self>, Option<TcpState>)> {
-        Ok(match (seg.flags, &seg.payload, SeqCheck::check(seg, conn)) {
+        // The peer's FIN has already been received, so any segment text or FIN is ignored and the
+        // connection remains in CLOSE-WAIT (RFC 9293, Section 3.10.7.4, "Seventh, process the
+        // segment text" and "Eighth, check the FIN bit"). Only the ACK field is processed ("Fifth,
+        // check the ACK field"), so the arm below covers any payload and FIN.
+        Ok(match (seg.flags, SeqCheck::check(seg, conn)) {
             // ACK of previously sent data (or a window update) while still draining the send buffer
-            // -> update send-side state, then try to send more and/or proceed to LAST-ACK.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder) => {
+            // -> update send-side state, then try to send more and/or proceed to LAST-ACK. Every
+            // reply ACKs the unchanged RCV.NXT, so any ignored text is effectively answered with a
+            // duplicate ACK.
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder) => {
                 let new_close_wait = close_wait.incoming_ack_update(conn, seg);
                 let (send_info, next_state) = Self::close_wait_or_last_ack(conn, new_close_wait)?;
                 (Some(send_info), Some(next_state))
@@ -657,13 +701,19 @@ impl SendInfo {
     ) -> (Option<Self>, Option<TcpState>) {
         let our_fin_acked = seg.ack_num == conn.snd_nxt;
 
-        match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
+        // The peer's FIN has already been received, so any segment text or FIN is ignored and the
+        // connection remains in CLOSING (RFC 9293, Section 3.10.7.4, "Seventh, process the segment
+        // text" and "Eighth, check the FIN bit"). Only the ACK field is processed ("Fifth, check
+        // the ACK field"), so each arm below covers any payload and FIN.
+        match (seg.flags, SeqCheck::check(seg, conn), our_fin_acked) {
             // Simultaneous close, peer's ACK of our FIN arrives -> remove connection, no reply.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder, true) => (None, None),
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder, true) => {
+                (None, None)
+            }
 
             // Partial ACK not yet covering our FIN -> update send-side state like a plain ACK, keep
             // waiting in CLOSING for the ACK that covers it.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder, false) => {
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder, false) => {
                 (None, Some(TcpState::Closing(closing.incoming_ack_update(conn, seg))))
             }
 
@@ -680,16 +730,22 @@ impl SendInfo {
     ) -> (Option<Self>, Option<TcpState>) {
         let our_fin_acked = seg.ack_num == conn.snd_nxt;
 
-        match (seg.flags, &seg.payload, SeqCheck::check(seg, conn), our_fin_acked) {
+        // The peer's FIN has already been received, so any segment text or FIN is ignored and the
+        // connection remains in LAST-ACK (RFC 9293, Section 3.10.7.4, "Seventh, process the segment
+        // text" and "Eighth, check the FIN bit"). Only the ACK field is processed ("Fifth, check
+        // the ACK field"), so each arm below covers any payload and FIN.
+        match (seg.flags, SeqCheck::check(seg, conn), our_fin_acked) {
             // Partial ACK not yet covering our FIN -> update send-side state like a plain ACK, keep
             // waiting in LAST-ACK for the real final ACK.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder, false) => {
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder, false) => {
                 (None, Some(TcpState::LastAck(last_ack.incoming_ack_update(conn, seg))))
             }
 
             // Final ACK completing passive close, fully acknowledging our FIN -> remove connection,
             // no reply.
-            (TcpFlags::Ack, None, SeqCheck::InOrder | SeqCheck::OutOfOrder, true) => (None, None),
+            (TcpFlags::Ack | TcpFlags::FinAck, SeqCheck::InOrder | SeqCheck::OutOfOrder, true) => {
+                (None, None)
+            }
 
             _ => Self::known_conn_common_fallback(seg, conn, TcpState::LastAck(last_ack)),
         }
