@@ -6,7 +6,7 @@ use {
         io, mem,
         os::unix::io::AsRawFd as _,
     },
-    typenet_utils::error::TraceableResult,
+    typenet_utils::error::{TraceableResult, ensure},
 };
 
 /// The character device (clone device) that serves as the entrypoint for TUN virtual network
@@ -34,12 +34,12 @@ pub fn attach(device_name: &str) -> TraceableResult<File> {
     //
     // Query the kernel's interface table directly because path existence checks relative to
     // `/sys/class/net` are fooled by absolute paths, empty strings, etc.
-    if CString::new(device_name).ok().is_none_or(|name| {
-        // SAFETY: `name` is a valid, NUL-terminated C string that outlives this call.
-        (unsafe { libc::if_nametoindex(name.as_ptr()) }) == 0
-    }) {
-        return Err(format!("TUN device {device_name} does not exist").into());
-    }
+    ensure(
+        CString::new(device_name)
+            // SAFETY: `name` is a valid, NUL-terminated C string that outlives this call.
+            .is_ok_and(|name| (unsafe { libc::if_nametoindex(name.as_ptr()) }) != 0),
+        || format!("TUN device {device_name} does not exist"),
+    )?;
 
     // Initialize a new interface request C struct.
     //
@@ -63,15 +63,16 @@ pub fn attach(device_name: &str) -> TraceableResult<File> {
         .write(true)
         .open(TUN_DEVICE_FILE)?;
 
-    // Bind the file's fd to the named interface and return it.
-    //
-    // SAFETY: `tun_file` stays open for the whole call, so its fd is valid. `TUNSETIFF` expects a
-    // pointer to an `ifreq`, and `&mut ifr` is a unique borrow of a valid, aligned, fully
-    // initialized `ifreq` that outlives the call.
-    (unsafe { libc::ioctl(tun_file.as_raw_fd(), TUNSETIFF, &mut ifr) } != -1)
-        .then_some(tun_file)
-        .ok_or_else(io::Error::last_os_error)
-        .map_err(Into::into)
+    // Bind the file's fd to the named interface
+    ensure(
+        // SAFETY: `tun_file` stays open for the whole call, so its fd is valid. `TUNSETIFF`
+        // expects a pointer to an `ifreq`, and `&mut ifr` is a unique borrow of a valid, aligned,
+        // fully initialized `ifreq` that outlives the call.
+        unsafe { libc::ioctl(tun_file.as_raw_fd(), TUNSETIFF, &mut ifr) } != -1,
+        io::Error::last_os_error,
+    )?;
+
+    Ok(tun_file)
 }
 
 /// Casts Rust `u8` to C `char` without performing any checks.

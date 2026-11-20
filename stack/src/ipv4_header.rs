@@ -7,7 +7,10 @@ use {
         protocol::Protocol,
     },
     std::{fmt, net::Ipv4Addr},
-    typenet_utils::{error::TraceableResult, try_ops::TryAdd as _},
+    typenet_utils::{
+        error::{TraceableResult, ensure},
+        try_ops::TryAdd as _,
+    },
 };
 
 /// The minimum number of bytes in an IPv4 header (no options) as a `u8`.
@@ -60,18 +63,16 @@ impl<D: Direction> Ipv4Header<D> {
     fn inner_parse(data: &[u8]) -> TraceableResult<(Self, &[u8])> {
         let ip_hdr = data
             .first_chunk::<IPV4_HDR_MIN_LEN_USIZE>()
-            .ok_or_else(|| format!("Too short for IPv4 header ({} bytes)", data.len()))?;
+            .ok_or_else(|| format!("too short for IPv4 header ({} bytes)", data.len()))?;
 
         // Must be IPv4
         match ip_hdr[0] >> 4 {
             4 => {}
             6 => return Err("IPv6 packet".into()),
-            version => return Err(format!("Unexpected IP version {version}").into()),
+            version => return Err(format!("unexpected IP version {version}").into()),
         }
 
-        if checksum::calculate(ip_hdr) != 0 {
-            return Err("Invalid IPv4 header checksum".into());
-        }
+        ensure(checksum::calculate(ip_hdr) == 0, || "invalid IPv4 header checksum")?;
 
         let ihl_bytes = usize::from(ip_hdr[0] & 0xF) * 4; // Convert 32-bit words to bytes
 
@@ -214,7 +215,7 @@ mod tests {
     #[test]
     fn parsing_fails_if_too_short() {
         const DATA: [u8; 3] = [0x45, 0x00, 0x00]; // Only 3 bytes
-        assert_matches!(Ipv4Header::parse(&DATA), Err(e) if e.to_string().contains("Too short"));
+        assert_matches!(Ipv4Header::parse(&DATA), Err(e) if e.to_string().contains("too short"));
     }
 
     #[test]

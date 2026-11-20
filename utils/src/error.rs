@@ -6,6 +6,11 @@ use std::{
     io, num,
 };
 
+/// # Errors
+///
+/// Returns `Err` by evaluating `f` if `cond` is `false`.
+pub fn ensure<E>(cond: bool, f: impl FnOnce() -> E) -> Result<(), E> { cond.ok_or_else(f) }
+
 /// Extracts the panic message from `payload` (which should be the `Err` payload from joining a
 /// thread) if it is a `String` or `&'static str`, otherwise returns a generic message.
 #[must_use]

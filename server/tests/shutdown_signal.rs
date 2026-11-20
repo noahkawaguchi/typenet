@@ -3,9 +3,9 @@
 
 use {
     pretty_assertions::assert_eq,
-    std::{io, os::unix::net::UnixStream, time::Duration},
+    std::{os::unix::net::UnixStream, time::Duration},
     typenet_server::sys::{ShutdownSignal, poll},
-    typenet_utils::error::TraceableResult,
+    typenet_utils::{error::TraceableResult, sys::should_return_0},
 };
 
 #[test]
@@ -25,9 +25,7 @@ fn shutdown_flag_starts_false_and_flips_on_sigint() -> TraceableResult {
 
     // SAFETY: raising `SIGINT` on the current thread is well-defined, and the handler installed
     // above is async-signal-safe (see its comments), so this cannot corrupt thread state.
-    if unsafe { libc::raise(libc::SIGINT) } != 0 {
-        return Err(io::Error::last_os_error().into());
-    }
+    should_return_0(unsafe { libc::raise(libc::SIGINT) })?;
 
     assert!(shutdown.load_flag());
 

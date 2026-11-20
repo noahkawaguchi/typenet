@@ -8,7 +8,7 @@ use {
     },
     std::fmt,
     typenet_utils::{
-        error::TraceableResult,
+        error::{TraceableResult, ensure},
         try_ops::{TryAdd as _, TryGet as _, TryGetMut as _},
     },
 };
@@ -41,21 +41,18 @@ impl<'a> IcmpEchoMsg<'a, In> {
     pub(crate) fn parse(data: &'a [u8], ip_pair: Ipv4AddrPair<In>) -> TraceableResult<Self> {
         let (icmp_hdr, payload) = data
             .split_first_chunk::<{ ICMP_HDR_LEN as usize }>()
-            .ok_or_else(|| format!("Too short for ICMP header ({} bytes)", data.len()))?;
+            .ok_or_else(|| format!("too short for ICMP header ({} bytes)", data.len()))?;
 
-        if checksum::calculate(data) != 0 {
-            return Err("Invalid ICMP checksum".into());
-        }
+        ensure(checksum::calculate(data) == 0, || "invalid ICMP checksum")?;
 
         let icmp_type = icmp_hdr[0];
         let icmp_code = icmp_hdr[1];
 
         // ICMP Echo Request (ping): type=8, code=0
-        if icmp_type != Self::ICMP_TYPE_ECHO_REQUEST || icmp_code != Self::ICMP_CODE_ECHO {
-            return Err(
-                format!("Not an Echo Request: got type={icmp_type}, code={icmp_code}").into()
-            );
-        }
+        ensure(
+            icmp_type == Self::ICMP_TYPE_ECHO_REQUEST && icmp_code == Self::ICMP_CODE_ECHO,
+            || format!("not an Echo Request: got type={icmp_type}, code={icmp_code}"),
+        )?;
 
         Ok(Self {
             ip_pair,
@@ -178,7 +175,7 @@ mod tests {
 
         assert_matches!(
             IcmpEchoMsg::parse(&DATA, IP_PAIR_IN),
-            Err(e) if e.to_string().contains("Too short")
+            Err(e) if e.to_string().contains("too short")
         );
     }
 
@@ -194,7 +191,7 @@ mod tests {
 
         assert_matches!(
             IcmpEchoMsg::parse(&DATA, IP_PAIR_IN),
-            Err(e) if e.to_string().contains("Not an Echo Request")
+            Err(e) if e.to_string().contains("not an Echo Request")
         );
     }
 
@@ -210,7 +207,7 @@ mod tests {
 
         assert_matches!(
             IcmpEchoMsg::parse(&DATA, IP_PAIR_IN),
-            Err(e) if e.to_string().contains("Not an Echo Request")
+            Err(e) if e.to_string().contains("not an Echo Request")
         );
     }
 

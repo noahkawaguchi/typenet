@@ -34,7 +34,7 @@ fn fails_when_too_short() {
 
     assert_matches!(
         TcpSegment::parse(&DATA, IP_PAIR_IN),
-        Err(e) if e.to_string().contains("Too short")
+        Err(e) if e.to_string().contains("too short")
     );
 }
 

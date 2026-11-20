@@ -5,7 +5,10 @@ use {
         ptr,
         sync::atomic::{AtomicBool, AtomicI32, Ordering},
     },
-    typenet_utils::error::TraceableResult,
+    typenet_utils::{
+        error::{TraceableResult, ensure},
+        sys::should_return_0,
+    },
 };
 
 /// The flag for graceful shutdown, private to this module.
@@ -88,9 +91,7 @@ impl ShutdownSignal {
         // `eventfd()`.
         let eventfd_raw = unsafe { libc::eventfd(0, 0) };
 
-        if eventfd_raw < 0 {
-            return Err(io::Error::last_os_error().into());
-        }
+        ensure(eventfd_raw >= 0, io::Error::last_os_error)?;
 
         // Store the fd before installing the handler that reads it
         SHUTDOWN_EVENTFD_FD.store(eventfd_raw, Ordering::Relaxed);
@@ -104,18 +105,14 @@ impl ShutdownSignal {
 
         // SAFETY: `&raw mut sa.sa_mask` is a valid, aligned, writable pointer to an owned
         // `sigset_t` on the stack for `sigemptyset` to write an empty set of signals through.
-        if unsafe { libc::sigemptyset(&raw mut sa.sa_mask) } != 0 {
-            return Err(io::Error::last_os_error().into());
-        }
+        should_return_0(unsafe { libc::sigemptyset(&raw mut sa.sa_mask) })?;
 
         // SAFETY:
         // - `SIGINT` is a valid `signum`.
         // - `&raw const sa` is a valid, aligned pointer to a fully initialized `sigaction`.
         // - A null `oldact` is permitted.
         // - `shutdown_signal_handler` is async-signal-safe (see its comments).
-        if unsafe { libc::sigaction(libc::SIGINT, &raw const sa, ptr::null_mut()) } != 0 {
-            return Err(io::Error::last_os_error().into());
-        }
+        should_return_0(unsafe { libc::sigaction(libc::SIGINT, &raw const sa, ptr::null_mut()) })?;
 
         // SAFETY: `eventfd_raw` is a valid, open fd returned by `eventfd()` above, uniquely owned
         // from this point on (nothing else holds or closes it).
@@ -149,15 +146,11 @@ impl ShutdownSignal {
 
         // SAFETY: `&raw mut set` is a valid, aligned, writable pointer to an owned `sigset_t` on
         // the stack.
-        if unsafe { libc::sigemptyset(&raw mut set) } != 0 {
-            return Err(io::Error::last_os_error().into());
-        }
+        should_return_0(unsafe { libc::sigemptyset(&raw mut set) })?;
 
         // SAFETY: `SIGINT` is a valid signum and `&raw mut set` points to the same initialized
         // `sigset_t` emptied above.
-        if unsafe { libc::sigaddset(&raw mut set, libc::SIGINT) } != 0 {
-            return Err(io::Error::last_os_error().into());
-        }
+        should_return_0(unsafe { libc::sigaddset(&raw mut set, libc::SIGINT) })?;
 
         // SAFETY: `SIG_BLOCK` is a valid `how`, `&raw const set` is a valid, aligned pointer to a
         // fully initialized `sigset_t`, and a null `oldset` is permitted. `pthread_sigmask`
