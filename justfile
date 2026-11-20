@@ -279,7 +279,7 @@ cov-open: (cov f"--open --output-dir '{{ reports-dir }}/coverage'")
 
 # Lint with Clippy, denying warnings
 lint:
-    cargo clippy {{ everything-flags }} -- --deny warnings
+    CARGO_BUILD_WARNINGS=deny cargo clippy {{ everything-flags }}
 
 # Check formatting
 fmt-check:
