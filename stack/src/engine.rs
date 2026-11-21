@@ -1,3 +1,4 @@
+pub use crate::protocol::tcp::TcpListenPorts;
 use {
     crate::{
         application::Application,
@@ -54,11 +55,12 @@ impl<A: Application> Engine<A> {
         app: A,
         initial_rto: Duration,
         max_retries: u8,
+        tcp_listen_ports: TcpListenPorts,
         shutdown_grace_period: Duration,
     ) -> Self {
         Self {
             app,
-            tcp_connections: TcpConnections::new(initial_rto, max_retries),
+            tcp_connections: TcpConnections::new(initial_rto, max_retries, tcp_listen_ports),
             shutdown_grace_period,
             shutdown_deadline: None,
         }

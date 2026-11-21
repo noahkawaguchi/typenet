@@ -3,6 +3,7 @@
     expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
 )]
 pub use connections::TcpConnections;
+pub use connections::TcpListenPorts;
 
 mod connections;
 mod flags;

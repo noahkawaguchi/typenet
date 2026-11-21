@@ -53,10 +53,11 @@ impl Default for RtoConfig {
 
 /// The local ports on which new TCP connections are accepted (RFC 9293 "LISTEN" state, entered via
 /// passive OPEN).
-#[cfg_attr(any(test, feature = "test-utils"), derive(Debug, Default, PartialEq, Eq))]
-pub(super) enum TcpListenPorts {
+#[derive(Default, Clone)]
+#[cfg_attr(any(test, feature = "test-utils"), derive(Debug, PartialEq, Eq))]
+pub enum TcpListenPorts {
     /// Accept new connections on every port.
-    #[cfg_attr(any(test, feature = "test-utils"), default)]
+    #[default]
     All,
 
     /// Accept new connections only on these ports. Empty means no new connections are accepted.
@@ -116,17 +117,17 @@ impl TcpConnections {
         expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
     )]
     #[must_use]
-    pub fn new(initial_rto: Duration, max_retries: u8) -> Self {
+    pub fn new(initial_rto: Duration, max_retries: u8, listen_ports: TcpListenPorts) -> Self {
         Self {
             table: HashMap::new(),
-            listen_ports: TcpListenPorts::All,
+            listen_ports,
             rto_config: RtoConfig { initial: initial_rto, min: TCP_RTO_MIN, max: TCP_RTO_MAX },
             max_retries,
         }
     }
 
     /// Same as production `Self::new`, except the minimum and maximum RTOs are `Duration::ZERO` and
-    /// `Duration::MAX`.
+    /// `Duration::MAX`, and new connections are accepted on every port.
     #[cfg(any(test, feature = "test-utils"))]
     #[must_use]
     pub fn test_new(initial_rto: Duration, max_retries: u8) -> Self {
