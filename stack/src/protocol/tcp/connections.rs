@@ -15,8 +15,10 @@ use {
     std::{
         collections::{HashMap, HashSet},
         net::Ipv4Addr,
+        str::FromStr,
         time::{Duration, Instant},
     },
+    typenet_utils::error::TraceableError,
 };
 
 /// The minimum allowed TCP retransmission timeout (same as the Linux kernel as defined in
@@ -59,6 +61,24 @@ pub(super) enum TcpListenPorts {
 
     /// Accept new connections only on these ports. Empty means no new connections are accepted.
     Ports(HashSet<u16>),
+}
+
+impl FromStr for TcpListenPorts {
+    type Err = TraceableError;
+
+    /// Parses `s` as a comma-separated list of ports, tolerating whitespace around each one and
+    /// duplicate entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the list is empty or any entry is not a valid port.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.split(',')
+            .map(|raw| raw.trim().parse())
+            .collect::<Result<_, _>>()
+            .map_err(|_| format!("not a valid comma-separated list of ports: {s}").into())
+            .map(Self::Ports)
+    }
 }
 
 /// Key identifying a TCP connection.
@@ -338,5 +358,33 @@ impl TcpConnections {
 
         self.table.insert(KEY, AFTER_HANDSHAKE);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        pretty_assertions::{assert_eq, assert_matches},
+    };
+
+    #[test]
+    fn port_list_parses_with_whitespace_and_duplicates_tolerated() {
+        for (input, expected) in [
+            ("80", HashSet::from([80])),
+            ("80,443", HashSet::from([80, 443])),
+            (" 80 , 443 ", HashSet::from([80, 443])),
+            ("0,65535", HashSet::from([0, 65535])),
+            ("80,80,80,80", HashSet::from([80])),
+        ] {
+            assert_eq!(input.parse(), Ok(TcpListenPorts::Ports(expected)), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn port_list_rejected_when_empty_or_invalid() {
+        for input in ["", " ", "abc", "70000", "-1", "80,", ",80", "80,,443", "80 443"] {
+            assert_matches!(input.parse::<TcpListenPorts>(), Err(_), "{input:?}");
+        }
     }
 }
