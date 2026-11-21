@@ -29,11 +29,12 @@ impl Config {
     /// of the fields that must be nonzero.
     pub(crate) fn load() -> TraceableResult<Self> {
         Ok(Self {
-            // NOTE: matches the default `server-addr` in the `justfile` ("10.0.0.2")
+            // Any address in the TUN device's subnet other than the host's own address reaches the
+            // server
             target_addr: sys::parse_env("TYPENET_LG_ADDR")?
                 .unwrap_or_else(|| IpAddr::from([10, 0, 0, 2])),
 
-            // NOTE: matches the default `server-port` in the `justfile` ("8080")
+            // Any port works unless the server is configured to only listen on specific ones
             target_port: sys::parse_env("TYPENET_LG_PORT")?
                 .unwrap_or(const { NonZeroU16::new(8080).expect("8080 != 0") }),
 
