@@ -108,9 +108,10 @@ impl SendInfo {
         connections: &mut TcpConnections,
         key: ConnKey,
     ) -> TraceableResult<Option<Self>> {
-        Ok(match seg.flags {
-            // SYN (step 1 of handshake) -> store new connection, reply with SYN-ACK (step 2).
-            TcpFlags::Syn => {
+        Ok(match (seg.flags, connections.is_listening(key.server_port)) {
+            // SYN (step 1 of handshake) to a listening port -> store new connection, reply with
+            // SYN-ACK (step 2).
+            (TcpFlags::Syn, true) => {
                 let send_info = Self {
                     seq_num: SeqPoint::new(sys::random_u32()?),
                     ack_num: seg.seq_num + SYN_BYTE_IN,
@@ -137,13 +138,24 @@ impl SendInfo {
                 Some(send_info)
             }
 
+            // SYN (ACK bit off) to a port with no listener -> per RFC 9293, Section 3.10.7.1,
+            // refuse it with <SEQ=0><ACK=SEG.SEQ+SEG.LEN><CTL=RST,ACK>.
+            (TcpFlags::Syn, false) => Some(Self {
+                seq_num: SeqPoint::new(0),
+                // SEG.LEN of a SYN is one sequence number for the SYN itself plus the length of
+                // any payload
+                ack_num: seg.seq_num + SYN_BYTE_IN + seg.payload.len_or_default(),
+                flags: TcpFlags::RstAck,
+                payload: None,
+            }),
+
             // RST from an unknown connection -> per RFC 9293, Sections 3.10.7.1 and 3.10.7.2,
             // silently drop the segment (never RST a RST).
-            TcpFlags::Rst | TcpFlags::RstAck => None,
+            (TcpFlags::Rst | TcpFlags::RstAck, _) => None,
 
             // Something else with ACK set (non-RST) -> per RFC 9293, Sections 3.10.7.1 and
             // 3.10.7.2, send <SEQ=SEG.ACK><CTL=RST>.
-            TcpFlags::SynAck | TcpFlags::Ack | TcpFlags::FinAck => Some(Self::rst(seg)),
+            (TcpFlags::SynAck | TcpFlags::Ack | TcpFlags::FinAck, _) => Some(Self::rst(seg)),
         })
     }
 

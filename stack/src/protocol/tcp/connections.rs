@@ -13,7 +13,7 @@ use {
         },
     },
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         net::Ipv4Addr,
         time::{Duration, Instant},
     },
@@ -49,6 +49,18 @@ impl Default for RtoConfig {
     }
 }
 
+/// The local ports on which new TCP connections are accepted (RFC 9293 "LISTEN" state, entered via
+/// passive OPEN).
+#[cfg_attr(any(test, feature = "test-utils"), derive(Debug, Default, PartialEq, Eq))]
+pub(super) enum TcpListenPorts {
+    /// Accept new connections on every port.
+    #[cfg_attr(any(test, feature = "test-utils"), default)]
+    All,
+
+    /// Accept new connections only on these ports. Empty means no new connections are accepted.
+    Ports(HashSet<u16>),
+}
+
 /// Key identifying a TCP connection.
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub(super) struct ConnKey {
@@ -67,6 +79,9 @@ pub(super) struct ConnKey {
 pub struct TcpConnections {
     table: HashMap<ConnKey, ConnState>,
 
+    /// The local ports on which new connections are accepted.
+    listen_ports: TcpListenPorts,
+
     /// The initial, minimum, and maximum retransmission timeouts.
     rto_config: RtoConfig,
 
@@ -84,6 +99,7 @@ impl TcpConnections {
     pub fn new(initial_rto: Duration, max_retries: u8) -> Self {
         Self {
             table: HashMap::new(),
+            listen_ports: TcpListenPorts::All,
             rto_config: RtoConfig { initial: initial_rto, min: TCP_RTO_MIN, max: TCP_RTO_MAX },
             max_retries,
         }
@@ -96,12 +112,21 @@ impl TcpConnections {
     pub fn test_new(initial_rto: Duration, max_retries: u8) -> Self {
         Self {
             table: HashMap::new(),
+            listen_ports: TcpListenPorts::All,
             rto_config: RtoConfig { initial: initial_rto, min: Duration::ZERO, max: Duration::MAX },
             max_retries,
         }
     }
 
     pub(crate) fn len(&self) -> usize { self.table.len() }
+
+    /// Returns whether new connections are accepted on the local port `port`.
+    pub(super) fn is_listening(&self, port: u16) -> bool {
+        match &self.listen_ports {
+            TcpListenPorts::All => true,
+            TcpListenPorts::Ports(ports) => ports.contains(&port),
+        }
+    }
 
     /// Inserts `conn` into the table under `key`, replacing any existing connection.
     pub(super) fn insert(&mut self, key: ConnKey, conn: ConnState) { self.table.insert(key, conn); }
@@ -244,6 +269,14 @@ impl TcpConnections {
         use crate::protocol::tcp::tests::KEY;
 
         self.table.insert(KEY, conn);
+    }
+
+    /// Replaces the ports on which new connections are accepted with `listen_ports`.
+    #[cfg(test)]
+    #[must_use]
+    pub(super) fn with_listen_ports(mut self, listen_ports: TcpListenPorts) -> Self {
+        self.listen_ports = listen_ports;
+        self
     }
 
     /// Inserts a SYN-RECEIVED connection using `KEY`, `CLIENT_ISN`, and `SERVER_ISN` as if we had
