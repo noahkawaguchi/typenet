@@ -7,9 +7,11 @@ set dotenv-load
 project-name := 'typenet'
 user := env('USER')
 
-# NOTE: matches the loadgen binary's default address and port combination
+# Address and port of the server that the client recipes connect to. Any address in the TUN device's
+# subnet other than the host's own address reaches the server, and any port works unless the server
+# is configured to only listen on specific ones.
 server-addr := '10.0.0.2'
-server-port := '8080'
+server-port := env('TYPENET_TARGET_PORT', '8080')
 
 # NOTE: "TYPENET_TUN_NAME" is also read by the server with a "tun0" fallback
 tun-name := env('TYPENET_TUN_NAME', 'tun0')

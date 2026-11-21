@@ -13,10 +13,12 @@ use {
         },
     },
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         net::Ipv4Addr,
+        str::FromStr,
         time::{Duration, Instant},
     },
+    typenet_utils::error::TraceableError,
 };
 
 /// The minimum allowed TCP retransmission timeout (same as the Linux kernel as defined in
@@ -49,6 +51,37 @@ impl Default for RtoConfig {
     }
 }
 
+/// The local ports on which new TCP connections are accepted (RFC 9293 "LISTEN" state, entered via
+/// passive OPEN).
+#[derive(Default, Clone)]
+#[cfg_attr(any(test, feature = "test-utils"), derive(Debug, PartialEq, Eq))]
+pub enum TcpListenPorts {
+    /// Accept new connections on every port.
+    #[default]
+    All,
+
+    /// Accept new connections only on these ports. Empty means no new connections are accepted.
+    Ports(HashSet<u16>),
+}
+
+impl FromStr for TcpListenPorts {
+    type Err = TraceableError;
+
+    /// Parses `s` as a comma-separated list of ports, tolerating whitespace around each one and
+    /// duplicate entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the list is empty or any entry is not a valid port.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.split(',')
+            .map(|raw| raw.trim().parse())
+            .collect::<Result<_, _>>()
+            .map_err(|_| format!("not a valid comma-separated list of ports: {s}").into())
+            .map(Self::Ports)
+    }
+}
+
 /// Key identifying a TCP connection.
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub(super) struct ConnKey {
@@ -67,6 +100,9 @@ pub(super) struct ConnKey {
 pub struct TcpConnections {
     table: HashMap<ConnKey, ConnState>,
 
+    /// The local ports on which new connections are accepted.
+    listen_ports: TcpListenPorts,
+
     /// The initial, minimum, and maximum retransmission timeouts.
     rto_config: RtoConfig,
 
@@ -81,27 +117,37 @@ impl TcpConnections {
         expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
     )]
     #[must_use]
-    pub fn new(initial_rto: Duration, max_retries: u8) -> Self {
+    pub fn new(initial_rto: Duration, max_retries: u8, listen_ports: TcpListenPorts) -> Self {
         Self {
             table: HashMap::new(),
+            listen_ports,
             rto_config: RtoConfig { initial: initial_rto, min: TCP_RTO_MIN, max: TCP_RTO_MAX },
             max_retries,
         }
     }
 
     /// Same as production `Self::new`, except the minimum and maximum RTOs are `Duration::ZERO` and
-    /// `Duration::MAX`.
+    /// `Duration::MAX`, and new connections are accepted on every port.
     #[cfg(any(test, feature = "test-utils"))]
     #[must_use]
     pub fn test_new(initial_rto: Duration, max_retries: u8) -> Self {
         Self {
             table: HashMap::new(),
+            listen_ports: TcpListenPorts::All,
             rto_config: RtoConfig { initial: initial_rto, min: Duration::ZERO, max: Duration::MAX },
             max_retries,
         }
     }
 
     pub(crate) fn len(&self) -> usize { self.table.len() }
+
+    /// Returns whether new connections are accepted on the local port `port`.
+    pub(super) fn is_listening(&self, port: u16) -> bool {
+        match &self.listen_ports {
+            TcpListenPorts::All => true,
+            TcpListenPorts::Ports(ports) => ports.contains(&port),
+        }
+    }
 
     /// Inserts `conn` into the table under `key`, replacing any existing connection.
     pub(super) fn insert(&mut self, key: ConnKey, conn: ConnState) { self.table.insert(key, conn); }
@@ -178,10 +224,19 @@ impl TcpConnections {
         retransmissions
     }
 
-    /// Initiates active close (RFC 9293 "CLOSE" call) for every connection currently ESTABLISHED,
-    /// transitioning each to FIN-WAIT-1 and returning a FIN-ACK reply for it.
-    pub(crate) fn close_established(&mut self) -> Vec<TcpSegment<Out>> {
+    /// Issues the RFC 9293 "CLOSE" call (Section 3.10.4) on everything, returning a FIN-ACK reply
+    /// for each connection that needs one. Per state:
+    ///
+    /// - LISTEN: stops accepting new connections on every port, so any later SYN is refused.
+    /// - ESTABLISHED: initiates active close, transitioning to FIN-WAIT-1.
+    /// - CLOSE-WAIT: nothing to do here, since our FIN already follows once the send buffer drains.
+    /// - FIN-WAIT-1, FIN-WAIT-2, CLOSING, and LAST-ACK: already closing, so nothing to do.
+    /// - SYN-RECEIVED: currently untouched, although the RFC calls for sending a FIN and entering
+    ///   FIN-WAIT-1.
+    pub(crate) fn close_all(&mut self) -> Vec<TcpSegment<Out>> {
         let now = Instant::now();
+
+        self.listen_ports = TcpListenPorts::Ports(HashSet::new());
 
         self.table
             // Extract only established connections first as an optimization to avoid reinsertions
@@ -246,6 +301,14 @@ impl TcpConnections {
         self.table.insert(KEY, conn);
     }
 
+    /// Replaces the ports on which new connections are accepted with `listen_ports`.
+    #[cfg(test)]
+    #[must_use]
+    pub(super) fn with_listen_ports(mut self, listen_ports: TcpListenPorts) -> Self {
+        self.listen_ports = listen_ports;
+        self
+    }
+
     /// Inserts a SYN-RECEIVED connection using `KEY`, `CLIENT_ISN`, and `SERVER_ISN` as if we had
     /// just responded to the peer's SYN with SYN-ACK.
     #[cfg(any(test, feature = "test-utils"))]
@@ -296,5 +359,33 @@ impl TcpConnections {
 
         self.table.insert(KEY, AFTER_HANDSHAKE);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        pretty_assertions::{assert_eq, assert_matches},
+    };
+
+    #[test]
+    fn port_list_parses_with_whitespace_and_duplicates_tolerated() {
+        for (input, expected) in [
+            ("80", HashSet::from([80])),
+            ("80,443", HashSet::from([80, 443])),
+            (" 80 , 443 ", HashSet::from([80, 443])),
+            ("0,65535", HashSet::from([0, 65535])),
+            ("80,80,80,80", HashSet::from([80])),
+        ] {
+            assert_eq!(input.parse(), Ok(TcpListenPorts::Ports(expected)), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn port_list_rejected_when_empty_or_invalid() {
+        for input in ["", " ", "abc", "70000", "-1", "80,", ",80", "80,,443", "80 443"] {
+            assert_matches!(input.parse::<TcpListenPorts>(), Err(_), "{input:?}");
+        }
     }
 }

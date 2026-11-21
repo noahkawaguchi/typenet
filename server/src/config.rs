@@ -1,6 +1,7 @@
 use {
     crate::{application::ServerApp, logger::LogLevel},
     std::{num::NonZeroUsize, thread, time::Duration},
+    typenet_stack::engine::TcpListenPorts,
     typenet_utils::{error::TraceableResult, sys},
 };
 
@@ -22,6 +23,9 @@ pub struct Config {
     /// The number of times to retransmit an unacked TCP segment before giving up and dropping the
     /// connection.
     pub(crate) max_retries: u8,
+
+    /// The local ports on which new TCP connections are accepted.
+    pub(crate) tcp_listen_ports: TcpListenPorts,
 
     /// The amount of time to wait for established TCP connections to finish closing after a
     /// shutdown signal before exiting unconditionally.
@@ -60,6 +64,8 @@ impl Config {
             ),
 
             max_retries: sys::parse_env("TYPENET_MAX_RETRANSMITS")?.unwrap_or(15),
+
+            tcp_listen_ports: sys::parse_env("TYPENET_TCP_PORTS")?.unwrap_or_default(),
 
             grace_period: Duration::from_secs(
                 sys::parse_env("TYPENET_GRACE_SECS")?.unwrap_or(if cfg!(debug_assertions) {

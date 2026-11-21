@@ -3,6 +3,7 @@
     expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
 )]
 pub use connections::TcpConnections;
+pub use connections::TcpListenPorts;
 
 mod connections;
 mod flags;
@@ -295,6 +296,7 @@ mod tests {
     mod data;
     mod establish;
     mod flow_control;
+    mod listen;
     mod parse;
     mod passive_close;
     mod retransmit;
@@ -312,6 +314,7 @@ mod tests {
             ipv4_header::Ipv4Header,
             protocol::{
                 tcp::{
+                    connections::TcpListenPorts,
                     reassembly::TcpReassembly,
                     state::{
                         CloseWait, Closing, ConnData, ConnState, Established, FinWait1, FinWait2,
@@ -322,6 +325,6 @@ mod tests {
             },
         },
         pretty_assertions::assert_matches,
-        std::{thread, time::Duration},
+        std::{collections::HashSet, thread, time::Duration},
     };
 }

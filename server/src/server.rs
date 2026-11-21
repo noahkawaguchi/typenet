@@ -53,6 +53,7 @@ where
             config.app,
             config.initial_rto,
             config.max_retries,
+            config.tcp_listen_ports.clone(),
             config.grace_period,
         ),
         logger,
