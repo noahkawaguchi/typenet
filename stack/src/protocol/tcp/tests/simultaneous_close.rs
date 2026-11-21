@@ -3,7 +3,7 @@ use {super::*, pretty_assertions::assert_eq};
 #[test]
 fn simultaneous_close_transitions_through_closing_to_closed() -> TraceableResult {
     let mut connections = TcpConnections::default().after_handshake();
-    connections.close_established(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
+    connections.close_all(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
     let mut cloned_state = connections.try_get()?.clone();
 
     // Client's FIN arrives in order, but doesn't yet acknowledge our FIN (ack=SERVER_ISN+1,
@@ -58,7 +58,7 @@ fn fin_ack_with_data_in_fin_wait_1_advances_rcv_nxt_past_data_and_fin() -> Trace
     // must still advance past both the data and the FIN's phantom byte.
 
     let mut connections = TcpConnections::default().after_handshake(); // rcv_nxt=CLIENT_ISN+1
-    connections.close_established(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
+    connections.close_all(); // -> FIN-WAIT-1, snd_nxt=SERVER_ISN+2
     let mut cloned_state = connections.try_get()?.clone();
 
     // Client's FIN-ACK arrives in order with data, not yet acknowledging our FIN (ack=SERVER_ISN+1)

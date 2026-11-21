@@ -106,3 +106,43 @@ fn ack_to_closed_port_gets_plain_rst() -> TraceableResult {
 
     Ok(())
 }
+
+#[test]
+fn new_connections_refused_after_close_call() -> TraceableResult {
+    /// A client port other than the default used for test constants, so the SYN below requests a
+    /// new connection instead of landing on the connection already stored in the draining case.
+    const OTHER_CLIENT_PORT: u16 = 4321;
+
+    for (mut connections, expected_len, description) in [
+        (TcpConnections::default(), 0, "no connections to close"),
+        (TcpConnections::default().after_handshake(), 1, "established connection draining"),
+    ] {
+        connections.close_all();
+
+        let reply = TcpSegment {
+            ports: PortPair::new(OTHER_CLIENT_PORT, KEY.server_port),
+            ..TcpSegment::CLIENT_SYN
+        }
+        .create_test_reply(&mut connections)?;
+
+        assert_eq!(
+            reply,
+            Some(TcpSegment {
+                ports: PortPair::new(KEY.server_port, OTHER_CLIENT_PORT),
+                seq_num: SeqPoint::new(0),
+                ack_num: SeqPoint::new(0) + SYN_BYTE_IN,
+                flags: TcpFlags::RstAck,
+                ..SERVER_REPLY
+            }),
+            "{description}"
+        );
+
+        assert_eq!(
+            connections.len(),
+            expected_len,
+            "{description}: no new connection should be stored"
+        );
+    }
+
+    Ok(())
+}

@@ -203,10 +203,19 @@ impl TcpConnections {
         retransmissions
     }
 
-    /// Initiates active close (RFC 9293 "CLOSE" call) for every connection currently ESTABLISHED,
-    /// transitioning each to FIN-WAIT-1 and returning a FIN-ACK reply for it.
-    pub(crate) fn close_established(&mut self) -> Vec<TcpSegment<Out>> {
+    /// Issues the RFC 9293 "CLOSE" call (Section 3.10.4) on everything, returning a FIN-ACK reply
+    /// for each connection that needs one. Per state:
+    ///
+    /// - LISTEN: stops accepting new connections on every port, so any later SYN is refused.
+    /// - ESTABLISHED: initiates active close, transitioning to FIN-WAIT-1.
+    /// - CLOSE-WAIT: nothing to do here, since our FIN already follows once the send buffer drains.
+    /// - FIN-WAIT-1, FIN-WAIT-2, CLOSING, and LAST-ACK: already closing, so nothing to do.
+    /// - SYN-RECEIVED: currently untouched, although the RFC calls for sending a FIN and entering
+    ///   FIN-WAIT-1.
+    pub(crate) fn close_all(&mut self) -> Vec<TcpSegment<Out>> {
         let now = Instant::now();
+
+        self.listen_ports = TcpListenPorts::Ports(HashSet::new());
 
         self.table
             // Extract only established connections first as an optimization to avoid reinsertions
