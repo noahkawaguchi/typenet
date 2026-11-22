@@ -1,5 +1,5 @@
 use {
-    std::{fmt, hash::Hash, marker::PhantomData, num::NonZeroU16, str::FromStr},
+    std::{fmt, hash::Hash, marker::PhantomData, net::Ipv4Addr, num::NonZeroU16, str::FromStr},
     typenet_utils::error::TraceableError,
 };
 
@@ -58,6 +58,27 @@ impl<E: Endpoint> FromStr for Port<E> {
 }
 
 impl<E: Endpoint> fmt::Display for Port<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(&self.inner, f) }
+}
+
+/// IPv4 address guaranteed to be either `Local` or `Remote`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Addr<E: Endpoint> {
+    inner: Ipv4Addr,
+    phantom: PhantomData<E>,
+}
+
+impl<E: Endpoint> Addr<E> {
+    /// Creates a new `Self` with the IPv4 address `a`.`b`.`c`.`d`.
+    pub(crate) const fn new(a: u8, b: u8, c: u8, d: u8) -> Self {
+        Self { inner: Ipv4Addr::new(a, b, c, d), phantom: PhantomData }
+    }
+
+    /// Returns the four eight-bit integers of the inner IPv4 address.
+    pub(crate) const fn octets(self) -> [u8; 4] { self.inner.octets() }
+}
+
+impl<E: Endpoint> fmt::Display for Addr<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(&self.inner, f) }
 }
 

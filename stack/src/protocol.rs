@@ -110,14 +110,11 @@ impl fmt::Display for Protocol {
 mod test_consts {
     #[cfg(test)]
     use crate::direction::Out;
-    use {
-        crate::{direction::In, ipv4_header::Ipv4AddrPair},
-        std::net::Ipv4Addr,
-    };
+    use crate::{direction::In, endpoint::Addr, ipv4_header::Ipv4AddrPair};
 
     /// A pair of IP addresses going from 10.0.0.2 to 10.0.0.1 in the incoming direction.
     pub(super) const IP_PAIR_IN: Ipv4AddrPair<In> =
-        Ipv4AddrPair::new(Ipv4Addr::new(10, 0, 0, 2), Ipv4Addr::new(10, 0, 0, 1));
+        Ipv4AddrPair::new(Addr::new(10, 0, 0, 2), Addr::new(10, 0, 0, 1));
 
     /// A pair of IP addresses going from 10.0.0.1 to 10.0.0.2 in the outgoing direction.
     #[cfg(test)]

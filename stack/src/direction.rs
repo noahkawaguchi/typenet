@@ -7,7 +7,7 @@ use {
 #[expect(private_bounds, reason = "sealed trait so this module owns all implementations")]
 pub trait Direction: fmt::Debug + Clone + Copy + PartialEq + Eq + sealed::Sealed {
     /// The reverse direction of traffic flow.
-    type Rev: Direction;
+    type Rev: Direction<Rev = Self, Src = Self::Dst, Dst = Self::Src>;
 
     /// The source of traffic flowing in this direction.
     type Src: Endpoint;

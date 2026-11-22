@@ -3,7 +3,7 @@ use typenet_utils::error::TraceableResult;
 use {
     crate::{
         direction::Out,
-        endpoint::{Local, Port, Remote},
+        endpoint::{Addr, Local, Port, Remote},
         protocol::tcp::{
             FIN_BYTE_OUT, TcpSegment,
             flags::TcpFlags,
@@ -14,7 +14,6 @@ use {
     },
     std::{
         collections::{HashMap, HashSet},
-        net::Ipv4Addr,
         str::FromStr,
         time::{Duration, Instant},
     },
@@ -88,9 +87,9 @@ impl FromStr for TcpListenPorts {
 /// Key identifying a TCP connection.
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub(super) struct ConnKey {
-    pub(super) client_ip: Ipv4Addr,
+    pub(super) client_ip: Addr<Remote>,
     pub(super) client_port: Port<Remote>,
-    pub(super) server_ip: Ipv4Addr,
+    pub(super) server_ip: Addr<Local>,
     pub(super) server_port: Port<Local>,
 }
 
