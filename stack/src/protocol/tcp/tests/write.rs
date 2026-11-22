@@ -4,7 +4,8 @@ use {super::*, pretty_assertions::assert_eq};
 fn write_into_produces_correct_bytes_with_no_payload() -> TraceableResult {
     let seg = TcpSegment::<Out> {
         ip_pair: IP_PAIR_OUT,
-        ports: PortPair::new(80, 1234),
+        src_port: comptime::nonzero_u16::<80>(),
+        dst_port: comptime::nonzero_u16::<1234>(),
         seq_num: SeqPoint::new(0x1000_0000),
         ack_num: SeqPoint::new(0x0000_1001),
         offset_bytes: 20,
@@ -36,7 +37,8 @@ fn write_into_produces_correct_bytes_with_no_payload() -> TraceableResult {
 fn write_into_produces_correct_bytes_with_payload() -> TraceableResult {
     let seg = TcpSegment::<Out> {
         ip_pair: IP_PAIR_OUT,
-        ports: PortPair::new(80, 1234),
+        src_port: comptime::nonzero_u16::<80>(),
+        dst_port: comptime::nonzero_u16::<1234>(),
         seq_num: SeqPoint::new(1),
         ack_num: SeqPoint::new(4102),
         offset_bytes: 20,

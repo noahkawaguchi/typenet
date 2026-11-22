@@ -19,7 +19,6 @@ mod test_utils;
 
 use {
     crate::{
-        addr_pairs::PortPair,
         application::Application,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
@@ -27,6 +26,7 @@ use {
         protocol::{
             Encode, Protocol, pseudo_hdr_cksum,
             tcp::{
+                connections::ConnKey,
                 flags::TcpFlags,
                 payload::{LenOrDefault as _, TcpPayload},
                 send_info::SendInfo,
@@ -34,7 +34,7 @@ use {
             },
         },
     },
-    std::fmt,
+    std::{fmt, num::NonZeroU16},
     typenet_utils::{
         error::{TraceableResult, ensure},
         try_ops::{TryAdd as _, TryGet as _, TryGetMut as _},
@@ -66,7 +66,12 @@ pub struct TcpSegment<D: Direction> {
     /// Not a part of the TCP header, but required for connection state and checksum calculation.
     ip_pair: Ipv4AddrPair<D>,
 
-    ports: PortPair<D>,
+    /// The source port, which must be nonzero, since port 0 is reserved (RFC 6335, Section 6).
+    src_port: NonZeroU16,
+
+    /// The destination port, which must be nonzero, since port 0 is reserved (RFC 6335, Section
+    /// 6).
+    dst_port: NonZeroU16,
 
     /// "The sequence number of the first data octet in this segment (except when the SYN flag is
     /// set). If SYN is set, the sequence number is the initial sequence number (ISN) and the first
@@ -106,14 +111,15 @@ impl TcpSegment<In> {
         app: &mut impl Application,
         connections: &mut TcpConnections,
     ) -> TraceableResult<Option<TcpSegment<Out>>> {
-        SendInfo::decide_reply(app, self, connections).map(|maybe_send_info| {
-            maybe_send_info.map(|send_info| {
-                TcpSegment::<Out>::from_pairs_and_info(
-                    self.ip_pair.swapped(),
-                    self.ports.swapped(),
-                    send_info,
-                )
-            })
+        let key = ConnKey {
+            client_ip: self.ip_pair.src,
+            client_port: self.src_port,
+            server_ip: self.ip_pair.dst,
+            server_port: self.dst_port,
+        };
+
+        SendInfo::decide_reply(app, self, key, connections).map(|maybe_send_info| {
+            maybe_send_info.map(|send_info| TcpSegment::from_key_and_info(key, send_info))
         })
     }
 
@@ -141,14 +147,15 @@ impl TcpSegment<Out> {
     /// application.
     const RCV_WND: SeqOffset<u16, In> = SeqOffset::new(u16::MAX);
 
-    fn from_pairs_and_info(
-        ip_pair: Ipv4AddrPair<Out>,
-        ports: PortPair<Out>,
+    /// Creates a segment from the server to the client of the connection identified by `key`.
+    fn from_key_and_info(
+        ConnKey { client_ip, client_port, server_ip, server_port }: ConnKey,
         SendInfo { seq_num, ack_num, flags, payload }: SendInfo,
     ) -> Self {
         Self {
-            ip_pair,
-            ports,
+            ip_pair: Ipv4AddrPair::new(server_ip, client_ip),
+            src_port: server_port,
+            dst_port: client_port,
             seq_num,
             ack_num,
             offset_bytes: TCP_HDR_MIN_LEN,
@@ -182,10 +189,10 @@ impl<D: Direction> TcpSegment<D> {
 
         Ok(Self {
             ip_pair,
-            ports: PortPair::new(
-                u16::from_be_bytes([tcp_hdr[0], tcp_hdr[1]]),
-                u16::from_be_bytes([tcp_hdr[2], tcp_hdr[3]]),
-            ),
+            src_port: NonZeroU16::new(u16::from_be_bytes([tcp_hdr[0], tcp_hdr[1]]))
+                .ok_or("invalid TCP source port 0")?,
+            dst_port: NonZeroU16::new(u16::from_be_bytes([tcp_hdr[2], tcp_hdr[3]]))
+                .ok_or("invalid TCP destination port 0")?,
             seq_num: SeqPoint::new(u32::from_be_bytes([
                 tcp_hdr[4], tcp_hdr[5], tcp_hdr[6], tcp_hdr[7],
             ])),
@@ -214,9 +221,9 @@ impl<D: Direction> TcpSegment<D> {
     fn inner_write_into(&self, buf: &mut [u8]) -> TraceableResult {
         // Source and destination ports
         buf.try_get_mut(..2)?
-            .copy_from_slice(&self.ports.src.to_be_bytes());
+            .copy_from_slice(&self.src_port.get().to_be_bytes());
         buf.try_get_mut(2..4)?
-            .copy_from_slice(&self.ports.dst.to_be_bytes());
+            .copy_from_slice(&self.dst_port.get().to_be_bytes());
 
         // Sequence number
         buf.try_get_mut(4..8)?
@@ -279,8 +286,9 @@ impl<D: Direction> fmt::Display for TcpSegment<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TCP | {} | seq={} ack={} win={} | {}",
-            self.ports,
+            "TCP | {} -> {} | seq={} ack={} win={} | {}",
+            self.src_port,
+            self.dst_port,
             self.seq_num.with_thousands_separators(),
             self.ack_num.with_thousands_separators(),
             self.window.with_thousands_separators(),
@@ -327,5 +335,6 @@ mod tests {
         },
         pretty_assertions::assert_matches,
         std::{collections::HashSet, thread, time::Duration},
+        typenet_utils::comptime,
     };
 }

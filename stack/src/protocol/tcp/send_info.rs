@@ -73,22 +73,16 @@ impl SendInfo {
         }
     }
 
-    /// Creates a `Self` for replying to `seg` according to `app`, or returns `Ok(None)` for no
-    /// reply, updating `connections` accordingly. If handling a known connection fails, the
-    /// connection is dropped (not reinserted into `connections`) rather than kept in a possibly
-    /// inconsistent state, so the peer's next segment is answered with RST.
+    /// Creates a `Self` for replying to `seg`, belonging to the connection identified by `key`,
+    /// according to `app`, or returns `Ok(None)` for no reply, updating `connections` accordingly.
+    /// If handling a known connection fails, the connection is dropped rather than kept in a
+    /// possibly inconsistent state, so the peer's next segment is answered with RST.
     pub(super) fn decide_reply(
         app: &mut impl Application,
         seg: &TcpSegment<In>,
+        key: ConnKey,
         connections: &mut TcpConnections,
     ) -> TraceableResult<Option<Self>> {
-        let key = ConnKey {
-            client_ip: seg.ip_pair.src,
-            client_port: seg.ports.src,
-            server_ip: seg.ip_pair.dst,
-            server_port: seg.ports.dst,
-        };
-
         if let Some(ConnState { tcp_state, mut data }) = connections.remove(&key) {
             Self::handle_known_conn(app, seg, &mut data, tcp_state).map(
                 |(maybe_send_info, maybe_next_state)| {

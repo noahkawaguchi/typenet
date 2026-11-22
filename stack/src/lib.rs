@@ -19,7 +19,6 @@ pub mod checksum;
 #[expect(unreachable_pub, reason = "Only exported with the `bench-internals` feature")]
 mod checksum;
 
-mod addr_pairs;
 mod ipv4_header;
 mod protocol;
 
