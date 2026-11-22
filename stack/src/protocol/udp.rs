@@ -144,13 +144,8 @@ mod tests {
             protocol::test_consts::{IP_PAIR_IN, IP_PAIR_OUT},
         },
         pretty_assertions::{assert_eq, assert_matches},
+        typenet_utils::comptime,
     };
-
-    /// Creates a `NonZeroU16` from a `u16`. Guaranteed to either panic at compile time or return a
-    /// valid `NonZeroU16`.
-    const fn nonzero_port<const PORT: u16>() -> NonZeroU16 {
-        const { NonZeroU16::new(PORT).expect("port must be nonzero") }
-    }
 
     #[test]
     fn correctly_parses_valid_datagram() -> TraceableResult {
@@ -166,8 +161,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.src_port, Some(nonzero_port::<1234>()));
-        assert_eq!(dgram.dst_port, nonzero_port::<53>());
+        assert_eq!(dgram.src_port, Some(comptime::nonzero_u16::<1234>()));
+        assert_eq!(dgram.dst_port, comptime::nonzero_u16::<53>());
         assert_eq!(dgram.payload.as_ref(), b"Hello!!!");
 
         Ok(())
@@ -231,8 +226,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.src_port, Some(nonzero_port::<1234>()));
-        assert_eq!(dgram.dst_port, nonzero_port::<53>());
+        assert_eq!(dgram.src_port, Some(comptime::nonzero_u16::<1234>()));
+        assert_eq!(dgram.dst_port, comptime::nonzero_u16::<53>());
         assert_eq!(dgram.payload.as_ref(), b"Hello!!!");
 
         Ok(())
@@ -250,8 +245,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.src_port, Some(nonzero_port::<8080>()));
-        assert_eq!(dgram.dst_port, nonzero_port::<80>());
+        assert_eq!(dgram.src_port, Some(comptime::nonzero_u16::<8080>()));
+        assert_eq!(dgram.dst_port, comptime::nonzero_u16::<80>());
         assert_eq!(dgram.payload.len(), 0);
 
         Ok(())
@@ -270,8 +265,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.src_port, Some(nonzero_port::<65535>()));
-        assert_eq!(dgram.dst_port, nonzero_port::<1>());
+        assert_eq!(dgram.src_port, Some(comptime::nonzero_u16::<65535>()));
+        assert_eq!(dgram.dst_port, comptime::nonzero_u16::<1>());
 
         Ok(())
     }
@@ -284,8 +279,8 @@ mod tests {
 
         const DGRAM: UdpDatagram<Out> = UdpDatagram {
             ip_pair: IP_PAIR_OUT,
-            src_port: Some(nonzero_port::<1234>()),
-            dst_port: nonzero_port::<80>(),
+            src_port: Some(comptime::nonzero_u16::<1234>()),
+            dst_port: comptime::nonzero_u16::<80>(),
             payload: Cow::Borrowed(&[0xE6, 0xB5]),
         };
 
