@@ -17,8 +17,8 @@ fn correct_for_valid_segment() -> TraceableResult {
 
     let seg = TcpSegment::parse(&DATA, IP_PAIR_IN)?;
 
-    assert_eq!(seg.src_port, comptime::nonzero_u16::<1234>());
-    assert_eq!(seg.dst_port, comptime::nonzero_u16::<80>());
+    assert_eq!(seg.src_port, Port::comptime_new::<1234>());
+    assert_eq!(seg.dst_port, Port::comptime_new::<80>());
     assert_eq!(seg.seq_num, SeqPoint::new(1));
     assert_eq!(seg.ack_num, SeqPoint::new(2));
     assert_eq!(seg.offset_bytes, 20);

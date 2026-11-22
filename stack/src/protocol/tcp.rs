@@ -22,6 +22,7 @@ use {
         application::Application,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
+        endpoint::Port,
         ipv4_header::Ipv4AddrPair,
         protocol::{
             Encode, Protocol, pseudo_hdr_cksum,
@@ -34,7 +35,7 @@ use {
             },
         },
     },
-    std::{fmt, num::NonZeroU16},
+    std::fmt,
     typenet_utils::{
         error::{TraceableResult, ensure},
         try_ops::{TryAdd as _, TryGet as _, TryGetMut as _},
@@ -67,11 +68,11 @@ pub struct TcpSegment<D: Direction> {
     ip_pair: Ipv4AddrPair<D>,
 
     /// The source port, which must be nonzero, since port 0 is reserved (RFC 6335, Section 6).
-    src_port: NonZeroU16,
+    src_port: Port<D::Src>,
 
     /// The destination port, which must be nonzero, since port 0 is reserved (RFC 6335, Section
     /// 6).
-    dst_port: NonZeroU16,
+    dst_port: Port<D::Dst>,
 
     /// "The sequence number of the first data octet in this segment (except when the SYN flag is
     /// set). If SYN is set, the sequence number is the initial sequence number (ISN) and the first
@@ -189,9 +190,9 @@ impl<D: Direction> TcpSegment<D> {
 
         Ok(Self {
             ip_pair,
-            src_port: NonZeroU16::new(u16::from_be_bytes([tcp_hdr[0], tcp_hdr[1]]))
+            src_port: Port::new(u16::from_be_bytes([tcp_hdr[0], tcp_hdr[1]]))
                 .ok_or("invalid TCP source port 0")?,
-            dst_port: NonZeroU16::new(u16::from_be_bytes([tcp_hdr[2], tcp_hdr[3]]))
+            dst_port: Port::new(u16::from_be_bytes([tcp_hdr[2], tcp_hdr[3]]))
                 .ok_or("invalid TCP destination port 0")?,
             seq_num: SeqPoint::new(u32::from_be_bytes([
                 tcp_hdr[4], tcp_hdr[5], tcp_hdr[6], tcp_hdr[7],
@@ -221,9 +222,9 @@ impl<D: Direction> TcpSegment<D> {
     fn inner_write_into(&self, buf: &mut [u8]) -> TraceableResult {
         // Source and destination ports
         buf.try_get_mut(..2)?
-            .copy_from_slice(&self.src_port.get().to_be_bytes());
+            .copy_from_slice(&self.src_port.to_be_bytes());
         buf.try_get_mut(2..4)?
-            .copy_from_slice(&self.dst_port.get().to_be_bytes());
+            .copy_from_slice(&self.dst_port.to_be_bytes());
 
         // Sequence number
         buf.try_get_mut(4..8)?
@@ -320,6 +321,7 @@ mod tests {
         crate::{
             ETHERNET_MTU,
             application::ShoutingTestApp,
+            endpoint::Remote,
             ipv4_header::Ipv4Header,
             protocol::{
                 tcp::{
@@ -335,6 +337,5 @@ mod tests {
         },
         pretty_assertions::assert_matches,
         std::{collections::HashSet, thread, time::Duration},
-        typenet_utils::comptime,
     };
 }

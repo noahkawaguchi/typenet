@@ -3,10 +3,11 @@ use {
         application::Application,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol},
+        endpoint::Port,
         ipv4_header::Ipv4AddrPair,
         protocol::{Encode, Protocol, pseudo_hdr_cksum},
     },
-    std::{borrow::Cow, fmt, num::NonZeroU16},
+    std::{borrow::Cow, fmt},
     typenet_utils::{
         error::{TraceableResult, ensure},
         try_ops::{TryAdd as _, TryGet as _, TryGetMut as _},
@@ -27,11 +28,11 @@ pub(crate) struct UdpDatagram<'a, D: Direction> {
     /// absence of any other information. If not used, a value of zero is inserted" (RFC 768).
     ///
     /// `None` when not used.
-    src_port: Option<NonZeroU16>,
+    src_port: Option<Port<D::Src>>,
 
     /// The destination port, which is required and must be nonzero, since port 0 is reserved (RFC
     /// 6335, Section 6).
-    dst_port: NonZeroU16,
+    dst_port: Port<D::Dst>,
 
     payload: Cow<'a, [u8]>,
 }
@@ -53,8 +54,8 @@ impl<'a> UdpDatagram<'a, In> {
 
         Ok(Self {
             ip_pair,
-            src_port: NonZeroU16::new(u16::from_be_bytes([udp_hdr[0], udp_hdr[1]])),
-            dst_port: NonZeroU16::new(u16::from_be_bytes([udp_hdr[2], udp_hdr[3]]))
+            src_port: Port::new(u16::from_be_bytes([udp_hdr[0], udp_hdr[1]])),
+            dst_port: Port::new(u16::from_be_bytes([udp_hdr[2], udp_hdr[3]]))
                 .ok_or("invalid UDP destination port 0")?,
             payload: Cow::Borrowed(payload),
         })
@@ -76,9 +77,9 @@ impl Encode<Out> for UdpDatagram<'_, Out> {
     fn write_into(&self, buf: &mut [u8]) -> TraceableResult {
         // Source and destination ports, with an unused source port written as zero
         buf.try_get_mut(..2)?
-            .copy_from_slice(&self.src_port.map_or_default(NonZeroU16::get).to_be_bytes());
+            .copy_from_slice(&self.src_port.map_or_default(Port::to_be_bytes));
         buf.try_get_mut(2..4)?
-            .copy_from_slice(&self.dst_port.get().to_be_bytes());
+            .copy_from_slice(&self.dst_port.to_be_bytes());
 
         let udp_len = self.proto_len()?;
         buf.try_get_mut(4..6)?
@@ -144,7 +145,6 @@ mod tests {
             protocol::test_consts::{IP_PAIR_IN, IP_PAIR_OUT},
         },
         pretty_assertions::{assert_eq, assert_matches},
-        typenet_utils::comptime,
     };
 
     #[test]
@@ -161,8 +161,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.src_port, Some(comptime::nonzero_u16::<1234>()));
-        assert_eq!(dgram.dst_port, comptime::nonzero_u16::<53>());
+        assert_eq!(dgram.src_port, Some(Port::comptime_new::<1234>()));
+        assert_eq!(dgram.dst_port, Port::comptime_new::<53>());
         assert_eq!(dgram.payload.as_ref(), b"Hello!!!");
 
         Ok(())
@@ -226,8 +226,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.src_port, Some(comptime::nonzero_u16::<1234>()));
-        assert_eq!(dgram.dst_port, comptime::nonzero_u16::<53>());
+        assert_eq!(dgram.src_port, Some(Port::comptime_new::<1234>()));
+        assert_eq!(dgram.dst_port, Port::comptime_new::<53>());
         assert_eq!(dgram.payload.as_ref(), b"Hello!!!");
 
         Ok(())
@@ -245,8 +245,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.src_port, Some(comptime::nonzero_u16::<8080>()));
-        assert_eq!(dgram.dst_port, comptime::nonzero_u16::<80>());
+        assert_eq!(dgram.src_port, Some(Port::comptime_new::<8080>()));
+        assert_eq!(dgram.dst_port, Port::comptime_new::<80>());
         assert_eq!(dgram.payload.len(), 0);
 
         Ok(())
@@ -265,8 +265,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.src_port, Some(comptime::nonzero_u16::<65535>()));
-        assert_eq!(dgram.dst_port, comptime::nonzero_u16::<1>());
+        assert_eq!(dgram.src_port, Some(Port::comptime_new::<65535>()));
+        assert_eq!(dgram.dst_port, Port::comptime_new::<1>());
 
         Ok(())
     }
@@ -279,8 +279,8 @@ mod tests {
 
         const DGRAM: UdpDatagram<Out> = UdpDatagram {
             ip_pair: IP_PAIR_OUT,
-            src_port: Some(comptime::nonzero_u16::<1234>()),
-            dst_port: comptime::nonzero_u16::<80>(),
+            src_port: Some(Port::comptime_new::<1234>()),
+            dst_port: Port::comptime_new::<80>(),
             payload: Cow::Borrowed(&[0xE6, 0xB5]),
         };
 

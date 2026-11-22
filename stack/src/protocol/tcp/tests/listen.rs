@@ -3,7 +3,7 @@ use {super::*, pretty_assertions::assert_eq};
 #[test]
 fn syn_to_listening_port_gets_syn_ack() -> TraceableResult {
     let mut connections = TcpConnections::default()
-        .with_listen_ports(TcpListenPorts::Ports(HashSet::from([comptime::nonzero_u16::<80>()])));
+        .with_listen_ports(TcpListenPorts::Ports(HashSet::from([Port::comptime_new::<80>()])));
 
     let reply = TcpSegment::CLIENT_SYN.create_test_reply(&mut connections)?;
 
@@ -27,7 +27,7 @@ fn syn_to_listening_port_gets_syn_ack() -> TraceableResult {
 fn syn_to_closed_port_refused_with_rst_ack() -> TraceableResult {
     for (listen_ports, description) in [
         (
-            TcpListenPorts::Ports(HashSet::from([comptime::nonzero_u16::<8080>()])),
+            TcpListenPorts::Ports(HashSet::from([Port::comptime_new::<8080>()])),
             "listening on other ports only",
         ),
         (TcpListenPorts::Ports(HashSet::new()), "not listening on any port"),
@@ -114,7 +114,7 @@ fn ack_to_closed_port_gets_plain_rst() -> TraceableResult {
 fn new_connections_refused_after_close_call() -> TraceableResult {
     /// A client port other than the default used for test constants, so the SYN below requests a
     /// new connection instead of landing on the connection already stored in the draining case.
-    const OTHER_CLIENT_PORT: NonZeroU16 = comptime::nonzero_u16::<4321>();
+    const OTHER_CLIENT_PORT: Port<Remote> = Port::comptime_new::<4321>();
 
     for (mut connections, expected_len, description) in [
         (TcpConnections::default(), 0, "no connections to close"),

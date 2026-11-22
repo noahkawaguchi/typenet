@@ -8,7 +8,6 @@ use {
             test_consts::IP_PAIR_IN,
         },
     },
-    typenet_utils::comptime,
 };
 
 /// Fixed value to use as the ISN randomly chosen by the client.
@@ -20,9 +19,9 @@ pub(super) const SERVER_ISN: SeqPoint<Out> = SeqPoint::new(400);
 /// Connection key shared by test modules.
 pub(super) const KEY: ConnKey = ConnKey {
     client_ip: IP_PAIR_IN.src,
-    client_port: comptime::nonzero_u16::<1234>(),
+    client_port: Port::comptime_new::<1234>(),
     server_ip: IP_PAIR_IN.dst,
-    server_port: comptime::nonzero_u16::<80>(),
+    server_port: Port::comptime_new::<80>(),
 };
 
 /// The window state after the initial three-way handshake.

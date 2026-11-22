@@ -3,6 +3,7 @@ use typenet_utils::error::TraceableResult;
 use {
     crate::{
         direction::Out,
+        endpoint::{Local, Port, Remote},
         protocol::tcp::{
             FIN_BYTE_OUT, TcpSegment,
             flags::TcpFlags,
@@ -14,7 +15,6 @@ use {
     std::{
         collections::{HashMap, HashSet},
         net::Ipv4Addr,
-        num::NonZeroU16,
         str::FromStr,
         time::{Duration, Instant},
     },
@@ -55,6 +55,7 @@ impl Default for RtoConfig {
 /// passive OPEN).
 #[derive(Default, Clone)]
 #[cfg_attr(any(test, feature = "test-utils"), derive(Debug, PartialEq, Eq))]
+#[expect(private_interfaces, reason = "not created directly outside the crate, only parsed")]
 pub enum TcpListenPorts {
     /// Accept new connections on every port.
     #[default]
@@ -63,7 +64,7 @@ pub enum TcpListenPorts {
     /// Accept new connections only on these ports. Empty means no new connections are accepted.
     /// Port 0 is excluded, since it is reserved (RFC 6335, Section 6) and can never be the
     /// destination of a valid segment.
-    Ports(HashSet<NonZeroU16>),
+    Ports(HashSet<Port<Local>>),
 }
 
 impl FromStr for TcpListenPorts {
@@ -88,9 +89,9 @@ impl FromStr for TcpListenPorts {
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub(super) struct ConnKey {
     pub(super) client_ip: Ipv4Addr,
-    pub(super) client_port: NonZeroU16,
+    pub(super) client_port: Port<Remote>,
     pub(super) server_ip: Ipv4Addr,
-    pub(super) server_port: NonZeroU16,
+    pub(super) server_port: Port<Local>,
 }
 
 /// Tracks per-connection state keyed by the 4-tuple.
@@ -144,7 +145,7 @@ impl TcpConnections {
     pub(crate) fn len(&self) -> usize { self.table.len() }
 
     /// Returns whether new connections are accepted on the local port `port`.
-    pub(super) fn is_listening(&self, port: NonZeroU16) -> bool {
+    pub(super) fn is_listening(&self, port: Port<Local>) -> bool {
         match &self.listen_ports {
             TcpListenPorts::All => true,
             TcpListenPorts::Ports(ports) => ports.contains(&port),
@@ -360,11 +361,12 @@ mod tests {
     use {
         super::*,
         pretty_assertions::{assert_eq, assert_matches},
-        typenet_utils::comptime::nonzero_u16 as port,
     };
 
     #[test]
     fn port_list_parses_with_whitespace_and_duplicates_tolerated() {
+        fn port<const PRIMITIVE: u16>() -> Port<Local> { Port::comptime_new::<PRIMITIVE>() }
+
         for (input, expected) in [
             ("80", HashSet::from([port::<80>()])),
             ("80,443", HashSet::from([port::<80>(), port::<443>()])),
