@@ -1,9 +1,9 @@
 use {
     crate::{
-        addr_pairs::Ipv4AddrPair,
         checksum,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
+        ipv4_header::Ipv4AddrPair,
         protocol::{Encode, Protocol},
     },
     std::fmt,

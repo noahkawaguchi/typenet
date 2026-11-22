@@ -4,8 +4,8 @@ pub(crate) mod udp;
 
 use {
     crate::{
-        ETHERNET_MTU, addr_pairs::Ipv4AddrPair, checksum, direction::Direction,
-        display::PrettyProtocol,
+        ETHERNET_MTU, checksum, direction::Direction, display::PrettyProtocol,
+        ipv4_header::Ipv4AddrPair,
     },
     std::fmt,
     typenet_utils::{
@@ -111,7 +111,7 @@ mod test_consts {
     #[cfg(test)]
     use crate::direction::Out;
     use {
-        crate::{addr_pairs::Ipv4AddrPair, direction::In},
+        crate::{direction::In, ipv4_header::Ipv4AddrPair},
         std::net::Ipv4Addr,
     };
 

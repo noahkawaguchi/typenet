@@ -1,11 +1,10 @@
 use {
     crate::{
         ETHERNET_MTU,
-        addr_pairs::Ipv4AddrPair,
         application::Application,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol},
-        ipv4_header::Ipv4Header,
+        ipv4_header::{Ipv4AddrPair, Ipv4Header},
         protocol::{
             Encode, Protocol,
             icmp_echo::IcmpEchoMsg,

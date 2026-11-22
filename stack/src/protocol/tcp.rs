@@ -19,10 +19,11 @@ mod test_utils;
 
 use {
     crate::{
-        addr_pairs::{Ipv4AddrPair, PortPair},
+        addr_pairs::PortPair,
         application::Application,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol, WithThousandsSeparators as _},
+        ipv4_header::Ipv4AddrPair,
         protocol::{
             Encode, Protocol, pseudo_hdr_cksum,
             tcp::{

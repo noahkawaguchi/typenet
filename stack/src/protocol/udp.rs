@@ -1,9 +1,10 @@
 use {
     crate::{
-        addr_pairs::{Ipv4AddrPair, PortPair},
+        addr_pairs::PortPair,
         application::Application,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol},
+        ipv4_header::Ipv4AddrPair,
         protocol::{Encode, Protocol, pseudo_hdr_cksum},
     },
     std::{borrow::Cow, fmt},

@@ -2,8 +2,9 @@
 use typenet_utils::error::TraceableResult;
 use {
     crate::{
-        addr_pairs::{Ipv4AddrPair, PortPair},
+        addr_pairs::PortPair,
         direction::Out,
+        ipv4_header::Ipv4AddrPair,
         protocol::tcp::{
             FIN_BYTE_OUT, TcpSegment,
             flags::TcpFlags,
