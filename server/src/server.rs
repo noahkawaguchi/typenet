@@ -43,7 +43,7 @@ where
     let mut logger = Logger::new(config.log_level, birth, worker_id);
 
     logger.server_info(format_args!(
-        "Waiting for packets on TUN device {} (Ctrl+C to stop)",
+        "waiting for packets on TUN device {} (Ctrl+C to stop)",
         config.tun_name
     ))?;
 
@@ -119,7 +119,7 @@ where
                 // Grace period ended with connections left -> forcefully exit
                 Ok(PollOutcome::Timeout) if self.engine.grace_period_elapsed(Instant::now()) => {
                     self.logger.server_info(format_args!(
-                        "Grace period elapsed with {} remaining connection(s), exiting",
+                        "grace period elapsed with {} remaining connection(s), exiting",
                         self.engine.connection_count()
                     ))?;
 
@@ -181,7 +181,7 @@ where
 
                     if self.engine.draining_complete() {
                         self.logger
-                            .server_info("All connections closed within grace period, exiting")?;
+                            .server_info("all connections closed within grace period, exiting")?;
 
                         break Ok(());
                     }
@@ -200,7 +200,7 @@ where
         Ok(match self.engine.handle_shutdown(now)? {
             ShutdownOutcome::AlreadyDraining { time_left } => {
                 self.logger.server_info(format_args!(
-                    "Draining connections, {}.{:03}s left",
+                    "draining connections, {}.{:03}s left",
                     time_left.as_secs(),
                     time_left.subsec_millis()
                 ))?;
@@ -210,7 +210,7 @@ where
 
             ShutdownOutcome::BeganDraining { to_send } => {
                 self.logger
-                    .server_info("Shutdown signal received, closing established connections...")?;
+                    .server_info("shutdown signal received, closing established connections...")?;
 
                 for pkt in to_send {
                     self.send_pkt(&pkt)?;
@@ -222,7 +222,7 @@ where
 
             ShutdownOutcome::NoConnections => {
                 self.logger.server_info(
-                    "Shutdown signal received with no established connections, exiting",
+                    "shutdown signal received with no established connections, exiting",
                 )?;
 
                 true

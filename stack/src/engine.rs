@@ -89,11 +89,11 @@ impl<A: Application> Engine<A> {
     ///
     /// Returns `Err` if the packet cannot be parsed or the reply cannot be created.
     pub fn handle_packet<'a>(&mut self, data: &'a [u8]) -> TraceableResult<PacketOutcome<'a>> {
-        let incoming = Ipv4Packet::parse(data).map_err(|e| format!("Skipping packet: {e}"))?;
+        let incoming = Ipv4Packet::parse(data).map_err(|e| format!("skipping packet: {e}"))?;
 
         let reply = incoming
             .create_reply(&mut self.app, &mut self.tcp_connections)
-            .map_err(|e| format!("Error creating reply: {e}"))?;
+            .map_err(|e| format!("error creating reply: {e}"))?;
 
         Ok(PacketOutcome { incoming, reply })
     }
@@ -193,7 +193,7 @@ mod tests {
         fn ipv4_parse_error_is_skipped() {
             assert_matches!(
                 test_engine(TcpConnections::default()).handle_packet(&[0u8; 5]),
-                Err(e) if e.to_string().contains("Skipping packet")
+                Err(e) if e.to_string().contains("skipping packet")
                     && e.to_string().contains("IPv4")
             );
         }
@@ -213,7 +213,7 @@ mod tests {
             assert_matches!(
                 test_engine(TcpConnections::default())
                     .handle_packet(buf.try_get(..ipv4_hdr.total_len.into())?),
-                Err(e) if e.to_string().contains("Skipping packet") && e.to_string().contains("TCP")
+                Err(e) if e.to_string().contains("skipping packet") && e.to_string().contains("TCP")
             );
 
             Ok(())
@@ -322,7 +322,7 @@ mod tests {
 
             assert_matches!(
                 engine.handle_shutdown(Instant::now()),
-                Err(e) if e.to_string().contains("Overflowed")
+                Err(e) if e.to_string().contains("overflowed")
             );
         }
     }
@@ -375,7 +375,7 @@ mod tests {
             assert_eq!(
                 engine.poll_timeout(now),
                 Some(INITIAL_RTO),
-                "The near-term retransmit deadline should win the `min`, not the far future \
+                "the near-term retransmit deadline should win the `min`, not the far future \
                  shutdown deadline"
             );
 
@@ -395,7 +395,7 @@ mod tests {
             assert_eq!(
                 engine.poll_timeout(now),
                 Some(GRACE_PERIOD),
-                "The near-term shutdown deadline should win the `min`, not the far future \
+                "the near-term shutdown deadline should win the `min`, not the far future \
                  retransmit deadline"
             );
 

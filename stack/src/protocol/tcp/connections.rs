@@ -96,7 +96,7 @@ pub(super) struct ConnKey {
 /// Tracks per-connection state keyed by the 4-tuple.
 #[cfg_attr(
     not(feature = "test-utils"),
-    expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
+    expect(unreachable_pub, reason = "only exported with the `test-utils` feature")
 )]
 #[cfg_attr(any(test, feature = "test-utils"), derive(Default))]
 pub struct TcpConnections {
@@ -116,7 +116,7 @@ pub struct TcpConnections {
 impl TcpConnections {
     #[cfg_attr(
         not(feature = "test-utils"),
-        expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
+        expect(unreachable_pub, reason = "only exported with the `test-utils` feature")
     )]
     #[must_use]
     pub fn new(initial_rto: Duration, max_retries: u8, listen_ports: TcpListenPorts) -> Self {
@@ -283,7 +283,7 @@ impl TcpConnections {
 
         self.table
             .get(&KEY)
-            .ok_or_else(|| "Connection not found".into())
+            .ok_or_else(|| "connection not found".into())
     }
 
     /// Inserts `conn` into the connection table using `KEY`.

@@ -71,7 +71,7 @@ fn partial_ack_after_sending_our_fin_does_not_close_or_reset() -> TraceableResul
         assert_eq!(
             connections.try_get()?,
             &initial_state,
-            "The connection should remain in the same state, not be closed or reset (in state \
+            "the connection should remain in the same state, not be closed or reset (in state \
              {tcp_state:?})"
         );
     }
@@ -112,7 +112,7 @@ fn stale_retransmission_after_sending_our_fin_gets_duplicate_ack() -> TraceableR
         assert_eq!(
             connections.try_get()?,
             &initial_state,
-            "The connection should be untouched, not reset (in state {tcp_state:?})"
+            "the connection should be untouched, not reset (in state {tcp_state:?})"
         );
     }
 
@@ -153,7 +153,7 @@ fn stale_retransmission_in_close_wait_gets_duplicate_ack_not_rst() -> TraceableR
         "A stale retransmission should get a duplicate ACK, not a RST"
     );
 
-    assert_eq!(connections.try_get()?, &initial_state, "The connection should be untouched");
+    assert_eq!(connections.try_get()?, &initial_state, "the connection should be untouched");
 
     Ok(())
 }
@@ -191,7 +191,7 @@ fn stale_pure_ack_after_sending_our_fin_gets_duplicate_ack() -> TraceableResult 
         assert_eq!(
             connections.try_get()?,
             &initial_state,
-            "The connection should be untouched, not reset (in state {tcp_state:?})"
+            "the connection should be untouched, not reset (in state {tcp_state:?})"
         );
     }
 
@@ -234,7 +234,7 @@ fn stale_pure_ack_in_close_wait_gets_duplicate_ack() -> TraceableResult {
         "A stale pure ACK should get a duplicate ACK, not a RST"
     );
 
-    assert_eq!(connections.try_get()?, &initial_state, "The connection should be untouched");
+    assert_eq!(connections.try_get()?, &initial_state, "the connection should be untouched");
 
     Ok(())
 }
@@ -286,7 +286,7 @@ fn out_of_order_data_or_fin_in_fin_wait_gets_duplicate_ack() -> TraceableResult 
                     ack_num: CLIENT_ISN + SYN_BYTE_IN,
                     ..SERVER_REPLY
                 }),
-                "An out-of-order segment should get a duplicate ACK at the unchanged RCV.NXT, not \
+                "an out-of-order segment should get a duplicate ACK at the unchanged RCV.NXT, not \
                  a RST (in state {:?}, flags {flags:?}, payload {payload_str:?})",
                 expected_state.tcp_state,
             );
@@ -302,7 +302,7 @@ fn out_of_order_data_or_fin_in_fin_wait_gets_duplicate_ack() -> TraceableResult 
             assert_eq!(
                 connections.try_get()?,
                 &expected_state,
-                "The connection should stay in the same state with RCV.NXT unchanged (flags \
+                "the connection should stay in the same state with RCV.NXT unchanged (flags \
                  {flags:?}, payload {payload_str:?})"
             );
 
@@ -321,7 +321,7 @@ fn out_of_order_data_or_fin_in_fin_wait_gets_duplicate_ack() -> TraceableResult 
                     ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
                     ..SERVER_REPLY
                 }),
-                "The in-order retransmission should be ACKed normally, covering only itself since \
+                "the in-order retransmission should be ACKed normally, covering only itself since \
                  the out-of-order segment was dropped (flags {flags:?}, payload {payload_str:?})"
             );
 
@@ -332,7 +332,7 @@ fn out_of_order_data_or_fin_in_fin_wait_gets_duplicate_ack() -> TraceableResult 
             assert_eq!(
                 connections.try_get()?,
                 &expected_state,
-                "The connection should still be in the same state, not closing (flags {flags:?}, \
+                "the connection should still be in the same state, not closing (flags {flags:?}, \
                  payload {payload_str:?})"
             );
         }
@@ -377,7 +377,7 @@ fn out_of_order_data_or_fin_acking_our_fin_moves_fin_wait_1_to_fin_wait_2() -> T
                 ack_num: CLIENT_ISN + SYN_BYTE_IN,
                 ..SERVER_REPLY
             }),
-            "An out-of-order segment should get a duplicate ACK at the unchanged RCV.NXT, not a \
+            "an out-of-order segment should get a duplicate ACK at the unchanged RCV.NXT, not a \
              RST (flags {flags:?}, payload {payload_str:?})"
         );
 
@@ -390,7 +390,7 @@ fn out_of_order_data_or_fin_acking_our_fin_moves_fin_wait_1_to_fin_wait_2() -> T
         assert_eq!(
             connections.try_get()?,
             &expected_state,
-            "The ACK of our FIN should move the connection to FIN-WAIT-2, with RCV.NXT unchanged \
+            "the ACK of our FIN should move the connection to FIN-WAIT-2, with RCV.NXT unchanged \
              (flags {flags:?}, payload {payload_str:?})"
         );
     }
@@ -432,7 +432,7 @@ fn data_or_fin_after_peers_fin_is_ignored() -> TraceableResult {
             assert_eq!(
                 after_peers_fin.create_test_reply(&mut connections)?,
                 None,
-                "Data or a FIN after the peer's FIN should be ignored, not get a RST (in state \
+                "data or a FIN after the peer's FIN should be ignored, not get a RST (in state \
                  {:?}, flags {flags:?}, payload {payload_str:?}, offset {offset:?})",
                 expected_state.tcp_state,
             );
@@ -448,7 +448,7 @@ fn data_or_fin_after_peers_fin_is_ignored() -> TraceableResult {
             assert_eq!(
                 connections.try_get()?,
                 &expected_state,
-                "The connection should stay in the same state with RCV.NXT unchanged (flags \
+                "the connection should stay in the same state with RCV.NXT unchanged (flags \
                  {flags:?}, payload {payload_str:?}, offset {offset:?})"
             );
         }
@@ -488,14 +488,14 @@ fn data_or_fin_after_peers_fin_acking_our_fin_removes_connection() -> TraceableR
                 }
                 .create_test_reply(&mut connections)?,
                 None,
-                "No reply expected, not a RST (in state {initial_tcp_state:?}, flags {flags:?}, \
+                "no reply expected, not a RST (in state {initial_tcp_state:?}, flags {flags:?}, \
                  payload {payload_str:?}, offset {offset:?})"
             );
 
             assert_matches!(
                 connections.try_get(),
                 Err(_),
-                "The ACK of our FIN should remove the connection (in state {initial_tcp_state:?}, \
+                "the ACK of our FIN should remove the connection (in state {initial_tcp_state:?}, \
                  flags {flags:?}, payload {payload_str:?}, offset {offset:?})"
             );
         }
@@ -545,7 +545,7 @@ fn data_or_fin_in_close_wait_is_ignored_with_duplicate_ack() -> TraceableResult 
                 ack_num: CLIENT_ISN + SYN_BYTE_IN + FIN_BYTE_IN,
                 ..SERVER_REPLY
             }),
-            "Data or a FIN after the peer's FIN should get a pure ACK at the unchanged RCV.NXT, \
+            "data or a FIN after the peer's FIN should get a pure ACK at the unchanged RCV.NXT, \
              not a RST (flags {flags:?}, payload {payload_str:?}, offset {offset:?})"
         );
 
@@ -563,7 +563,7 @@ fn data_or_fin_in_close_wait_is_ignored_with_duplicate_ack() -> TraceableResult 
         assert_eq!(
             connections.try_get()?,
             &expected_state,
-            "The connection should stay in CLOSE-WAIT with RCV.NXT and the send buffer unchanged \
+            "the connection should stay in CLOSE-WAIT with RCV.NXT and the send buffer unchanged \
              (flags {flags:?}, payload {payload_str:?}, offset {offset:?})"
         );
     }
@@ -614,7 +614,7 @@ fn data_or_fin_in_close_wait_opening_window_drains_and_sends_our_fin() -> Tracea
                 payload: TcpPayload::from_test_str("leftover")?,
                 ..SERVER_REPLY
             }),
-            "The queued data should go out with our FIN, ACKing the unchanged RCV.NXT, not a RST \
+            "the queued data should go out with our FIN, ACKing the unchanged RCV.NXT, not a RST \
              (flags {flags:?}, payload {payload_str:?}, offset {offset:?})"
         );
 
@@ -631,7 +631,7 @@ fn data_or_fin_in_close_wait_opening_window_drains_and_sends_our_fin() -> Tracea
         assert_eq!(
             connections.try_get()?,
             &expected_state,
-            "The connection should move to LAST-ACK with RCV.NXT unchanged (flags {flags:?}, \
+            "the connection should move to LAST-ACK with RCV.NXT unchanged (flags {flags:?}, \
              payload {payload_str:?}, offset {offset:?})"
         );
     }

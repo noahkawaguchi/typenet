@@ -88,7 +88,7 @@ fn pure_ack_on_established_connection_returns_none() -> TraceableResult {
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Connection should remain open after pure ACK"
+        "connection should remain open after pure ACK"
     );
 
     Ok(())
@@ -121,7 +121,7 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
-        "Standard reply to the first data packet"
+        "standard reply to the first data packet"
     );
 
     cloned_state.data.snd_nxt += HELLO_LEN_OUT;
@@ -129,7 +129,7 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Stored snd_nxt should be SERVER_ISN + 1 + 5 bytes echoed between replies"
+        "stored snd_nxt should be SERVER_ISN + 1 + 5 bytes echoed between replies"
     );
 
     // Second data packet: "Hi" (2 bytes), but with stale ack=SERVER_ISN+1 (hasn't ACKed our "Hello"
@@ -150,7 +150,7 @@ fn consecutive_replies_use_snd_nxt_for_seq_num() -> TraceableResult {
             payload: TcpPayload::from_test_str("Hi")?,
             ..SERVER_REPLY
         }),
-        "Server's seq_num should be snd_nxt=SERVER_ISN+6, not client's stale ack_num=SERVER_ISN+1"
+        "server's seq_num should be snd_nxt=SERVER_ISN+6, not client's stale ack_num=SERVER_ISN+1"
     );
 
     Ok(())
@@ -186,7 +186,7 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
-        "Standard reply to the first data packet"
+        "standard reply to the first data packet"
     );
 
     cloned_state.data.snd_nxt += HELLO_LEN_OUT;
@@ -216,7 +216,7 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
             payload: TcpPayload::from_test_str("Hi")?,
             ..SERVER_REPLY
         }),
-        "Standard reply to the second data packet"
+        "standard reply to the second data packet"
     );
 
     cloned_state.data.snd_nxt += HI_LEN_OUT;
@@ -252,7 +252,7 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
             payload: TcpPayload::from_test_str("Hey")?,
             ..SERVER_REPLY
         }),
-        "Stale ack_num shouldn't prevent normal processing"
+        "stale ack_num shouldn't prevent normal processing"
     );
 
     cloned_state.data.snd_nxt += HEY_LEN_OUT;
@@ -260,7 +260,7 @@ fn old_ack_num_does_not_regress_snd_una() -> TraceableResult {
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Stale ack_num=SERVER_ISN+1 must not move SND.UNA backward from SERVER_ISN+6"
+        "stale ack_num=SERVER_ISN+1 must not move SND.UNA backward from SERVER_ISN+6"
     );
 
     Ok(())
@@ -299,7 +299,7 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
-        "Standard reply to the first data packet"
+        "standard reply to the first data packet"
     );
 
     // Second packet: "Hi" (seq=CLIENT_ISN+6) -> rcv_nxt advances to CLIENT_ISN+8, snd_nxt advances
@@ -312,7 +312,7 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
             payload: TcpPayload::from_test_str("Hi")?,
             ..SERVER_REPLY
         }),
-        "Standard reply to the second data packet"
+        "standard reply to the second data packet"
     );
 
     // Retransmit of "Hello": seq=CLIENT_ISN+1, but rcv_nxt is now CLIENT_ISN+8
@@ -323,7 +323,7 @@ fn duplicate_data_pkt_gets_duplicate_ack_without_echo() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN + HI_LEN_IN,
             ..SERVER_REPLY
         }),
-        "Duplicate ACK should ack rcv_nxt=CLIENT_ISN+8 with no payload, not echo \
+        "duplicate ACK should ack rcv_nxt=CLIENT_ISN+8 with no payload, not echo \
          seq+len=CLIENT_ISN+6"
     );
 
@@ -361,7 +361,7 @@ fn stale_pure_ack_gets_duplicate_ack_without_updating_state() -> TraceableResult
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "The connection should be untouched, its window not adopted"
+        "the connection should be untouched, its window not adopted"
     );
 
     Ok(())
@@ -396,7 +396,7 @@ fn ack_for_unsent_data_is_dropped_and_gets_current_state_reply() -> TraceableRes
         })
     );
 
-    assert_eq!(connections.try_get()?, &initial_state, "State must be untouched");
+    assert_eq!(connections.try_get()?, &initial_state, "state must be untouched");
 
     Ok(())
 }
@@ -439,7 +439,7 @@ fn wraparound_ack_for_unsent_data_is_still_rejected() -> TraceableResult {
         })
     );
 
-    assert_eq!(connections.try_get()?, &initial_state, "State must be untouched");
+    assert_eq!(connections.try_get()?, &initial_state, "state must be untouched");
 
     Ok(())
 }
@@ -492,13 +492,13 @@ fn out_of_order_data_is_buffered_and_gets_duplicate_ack() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Out-of-order data should get a duplicate ACK at the current RCV.NXT, not an echo"
+        "out-of-order data should get a duplicate ACK at the current RCV.NXT, not an echo"
     );
 
     assert_eq!(
         connections.try_get()?.test_reassembly_len()?,
         1,
-        "The out-of-order segment should be buffered rather than discarded"
+        "the out-of-order segment should be buffered rather than discarded"
     );
 
     Ok(())
@@ -535,13 +535,13 @@ fn buffered_out_of_order_data_is_echoed_once_gap_closes() -> TraceableResult {
             payload: TcpPayload::from_test_str("HelloHi")?,
             ..SERVER_REPLY
         }),
-        "Both segments should be echoed together once the gap closes"
+        "both segments should be echoed together once the gap closes"
     );
 
     assert_eq!(
         connections.try_get()?.test_reassembly_len()?,
         0,
-        "The reassembly buffer should be empty after draining"
+        "the reassembly buffer should be empty after draining"
     );
 
     Ok(())
@@ -579,13 +579,13 @@ fn out_of_order_reassembly_respects_app_logic() -> TraceableResult {
             payload: TcpPayload::from_test_str("HELLO")?,
             ..SERVER_REPLY
         }),
-        "Both segments should be capitalized together once the gap closes"
+        "both segments should be capitalized together once the gap closes"
     );
 
     assert_eq!(
         connections.try_get()?.test_reassembly_len()?,
         0,
-        "The reassembly buffer should be empty after draining"
+        "the reassembly buffer should be empty after draining"
     );
 
     Ok(())
@@ -653,7 +653,7 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "The last in-window offset should still get a duplicate ACK, not a challenge ACK"
+        "the last in-window offset should still get a duplicate ACK, not a challenge ACK"
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
@@ -665,7 +665,7 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
                     hi.seq_num,
                     hi.payload
                         .clone()
-                        .ok_or("Expected \"Hi\" segment to carry a payload")?,
+                        .ok_or("expected \"Hi\" segment to carry a payload")?,
                 )],
                 None,
             ),
@@ -675,7 +675,7 @@ fn seq_at_last_acceptable_offset_is_still_buffered() -> TraceableResult {
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "The last in-window offset should still be buffered for reassembly, updating window state \
+        "the last in-window offset should still be buffered for reassembly, updating window state \
          the same as any other out-of-order segment"
     );
 
@@ -706,13 +706,13 @@ fn seq_at_first_unacceptable_offset_is_rejected() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "The first out-of-window offset should get a challenge ACK"
+        "the first out-of-window offset should get a challenge ACK"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "The first out-of-window offset must not be buffered or otherwise alter connection state"
+        "the first out-of-window offset must not be buffered or otherwise alter connection state"
     );
 
     Ok(())

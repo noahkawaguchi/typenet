@@ -1,6 +1,6 @@
 #![cfg_attr(
     all(not(test), feature = "test-utils"),
-    expect(clippy::wildcard_imports, reason = "Test-only utilities")
+    expect(clippy::wildcard_imports, reason = "test-only utilities")
 )]
 
 #[cfg(feature = "test-utils")]
@@ -16,7 +16,7 @@ pub mod ipv4_packet;
 pub mod checksum;
 
 #[cfg(not(feature = "bench-internals"))]
-#[expect(unreachable_pub, reason = "Only exported with the `bench-internals` feature")]
+#[expect(unreachable_pub, reason = "only exported with the `bench-internals` feature")]
 mod checksum;
 
 mod endpoint;

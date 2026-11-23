@@ -1,6 +1,6 @@
 #[cfg_attr(
     not(feature = "test-utils"),
-    expect(unreachable_pub, reason = "Only exported with the `test-utils` feature")
+    expect(unreachable_pub, reason = "only exported with the `test-utils` feature")
 )]
 pub use connections::TcpConnections;
 pub use connections::TcpListenPorts;

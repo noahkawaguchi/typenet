@@ -197,7 +197,7 @@ mod tests {
         }
 
         #[test]
-        #[expect(clippy::nonminimal_bool, reason = "Keep linear and circular comparisons parallel")]
+        #[expect(clippy::nonminimal_bool, reason = "keep linear and circular comparisons parallel")]
         fn circular_comparison_agrees_with_linear_comparison_over_half_the_space() {
             for [prim_left, prim_right] in [[0, 1], [42, 1 << 31], [0xBEEF_CAFE, 0xCAFE_BEEF]] {
                 let [seq_left, seq_right] =
@@ -211,7 +211,7 @@ mod tests {
         }
 
         #[test]
-        #[expect(clippy::nonminimal_bool, reason = "Keep linear and circular comparisons parallel")]
+        #[expect(clippy::nonminimal_bool, reason = "keep linear and circular comparisons parallel")]
         fn circular_comparison_differs_from_linear_comparison_over_half_the_space() {
             for [prim_left, prim_right] in
                 [[u32::MAX, 0], [(1 << 31) + 42, 1], [0xBAAD_D00D, 0xD00D]]
@@ -242,17 +242,17 @@ mod tests {
 
             assert!(
                 NUM.precedes(FARTHEST_GREATER) && !FARTHEST_GREATER.precedes(NUM),
-                "The first defined comparison one below the antipode"
+                "the first defined comparison one below the antipode"
             );
 
             assert!(
                 FARTHEST_LESS.precedes(NUM) && !NUM.precedes(FARTHEST_LESS),
-                "The first defined comparison one above the antipode"
+                "the first defined comparison one above the antipode"
             );
 
             assert!(
                 NUM.precedes(ANTIPODE) && ANTIPODE.precedes(NUM),
-                "The undefined outcome where a number and its antipode are both strictly less \
+                "the undefined outcome where a number and its antipode are both strictly less \
                  than the other depends on the implementation and should result in true here"
             );
         }

@@ -43,7 +43,7 @@ fn valid_syn_producing_a_reply_is_sent() -> TraceableResult {
     )?;
 
     // Only asserting on length instead of content here because of the randomly generated ISN
-    assert_eq!(device.write_history().len(), 1, "The SYN should get a SYN-ACK reply written");
+    assert_eq!(device.write_history().len(), 1, "the SYN should get a SYN-ACK reply written");
 
     Ok(())
 }
@@ -74,7 +74,7 @@ fn valid_ack_completing_handshake_produces_no_reply() -> TraceableResult {
 
     assert!(
         device.write_history().is_empty(),
-        "The handshake-completing ACK should not produce a reply"
+        "the handshake-completing ACK should not produce a reply"
     );
 
     Ok(())

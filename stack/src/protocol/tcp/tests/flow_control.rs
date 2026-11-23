@@ -36,7 +36,7 @@ fn small_window_truncates_echoed_payload_and_buffers_the_rest() -> TraceableResu
             payload: TcpPayload::from_test_str("Hel")?,
             ..SERVER_REPLY
         }),
-        "Only the first 3 bytes fit in the advertised window of 3"
+        "only the first 3 bytes fit in the advertised window of 3"
     );
 
     expected_state.data.snd_nxt += WINDOW.into();
@@ -82,10 +82,10 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
 
     {
         let state = connections.try_get()?;
-        assert_eq!(state, &expected_state, "State confirmation before the dup ACK");
+        assert_eq!(state, &expected_state, "state confirmation before the dup ACK");
         assert!(
             state.data.snd_una.precedes(state.data.snd_nxt),
-            "Bytes must be sent but unacked for this test to be meaningful"
+            "bytes must be sent but unacked for this test to be meaningful"
         );
     }
 
@@ -102,7 +102,7 @@ fn unacked_bytes_count_toward_room_left_in_send_window() -> TraceableResult {
     assert_eq!(
         dup_ack_same_window.create_test_reply(&mut connections)?,
         None,
-        "No room left in the window while the first 3 bytes remain unacked"
+        "no room left in the window while the first 3 bytes remain unacked"
     );
 
     expected_state.tcp_state = TcpState::Established(SyncedState::test_new(
@@ -149,7 +149,7 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
     expected_state.data.rcv_nxt += HELLO_LEN_IN;
     expected_state.test_send_buf_mut()?.extend(b"lo");
 
-    assert_eq!(connections.try_get()?, &expected_state, "State confirmation before window update");
+    assert_eq!(connections.try_get()?, &expected_state, "state confirmation before window update");
 
     // Client acks the 3 sent bytes and advertises a bigger window -> should drain "lo"
     let window_update = TcpSegment {
@@ -169,7 +169,7 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
             payload: TcpPayload::from_test_str("lo")?,
             ..SERVER_REPLY
         }),
-        "The buffered remainder should drain once the window opens, piggybacked on the next ACK"
+        "the buffered remainder should drain once the window opens, piggybacked on the next ACK"
     );
 
     expected_state.data.snd_una += HEL_LEN;
@@ -182,7 +182,7 @@ fn window_opening_via_ack_drains_buffered_remainder() -> TraceableResult {
     assert_eq!(
         connections.try_get()?,
         &expected_state,
-        "All bytes should have fully drained from the buffer"
+        "all bytes should have fully drained from the buffer"
     );
 
     Ok(())
@@ -221,7 +221,7 @@ fn zero_window_buffers_entire_payload_and_gets_bare_ack() -> TraceableResult {
     assert_eq!(
         connections.try_get()?,
         &expected_state,
-        "Since nothing was sent, SND.NXT shouldn't advance, and the whole payload should be \
+        "since nothing was sent, SND.NXT shouldn't advance, and the whole payload should be \
          buffered"
     );
 
@@ -266,7 +266,7 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
     expected_state
         .test_send_buf_mut()?
         .extend(big_payload.as_bytes());
-    assert_eq!(connections.try_get()?, &expected_state, "State confirmation before window opens");
+    assert_eq!(connections.try_get()?, &expected_state, "state confirmation before window opens");
 
     // Client reopens the window wide enough to take everything at once
     let window_update = TcpSegment {
@@ -284,7 +284,7 @@ fn buffered_payload_larger_than_one_segment_is_capped_when_window_opens() -> Tra
             payload: TcpPayload::from_test_str(&"a".repeat(MAX_PAYLOAD_LEN))?,
             ..SERVER_REPLY
         }),
-        "Only the first {MAX_PAYLOAD_LEN} bytes should fit in one segment"
+        "only the first {MAX_PAYLOAD_LEN} bytes should fit in one segment"
     );
 
     expected_state.data.snd_nxt += SeqOffset::<u32, Out>::new(u32::try_from(MAX_PAYLOAD_LEN)?);

@@ -18,7 +18,7 @@ fn due_retransmission_is_sent_as_real_io() -> TraceableResult {
         ONE_YEAR_GRACE_PERIOD,
     )?;
 
-    let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
+    let [write] = device.write_history() else { return Err("expected exactly one write".into()) };
 
     assert_eq!(TcpSegment::decode_test_pkt(write)?, TcpSegment::SERVER_SYN_ACK);
 
@@ -48,7 +48,7 @@ fn retransmission_does_not_drop_the_connection() -> TraceableResult {
 
     let [first, second] = device.write_history() else {
         return Err(
-            "The connection should survive the first retransmit and produce a second".into()
+            "the connection should survive the first retransmit and produce a second".into()
         );
     };
 
@@ -56,7 +56,7 @@ fn retransmission_does_not_drop_the_connection() -> TraceableResult {
         assert_eq!(
             TcpSegment::decode_test_pkt(write)?,
             TcpSegment::SERVER_SYN_ACK,
-            "Every retransmission should resend the same unacked SYN-ACK unchanged"
+            "every retransmission should resend the same unacked SYN-ACK unchanged"
         );
     }
 
@@ -87,14 +87,14 @@ fn gives_up_and_drops_connection_after_max_retries() -> TraceableResult {
     )?;
 
     let [first, second] = device.write_history() else {
-        return Err("Only 2 retransmissions should be written before giving up, not 3".into());
+        return Err("only 2 retransmissions should be written before giving up, not 3".into());
     };
 
     for write in [first, second] {
         assert_eq!(
             TcpSegment::decode_test_pkt(write)?,
             TcpSegment::SERVER_SYN_ACK,
-            "Every retransmission should resend the same unacked SYN-ACK unchanged"
+            "every retransmission should resend the same unacked SYN-ACK unchanged"
         );
     }
 

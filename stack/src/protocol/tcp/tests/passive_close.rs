@@ -26,7 +26,7 @@ fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> TraceableResu
             flags: TcpFlags::FinAck,
             ..SERVER_REPLY
         }),
-        "Handshake-completing FIN-ACK must establish the connection then get our own FIN-ACK"
+        "handshake-completing FIN-ACK must establish the connection then get our own FIN-ACK"
     );
 
     cloned_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
@@ -44,7 +44,7 @@ fn fin_ack_in_syn_received_establishes_and_closes_immediately() -> TraceableResu
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Connection should be established then immediately moved to LAST-ACK, not left in \
+        "connection should be established then immediately moved to LAST-ACK, not left in \
          SYN-RECEIVED or reset"
     );
 
@@ -125,7 +125,7 @@ fn fin_ack_acks_prior_data_and_advances_snd_una() -> TraceableResult {
             )
         },
         (1, Some("Hello".as_ref())),
-        "Intermediate `pending` should consist of the unacked \"Hello\" echo"
+        "intermediate `pending` should consist of the unacked \"Hello\" echo"
     );
 
     // Client's FIN-ACK arrives in order (seq=CLIENT_ISN+6) and acks the echoed "Hello"
@@ -168,7 +168,7 @@ fn fin_ack_acks_prior_data_and_advances_snd_una() -> TraceableResult {
                 .map(|seg| seg.peek_info().flags)
         ),
         (1, Some(TcpFlags::FinAck)),
-        "The fully acked \"Hello\" echo should be pruned from `pending`, leaving only the FIN-ACK"
+        "the fully acked \"Hello\" echo should be pruned from `pending`, leaving only the FIN-ACK"
     );
 
     Ok(())
@@ -200,7 +200,7 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> TraceableResult 
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Out-of-order FIN-ACK should get a duplicate ACK reflecting rcv_nxt=CLIENT_ISN+1, not a \
+        "out-of-order FIN-ACK should get a duplicate ACK reflecting rcv_nxt=CLIENT_ISN+1, not a \
          FIN-ACK in response"
     );
 
@@ -216,7 +216,7 @@ fn out_of_order_fin_ack_gets_duplicate_ack_without_closing() -> TraceableResult 
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Connection must remain established, out-of-order FIN-ACK must not start closing, but its \
+        "connection must remain established, out-of-order FIN-ACK must not start closing, but its \
          FIN position should now be remembered"
     );
 
@@ -249,7 +249,7 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Out-of-order FIN-ACK should get a duplicate ACK, not start closing yet"
+        "out-of-order FIN-ACK should get a duplicate ACK, not start closing yet"
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
@@ -266,7 +266,7 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
                     fin_ack_with_data
                         .payload
                         .clone()
-                        .ok_or("Expected fin_ack_with_data to carry a payload")?,
+                        .ok_or("expected fin_ack_with_data to carry a payload")?,
                 )],
                 Some(fin_ack_with_data.seq_num + HI_LEN_IN),
             ),
@@ -276,7 +276,7 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Connection must remain ESTABLISHED, with the FIN-ACK's data buffered and its FIN \
+        "connection must remain ESTABLISHED, with the FIN-ACK's data buffered and its FIN \
          position remembered"
     );
 
@@ -297,7 +297,7 @@ fn out_of_order_fin_ack_with_data_completes_close_once_gap_closes() -> Traceable
             payload: TcpPayload::from_test_str("HelloHi")?,
             ..SERVER_REPLY
         }),
-        "Filling the gap should reveal the peer's previously buffered FIN, echoing both segments' \
+        "filling the gap should reveal the peer's previously buffered FIN, echoing both segments' \
          data together and replying with our FIN"
     );
 
@@ -360,7 +360,7 @@ fn final_ack_after_fin_ack_removes_connection_and_returns_none() -> TraceableRes
         None
     );
 
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed after final ACK");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed after final ACK");
 
     Ok(())
 }
@@ -391,7 +391,7 @@ fn fin_ack_with_data_in_established_echoes_data_and_starts_closing() -> Traceabl
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
-        "Data should be echoed and piggybacked on the FIN-ACK, with the ACK covering both the \
+        "data should be echoed and piggybacked on the FIN-ACK, with the ACK covering both the \
          data and the FIN"
     );
 
@@ -454,7 +454,7 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
             payload: TcpPayload::from_test_str("Hel")?,
             ..SERVER_REPLY
         }),
-        "Only the first 3 out of 5 bytes fit in the advertised window of 3, so our own FIN must \
+        "only the first 3 out of 5 bytes fit in the advertised window of 3, so our own FIN must \
          not be sent yet "
     );
 
@@ -472,7 +472,7 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
     assert_eq!(
         connections.try_get()?,
         &expected_state,
-        "The untransmittable remainder \"lo\" should be queued in the send buffer, with the \
+        "the untransmittable remainder \"lo\" should be queued in the send buffer, with the \
          connection held in CLOSE-WAIT"
     );
 
@@ -493,7 +493,7 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
             payload: TcpPayload::from_test_str("lo")?,
             ..SERVER_REPLY
         }),
-        "Once the buffer fully drains, our FIN should finally go out, piggybacked on the last \
+        "once the buffer fully drains, our FIN should finally go out, piggybacked on the last \
          chunk"
     );
 
@@ -508,7 +508,7 @@ fn fin_ack_with_data_in_established_defers_fin_until_remainder_drains() -> Trace
     assert_eq!(
         connections.try_get()?,
         &expected_state,
-        "The connection should now be fully drained and in LAST-ACK, awaiting the final ACK"
+        "the connection should now be fully drained and in LAST-ACK, awaiting the final ACK"
     );
 
     Ok(())
@@ -568,7 +568,7 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
             payload: TcpPayload::from_test_str(&capped_payload)?,
             ..SERVER_REPLY
         }),
-        "Filling the gap reveals more data than fits in one segment, but only {MAX_PAYLOAD_LEN} \
+        "filling the gap reveals more data than fits in one segment, but only {MAX_PAYLOAD_LEN} \
          bytes should go out, and our own FIN must not be sent yet"
     );
 
@@ -586,7 +586,7 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
     assert_eq!(
         connections.try_get()?,
         &expected_state,
-        "The 150-byte remainder must stay queued rather than being lost, with the connection held \
+        "the 150-byte remainder must stay queued rather than being lost, with the connection held \
          in CLOSE-WAIT"
     );
 
@@ -607,7 +607,7 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
             payload: TcpPayload::from_test_str(&leftover)?,
             ..SERVER_REPLY
         }),
-        "Once fully drained, the leftover 150 bytes should go out with our FIN finally attached"
+        "once fully drained, the leftover 150 bytes should go out with our FIN finally attached"
     );
 
     expected_state.tcp_state = TcpState::LastAck(SyncedState::test_new(
@@ -622,7 +622,7 @@ fn reassembled_backlog_larger_than_one_segment_defers_fin_until_drained() -> Tra
     assert_eq!(
         connections.try_get()?,
         &expected_state,
-        "The connection should now be fully drained and in LAST-ACK, awaiting the final ACK"
+        "the connection should now be fully drained and in LAST-ACK, awaiting the final ACK"
     );
 
     Ok(())

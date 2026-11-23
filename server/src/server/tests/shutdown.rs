@@ -32,10 +32,10 @@ fn poll_timeout_reflects_shutdown_deadline_across_a_real_run() -> TraceableResul
     assert_eq!(
         observed_timeouts.into_inner().as_slice(),
         [None, Some(Duration::ZERO)],
-        "No timeout before the interrupt, then a zero timeout once draining begins"
+        "no timeout before the interrupt, then a zero timeout once draining begins"
     );
 
-    let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
+    let [write] = device.write_history() else { return Err("expected exactly one write".into()) };
 
     assert_eq!(TcpSegment::decode_test_pkt(write)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
 
@@ -71,7 +71,7 @@ fn stops_watching_the_shutdown_fd_once_draining_begins() -> TraceableResult {
     assert_eq!(
         observed_watch_shutdown.into_inner(),
         [true, false],
-        "Should watch the shutdown fd before reacting to it, then stop once draining locally"
+        "should watch the shutdown fd before reacting to it, then stop once draining locally"
     );
 
     Ok(())
@@ -102,11 +102,11 @@ fn exits_once_connections_finish_closing() -> TraceableResult {
         ONE_YEAR_GRACE_PERIOD,
     )?;
 
-    assert_eq!(poll_calls.get(), 2, "Both poll calls should have been needed to exit");
+    assert_eq!(poll_calls.get(), 2, "both poll calls should have been needed to exit");
 
     let [fin_ack, final_ack] = device.write_history() else {
         return Err(
-            "The initial FIN-ACK and the final ACK completing the close should be written".into()
+            "the initial FIN-ACK and the final ACK completing the close should be written".into()
         );
     };
 

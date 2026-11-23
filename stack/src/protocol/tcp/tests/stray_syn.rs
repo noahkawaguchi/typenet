@@ -23,13 +23,13 @@ fn stray_syn_out_of_window_gets_challenge_ack() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Out-of-window stray SYN must produce a challenge ACK, not a RST"
+        "out-of-window stray SYN must produce a challenge ACK, not a RST"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "Out-of-window stray SYN must not destroy the connection"
+        "out-of-window stray SYN must not destroy the connection"
     );
 
     Ok(())
@@ -57,13 +57,13 @@ fn stray_syn_in_window_gets_challenge_ack() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "In-window stray SYN must produce a challenge ACK, not a RST"
+        "in-window stray SYN must produce a challenge ACK, not a RST"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "In-window stray SYN must not destroy the connection"
+        "in-window stray SYN must not destroy the connection"
     );
 
     Ok(())
@@ -92,13 +92,13 @@ fn stray_syn_in_fin_wait_1_gets_challenge_ack() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Stray SYN in FIN-WAIT-1 must produce a challenge ACK using snd_nxt=SERVER_ISN+2"
+        "stray SYN in FIN-WAIT-1 must produce a challenge ACK using snd_nxt=SERVER_ISN+2"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "Stray SYN in FIN-WAIT-1 must not destroy the connection"
+        "stray SYN in FIN-WAIT-1 must not destroy the connection"
     );
 
     Ok(())
@@ -131,13 +131,13 @@ fn stray_syn_ack_gets_challenge_ack() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Stray SYN-ACK must produce a challenge ACK, not a RST"
+        "stray SYN-ACK must produce a challenge ACK, not a RST"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "Stray SYN-ACK must not destroy the connection"
+        "stray SYN-ACK must not destroy the connection"
     );
 
     Ok(())

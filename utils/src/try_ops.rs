@@ -25,7 +25,7 @@ macro_rules! impl_try_add_self {
             impl TryAdd<Self> for $t {
                 fn try_add(self, rhs: Self) -> TraceableResult<Self> {
                     self.checked_add(rhs).ok_or_else(|| {
-                        format!("Overflowed `{}` adding {self} and {rhs}", stringify!($t)).into()
+                        format!("overflowed `{}` adding {self} and {rhs}", stringify!($t)).into()
                     })
                 }
             }
@@ -38,7 +38,7 @@ impl_try_add_self!(usize, u16);
 impl TryAdd<Duration> for Instant {
     fn try_add(self, rhs: Duration) -> TraceableResult<Self> {
         self.checked_add(rhs)
-            .ok_or_else(|| format!("Overflowed `Instant` adding {} seconds", rhs.as_secs()).into())
+            .ok_or_else(|| format!("overflowed `Instant` adding {} seconds", rhs.as_secs()).into())
     }
 }
 
@@ -61,7 +61,7 @@ impl<T> TryGet for [T] {
         let n = self.len();
 
         self.get(index.clone()).ok_or_else(|| {
-            format!("Index {index:?} out of range on `[{}]` of length {n}", type_name::<T>()).into()
+            format!("index {index:?} out of range on `[{}]` of length {n}", type_name::<T>()).into()
         })
     }
 }
@@ -85,7 +85,7 @@ impl<T> TryGetMut for [T] {
         let n = self.len();
 
         self.get_mut(index.clone()).ok_or_else(|| {
-            format!("Index {index:?} out of range on `[{}]` of length {n}", type_name::<T>()).into()
+            format!("index {index:?} out of range on `[{}]` of length {n}", type_name::<T>()).into()
         })
     }
 }
@@ -112,7 +112,7 @@ mod tests {
 
         let an_hour_from_now = now
             .checked_add(an_hour)
-            .ok_or("Regular checked_add overflowed")?;
+            .ok_or("regular checked_add overflowed")?;
 
         assert_eq!(now.try_add(an_hour), Ok(an_hour_from_now));
 

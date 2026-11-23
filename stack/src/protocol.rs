@@ -86,7 +86,7 @@ impl TryFrom<u8> for Protocol {
             ICMP => Ok(Self::Icmp),
             TCP => Ok(Self::Tcp),
             UDP => Ok(Self::Udp),
-            other => Err(format!("Unsupported protocol {other}").into()),
+            other => Err(format!("unsupported protocol {other}").into()),
         }
     }
 }

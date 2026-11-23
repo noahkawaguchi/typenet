@@ -45,7 +45,7 @@ impl FromStr for LogLevel {
             "3" => Ok(Self::PktDetails),
             "4" => Ok(Self::PktFull),
             other => {
-                Err(format!("Log level must be a digit between 0 and 4 inclusive, got {other}")
+                Err(format!("log level must be a digit between 0 and 4 inclusive, got {other}")
                     .into())
             }
         }
@@ -89,7 +89,7 @@ impl Drop for Logger {
     /// Flushes any buffered output to stdout. If the flush fails, reports it to stderr.
     fn drop(&mut self) {
         if let Err(e) = self.flush() {
-            eprintln!("Failed to flush logger output for worker {}: {e}", self.worker_id);
+            eprintln!("failed to flush logger output for worker {}: {e}", self.worker_id);
         }
     }
 }
@@ -199,7 +199,7 @@ impl Logger {
             LogLevel::Silent | LogLevel::ServerInfo => {}
             LogLevel::PktQuiet => self.buf.push('↓'),
             LogLevel::PktDetails | LogLevel::PktFull => {
-                writeln!(self.buf, "[w{} {}] Packet received", self.worker_id, self.time_calc)?;
+                writeln!(self.buf, "[w{} {}] packet received", self.worker_id, self.time_calc)?;
             }
         }
 
@@ -214,7 +214,7 @@ impl Logger {
             LogLevel::PktQuiet => self.buf.push('↑'),
             LogLevel::PktDetails | LogLevel::PktFull => writeln!(
                 self.buf,
-                "[w{} {}] Packet sent{}",
+                "[w{} {}] packet sent{}",
                 self.worker_id,
                 self.time_calc,
                 if retransmission { " (retransmission)" } else { "" }

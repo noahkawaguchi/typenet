@@ -45,7 +45,7 @@ impl Read for MockDevice {
         let data = self
             .reads
             .pop_front()
-            .ok_or_else(|| io::Error::other("Ran out of scripted reads"))??;
+            .ok_or_else(|| io::Error::other("ran out of scripted reads"))??;
 
         buf.try_get_mut(..data.len())
             .map_err(|e| io::Error::other(e.to_string()))?
@@ -86,6 +86,6 @@ impl MockPoll {
             .try_borrow_mut()
             .map_err(io::Error::other)?
             .pop_front()
-            .unwrap_or_else(|| Err(io::Error::other("Poll script exhausted")))
+            .unwrap_or_else(|| Err(io::Error::other("poll script exhausted")))
     }
 }

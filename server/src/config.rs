@@ -49,7 +49,7 @@ impl Config {
             worker_count: sys::parse_env("TYPENET_WORKERS")?
                 .or_else(|| thread::available_parallelism().ok())
                 .ok_or(
-                    "Failed to estimate available parallelism. Set the TYPENET_WORKERS \
+                    "failed to estimate available parallelism. Set the TYPENET_WORKERS \
                      environment variable to specify the number of worker threads manually.",
                 )?,
 

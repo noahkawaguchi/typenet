@@ -1,5 +1,5 @@
 #[cfg(not(unix))]
-compile_error!("This crate only supports Unix-like systems because it reads from `/dev/urandom`");
+compile_error!("this crate only supports Unix-like systems because it reads from `/dev/urandom`");
 
 pub mod comptime;
 pub mod error;
