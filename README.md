@@ -230,7 +230,6 @@ The following environment variables can be used to configure the TUN device and 
 | TYPENET_INIT_RTO_MILLIS | Initial retransmission timeout before exponential backoff | 1000\*\*    |
 | TYPENET_MAX_RETRANSMITS | Number of retransmissions before giving up                | 15          |
 | TYPENET_TCP_PORTS       | Comma-separated ports to accept new TCP connections on    | All ports   |
-| TYPENET_TARGET_PORT     | Server port that the `justfile` client recipes connect to | 8080        |
 | TYPENET_GRACE_SECS      | Wait time before shutdown when draining connections       | 60\*\*\*    |
 | TYPENET_LOG_LEVEL       | Level of output for logging (see table below)             | 4           |
 
@@ -272,6 +271,8 @@ TYPENET_APP=shout just serve
 ```
 
 ## Connecting as a Client
+
+_Optional_: Use the `TYPENET_TARGET_PORT` environment variable to specify the server port to connect to. Defaults to 8080 if not set.
 
 ### Interactive Use
 

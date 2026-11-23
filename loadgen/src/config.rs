@@ -3,7 +3,7 @@ use {
         net::IpAddr,
         num::{NonZeroU16, NonZeroUsize},
     },
-    typenet_utils::{error::TraceableResult, sys},
+    typenet_utils::{comptime, error::TraceableResult, sys},
 };
 
 pub(crate) struct Config {
@@ -36,13 +36,13 @@ impl Config {
 
             // Any port works unless the server is configured to only listen on specific ones
             target_port: sys::parse_env("TYPENET_LG_PORT")?
-                .unwrap_or(const { NonZeroU16::new(8080).expect("8080 != 0") }),
+                .unwrap_or(const { comptime::nonzero_u16::<8080>() }),
 
             connection_count: sys::parse_env("TYPENET_LG_CONNECTIONS")?
-                .unwrap_or(const { NonZeroUsize::new(50).expect("50 != 0") }),
+                .unwrap_or(const { comptime::nonzero_usize::<50>() }),
 
             payload_size: sys::parse_env("TYPENET_LG_PAYLOAD_BYTES")?
-                .unwrap_or(const { NonZeroUsize::new(65536).expect("65536 != 0") }),
+                .unwrap_or(const { comptime::nonzero_usize::<65536>() }),
         })
     }
 }

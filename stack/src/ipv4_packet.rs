@@ -1,11 +1,10 @@
 use {
     crate::{
         ETHERNET_MTU,
-        addr_pairs::Ipv4AddrPair,
         application::Application,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol},
-        ipv4_header::Ipv4Header,
+        ipv4_header::{Ipv4AddrPair, Ipv4Header},
         protocol::{
             Encode, Protocol,
             icmp_echo::IcmpEchoMsg,
@@ -52,15 +51,17 @@ impl<'a> Ipv4Packet<'a, In> {
         tcp_connections: &mut TcpConnections,
     ) -> TraceableResult<Option<Ipv4Packet<'a, Out>>> {
         match &self.router {
-            // ICMP Echo Request/Reply always echoes, so there's no app to pass
+            // ICMP Echo Request/Reply always echoes, so there's no app to pass, and it's neither
+            // optional nor fallible
             ProtocolRouter::Icmp(msg) => Some(ProtocolRouter::Icmp(msg.create_reply())),
 
-            // TCP is the only one that's actually optional or fallible
+            // TCP replies are both optional and fallible
             ProtocolRouter::Tcp(seg) => seg
                 .create_reply(app, tcp_connections)?
                 .map(ProtocolRouter::Tcp),
 
-            ProtocolRouter::Udp(dgram) => Some(ProtocolRouter::Udp(dgram.create_reply(app))),
+            // UDP replies are optional because the sender may not expect one
+            ProtocolRouter::Udp(dgram) => dgram.create_reply(app).map(ProtocolRouter::Udp),
         }
         .map(|router| {
             Ok(Ipv4Packet {

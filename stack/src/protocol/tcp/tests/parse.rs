@@ -17,7 +17,8 @@ fn correct_for_valid_segment() -> TraceableResult {
 
     let seg = TcpSegment::parse(&DATA, IP_PAIR_IN)?;
 
-    assert_eq!(seg.ports, PortPair::new(1234, 80));
+    assert_eq!(seg.src_port, Port::comptime_new::<1234>());
+    assert_eq!(seg.dst_port, Port::comptime_new::<80>());
     assert_eq!(seg.seq_num, SeqPoint::new(1));
     assert_eq!(seg.ack_num, SeqPoint::new(2));
     assert_eq!(seg.offset_bytes, 20);
@@ -79,4 +80,44 @@ fn handles_large_sequence_numbers() -> TraceableResult {
     assert_eq!(seg.ack_num, SeqPoint::new(0xFEDC_BA98));
 
     Ok(())
+}
+
+#[test]
+fn fails_for_zero_source_port() {
+    #[rustfmt::skip]
+        const DATA: [u8; 20] = [
+            0x00, 0x00,                          // Source port: 0 (reserved, never valid)
+            0x00, 0x50,                          // Dest port: 80
+            0xFF, 0xFF, 0xFF, 0xFF,              // Sequence number: `u32::MAX`
+            0xFE, 0xDC, 0xBA, 0x98,              // Ack number: 4_275_878_552
+            0x50, 0x10,                          // Data offset: 5, Flags: ACK
+            0xFF, 0xFF,                          // Window size
+            0xE2, 0x0C,                          // Checksum (valid for this segment and IP pair)
+            0x00, 0x00,                          // Urgent pointer
+        ];
+
+    assert_matches!(
+        TcpSegment::parse(&DATA, IP_PAIR_IN),
+        Err(e) if e.to_string().contains("source port")
+    );
+}
+
+#[test]
+fn fails_for_zero_destination_port() {
+    #[rustfmt::skip]
+        const DATA: [u8; 20] = [
+            0x04, 0xD2,                          // Source port: 1234
+            0x00, 0x00,                          // Dest port: 0 (reserved, never valid)
+            0xFF, 0xFF, 0xFF, 0xFF,              // Sequence number: `u32::MAX`
+            0xFE, 0xDC, 0xBA, 0x98,              // Ack number: 4_275_878_552
+            0x50, 0x10,                          // Data offset: 5, Flags: ACK
+            0xFF, 0xFF,                          // Window size
+            0xDD, 0x8A,                          // Checksum (valid for this segment and IP pair)
+            0x00, 0x00,                          // Urgent pointer
+        ];
+
+    assert_matches!(
+        TcpSegment::parse(&DATA, IP_PAIR_IN),
+        Err(e) if e.to_string().contains("destination port")
+    );
 }

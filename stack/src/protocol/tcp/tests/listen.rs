@@ -2,8 +2,8 @@ use {super::*, pretty_assertions::assert_eq};
 
 #[test]
 fn syn_to_listening_port_gets_syn_ack() -> TraceableResult {
-    let mut connections =
-        TcpConnections::default().with_listen_ports(TcpListenPorts::Ports(HashSet::from([80])));
+    let mut connections = TcpConnections::default()
+        .with_listen_ports(TcpListenPorts::Ports(HashSet::from([Port::comptime_new::<80>()])));
 
     let reply = TcpSegment::CLIENT_SYN.create_test_reply(&mut connections)?;
 
@@ -26,7 +26,10 @@ fn syn_to_listening_port_gets_syn_ack() -> TraceableResult {
 #[test]
 fn syn_to_closed_port_refused_with_rst_ack() -> TraceableResult {
     for (listen_ports, description) in [
-        (TcpListenPorts::Ports(HashSet::from([8080])), "listening on other ports only"),
+        (
+            TcpListenPorts::Ports(HashSet::from([Port::comptime_new::<8080>()])),
+            "listening on other ports only",
+        ),
         (TcpListenPorts::Ports(HashSet::new()), "not listening on any port"),
     ] {
         let mut connections = TcpConnections::default().with_listen_ports(listen_ports);
@@ -111,7 +114,7 @@ fn ack_to_closed_port_gets_plain_rst() -> TraceableResult {
 fn new_connections_refused_after_close_call() -> TraceableResult {
     /// A client port other than the default used for test constants, so the SYN below requests a
     /// new connection instead of landing on the connection already stored in the draining case.
-    const OTHER_CLIENT_PORT: u16 = 4321;
+    const OTHER_CLIENT_PORT: Port<Remote> = Port::comptime_new::<4321>();
 
     for (mut connections, expected_len, description) in [
         (TcpConnections::default(), 0, "no connections to close"),
@@ -119,16 +122,13 @@ fn new_connections_refused_after_close_call() -> TraceableResult {
     ] {
         connections.close_all();
 
-        let reply = TcpSegment {
-            ports: PortPair::new(OTHER_CLIENT_PORT, KEY.server_port),
-            ..TcpSegment::CLIENT_SYN
-        }
-        .create_test_reply(&mut connections)?;
+        let reply = TcpSegment { src_port: OTHER_CLIENT_PORT, ..TcpSegment::CLIENT_SYN }
+            .create_test_reply(&mut connections)?;
 
         assert_eq!(
             reply,
             Some(TcpSegment {
-                ports: PortPair::new(KEY.server_port, OTHER_CLIENT_PORT),
+                dst_port: OTHER_CLIENT_PORT,
                 seq_num: SeqPoint::new(0),
                 ack_num: SeqPoint::new(0) + SYN_BYTE_IN,
                 flags: TcpFlags::RstAck,

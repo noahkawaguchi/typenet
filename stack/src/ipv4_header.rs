@@ -1,12 +1,11 @@
 use {
     crate::{
-        ETHERNET_MTU,
-        addr_pairs::Ipv4AddrPair,
-        checksum,
+        ETHERNET_MTU, checksum,
         direction::{Direction, In, Out},
+        endpoint::Addr,
         protocol::Protocol,
     },
-    std::{fmt, net::Ipv4Addr},
+    std::{fmt, marker::PhantomData},
     typenet_utils::{
         error::{TraceableResult, ensure},
         try_ops::TryAdd as _,
@@ -18,6 +17,31 @@ const IPV4_HDR_MIN_LEN_U8: u8 = 20;
 
 /// The minimum number of bytes in an IPv4 header (no options) as a `usize`.
 const IPV4_HDR_MIN_LEN_USIZE: usize = IPV4_HDR_MIN_LEN_U8 as usize;
+
+/// A pair of source and destination IPv4 addresses for traffic flowing in direction `D`.
+#[derive(Clone, Copy)]
+#[cfg_attr(any(test, feature = "test-utils"), derive(Debug, PartialEq, Eq))]
+pub(crate) struct Ipv4AddrPair<D: Direction> {
+    pub src: Addr<D::Src>,
+    pub dst: Addr<D::Dst>,
+    phantom: PhantomData<D>,
+}
+
+impl<D: Direction> Ipv4AddrPair<D> {
+    pub(crate) const fn new(src: Addr<D::Src>, dst: Addr<D::Dst>) -> Self {
+        Self { src, dst, phantom: PhantomData }
+    }
+
+    pub(crate) const fn swapped(self) -> Ipv4AddrPair<D::Rev> {
+        Ipv4AddrPair { src: self.dst, dst: self.src, phantom: PhantomData }
+    }
+}
+
+impl<D: Direction> fmt::Display for Ipv4AddrPair<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} -> {}", self.src, self.dst)
+    }
+}
 
 /// Manages IPv4 header fields for a packet flowing in direction `D`.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
@@ -81,8 +105,8 @@ impl<D: Direction> Ipv4Header<D> {
                 total_len: u16::from_be_bytes([ip_hdr[2], ip_hdr[3]]),
                 protocol: ip_hdr[9].try_into()?,
                 ip_pair: Ipv4AddrPair::new(
-                    Ipv4Addr::new(ip_hdr[12], ip_hdr[13], ip_hdr[14], ip_hdr[15]),
-                    Ipv4Addr::new(ip_hdr[16], ip_hdr[17], ip_hdr[18], ip_hdr[19]),
+                    Addr::new(ip_hdr[12], ip_hdr[13], ip_hdr[14], ip_hdr[15]),
+                    Addr::new(ip_hdr[16], ip_hdr[17], ip_hdr[18], ip_hdr[19]),
                 ),
             },
             data.get(ihl_bytes..)
@@ -205,8 +229,8 @@ mod tests {
 
         assert_eq!(hdr.total_len, 60);
         assert_eq!(hdr.protocol, Protocol::Tcp);
-        assert_eq!(hdr.ip_pair.src, Ipv4Addr::new(192, 168, 1, 100));
-        assert_eq!(hdr.ip_pair.dst, Ipv4Addr::new(172, 16, 10, 12));
+        assert_eq!(hdr.ip_pair.src, Addr::new(192, 168, 1, 100));
+        assert_eq!(hdr.ip_pair.dst, Addr::new(172, 16, 10, 12));
         assert_eq!(payload, &DATA[20..]);
 
         Ok(())

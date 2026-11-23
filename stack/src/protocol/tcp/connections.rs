@@ -2,8 +2,8 @@
 use typenet_utils::error::TraceableResult;
 use {
     crate::{
-        addr_pairs::{Ipv4AddrPair, PortPair},
         direction::Out,
+        endpoint::{Addr, Local, Port, Remote},
         protocol::tcp::{
             FIN_BYTE_OUT, TcpSegment,
             flags::TcpFlags,
@@ -14,7 +14,6 @@ use {
     },
     std::{
         collections::{HashMap, HashSet},
-        net::Ipv4Addr,
         str::FromStr,
         time::{Duration, Instant},
     },
@@ -55,13 +54,16 @@ impl Default for RtoConfig {
 /// passive OPEN).
 #[derive(Default, Clone)]
 #[cfg_attr(any(test, feature = "test-utils"), derive(Debug, PartialEq, Eq))]
+#[expect(private_interfaces, reason = "not created directly outside the crate, only parsed")]
 pub enum TcpListenPorts {
     /// Accept new connections on every port.
     #[default]
     All,
 
     /// Accept new connections only on these ports. Empty means no new connections are accepted.
-    Ports(HashSet<u16>),
+    /// Port 0 is excluded, since it is reserved (RFC 6335, Section 6) and can never be the
+    /// destination of a valid segment.
+    Ports(HashSet<Port<Local>>),
 }
 
 impl FromStr for TcpListenPorts {
@@ -72,7 +74,7 @@ impl FromStr for TcpListenPorts {
     ///
     /// # Errors
     ///
-    /// Returns `Err` if the list is empty or any entry is not a valid port.
+    /// Returns `Err` if the list is empty or any entry is not a valid nonzero port.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.split(',')
             .map(|raw| raw.trim().parse())
@@ -85,10 +87,10 @@ impl FromStr for TcpListenPorts {
 /// Key identifying a TCP connection.
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub(super) struct ConnKey {
-    pub(super) client_ip: Ipv4Addr,
-    pub(super) client_port: u16,
-    pub(super) server_ip: Ipv4Addr,
-    pub(super) server_port: u16,
+    pub(super) client_ip: Addr<Remote>,
+    pub(super) client_port: Port<Remote>,
+    pub(super) server_ip: Addr<Local>,
+    pub(super) server_port: Port<Local>,
 }
 
 /// Tracks per-connection state keyed by the 4-tuple.
@@ -142,7 +144,7 @@ impl TcpConnections {
     pub(crate) fn len(&self) -> usize { self.table.len() }
 
     /// Returns whether new connections are accepted on the local port `port`.
-    pub(super) fn is_listening(&self, port: u16) -> bool {
+    pub(super) fn is_listening(&self, port: Port<Local>) -> bool {
         match &self.listen_ports {
             TcpListenPorts::All => true,
             TcpListenPorts::Ports(ports) => ports.contains(&port),
@@ -211,13 +213,8 @@ impl TcpConnections {
             }
 
             retransmissions.extend(conn.data.pending.iter_mut().filter_map(|seg| {
-                (seg.time_due(&self.rto_config) <= now).then(|| {
-                    TcpSegment::from_pairs_and_info(
-                        Ipv4AddrPair::new(key.server_ip, key.client_ip),
-                        PortPair::new(key.server_port, key.client_port),
-                        seg.retransmit_info(now),
-                    )
-                })
+                (seg.time_due(&self.rto_config) <= now)
+                    .then(|| TcpSegment::from_key_and_info(key, seg.retransmit_info(now)))
             }));
         }
 
@@ -260,11 +257,7 @@ impl TcpConnections {
                             .push(PendingSegment::new(send_info.clone(), now));
 
                         (
-                            Some(TcpSegment::from_pairs_and_info(
-                                Ipv4AddrPair::new(key.server_ip, key.client_ip),
-                                PortPair::new(key.server_port, key.client_port),
-                                send_info,
-                            )),
+                            Some(TcpSegment::from_key_and_info(key, send_info)),
                             TcpState::FinWait1(established.close()),
                         )
                     }
@@ -371,12 +364,14 @@ mod tests {
 
     #[test]
     fn port_list_parses_with_whitespace_and_duplicates_tolerated() {
+        fn port<const PRIMITIVE: u16>() -> Port<Local> { Port::comptime_new::<PRIMITIVE>() }
+
         for (input, expected) in [
-            ("80", HashSet::from([80])),
-            ("80,443", HashSet::from([80, 443])),
-            (" 80 , 443 ", HashSet::from([80, 443])),
-            ("0,65535", HashSet::from([0, 65535])),
-            ("80,80,80,80", HashSet::from([80])),
+            ("80", HashSet::from([port::<80>()])),
+            ("80,443", HashSet::from([port::<80>(), port::<443>()])),
+            (" 80 , 443 ", HashSet::from([port::<80>(), port::<443>()])),
+            ("1,65535", HashSet::from([port::<1>(), port::<65535>()])),
+            ("80,80,80,80", HashSet::from([port::<80>()])),
         ] {
             assert_eq!(input.parse(), Ok(TcpListenPorts::Ports(expected)), "{input:?}");
         }
@@ -385,6 +380,13 @@ mod tests {
     #[test]
     fn port_list_rejected_when_empty_or_invalid() {
         for input in ["", " ", "abc", "70000", "-1", "80,", ",80", "80,,443", "80 443"] {
+            assert_matches!(input.parse::<TcpListenPorts>(), Err(_), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn port_list_rejected_when_any_port_is_zero() {
+        for input in ["0", "80,0", "0,65535"] {
             assert_matches!(input.parse::<TcpListenPorts>(), Err(_), "{input:?}");
         }
     }

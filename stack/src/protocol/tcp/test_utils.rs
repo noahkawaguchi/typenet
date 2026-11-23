@@ -4,10 +4,7 @@ use {
         ETHERNET_MTU,
         ipv4_header::Ipv4Header,
         protocol::{
-            tcp::{
-                connections::ConnKey,
-                state::{ConnData, ConnState, Established, SyncedState, TcpState, WindowState},
-            },
+            tcp::state::{ConnData, ConnState, Established, SyncedState, TcpState, WindowState},
             test_consts::IP_PAIR_IN,
         },
     },
@@ -22,9 +19,9 @@ pub(super) const SERVER_ISN: SeqPoint<Out> = SeqPoint::new(400);
 /// Connection key shared by test modules.
 pub(super) const KEY: ConnKey = ConnKey {
     client_ip: IP_PAIR_IN.src,
-    client_port: 1234,
+    client_port: Port::comptime_new::<1234>(),
     server_ip: IP_PAIR_IN.dst,
-    server_port: 80,
+    server_port: Port::comptime_new::<80>(),
 };
 
 /// The window state after the initial three-way handshake.
@@ -54,7 +51,8 @@ pub(super) const AFTER_HANDSHAKE: ConnState = ConnState {
 /// `seq_num` and `ack_num` will be 0 if not overridden.
 pub(super) const CLIENT_PKT: TcpSegment<In> = TcpSegment {
     ip_pair: Ipv4AddrPair::new(KEY.client_ip, KEY.server_ip),
-    ports: PortPair::new(KEY.client_port, KEY.server_port),
+    src_port: KEY.client_port,
+    dst_port: KEY.server_port,
     seq_num: SeqPoint::new(0),
     ack_num: SeqPoint::new(0),
     offset_bytes: 20,
@@ -67,7 +65,8 @@ pub(super) const CLIENT_PKT: TcpSegment<In> = TcpSegment {
 /// `seq_num` and `ack_num` will be 0 if not overridden.
 pub(super) const SERVER_REPLY: TcpSegment<Out> = TcpSegment {
     ip_pair: Ipv4AddrPair::new(KEY.server_ip, KEY.client_ip),
-    ports: PortPair::new(KEY.server_port, KEY.client_port),
+    src_port: KEY.server_port,
+    dst_port: KEY.client_port,
     seq_num: SeqPoint::new(0),
     ack_num: SeqPoint::new(0),
     offset_bytes: 20,

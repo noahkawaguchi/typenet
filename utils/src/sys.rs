@@ -77,6 +77,7 @@ pub fn should_return_0<T: From<u8> + PartialEq + Copy>(ret: T) -> io::Result<()>
 mod tests {
     use {
         super::*,
+        crate::comptime,
         pretty_assertions::{assert_eq, assert_matches, assert_ne},
         std::{ffi::OsStr, os::unix::ffi::OsStrExt as _},
     };
@@ -98,7 +99,7 @@ mod tests {
 
     #[test]
     fn produces_different_bytes_across_calls() -> TraceableResult {
-        const SIZE: NonZeroUsize = NonZeroUsize::new(65536).expect("65536 != 0");
+        const SIZE: NonZeroUsize = comptime::nonzero_usize::<65536>();
         assert_ne!(random_bytes(SIZE)?, random_bytes(SIZE)?);
         Ok(())
     }

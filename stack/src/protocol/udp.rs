@@ -1,9 +1,10 @@
 use {
     crate::{
-        addr_pairs::{Ipv4AddrPair, PortPair},
         application::Application,
         direction::{Direction, In, Out},
         display::{PrettyPayload, PrettyProtocol},
+        endpoint::Port,
+        ipv4_header::Ipv4AddrPair,
         protocol::{Encode, Protocol, pseudo_hdr_cksum},
     },
     std::{borrow::Cow, fmt},
@@ -22,7 +23,17 @@ pub(crate) struct UdpDatagram<'a, D: Direction> {
     /// Not a part of the UDP header, but required for checksum calculation.
     ip_pair: Ipv4AddrPair<D>,
 
-    ports: PortPair<D>,
+    /// "Source Port is an optional field, when meaningful, it indicates the port of the sending
+    /// process, and may be assumed to be the port to which a reply should be addressed in the
+    /// absence of any other information. If not used, a value of zero is inserted" (RFC 768).
+    ///
+    /// `None` when not used.
+    src_port: Option<Port<D::Src>>,
+
+    /// The destination port, which is required and must be nonzero, since port 0 is reserved (RFC
+    /// 6335, Section 6).
+    dst_port: Port<D::Dst>,
+
     payload: Cow<'a, [u8]>,
 }
 
@@ -43,31 +54,32 @@ impl<'a> UdpDatagram<'a, In> {
 
         Ok(Self {
             ip_pair,
-            ports: PortPair::new(
-                u16::from_be_bytes([udp_hdr[0], udp_hdr[1]]),
-                u16::from_be_bytes([udp_hdr[2], udp_hdr[3]]),
-            ),
+            src_port: Port::new(u16::from_be_bytes([udp_hdr[0], udp_hdr[1]])),
+            dst_port: Port::new(u16::from_be_bytes([udp_hdr[2], udp_hdr[3]]))
+                .ok_or("invalid UDP destination port 0")?,
             payload: Cow::Borrowed(payload),
         })
     }
 
-    /// Creates a UDP header and payload for replying to `self` according to `app`.
-    pub(crate) fn create_reply(&self, app: &mut impl Application) -> UdpDatagram<'a, Out> {
-        UdpDatagram::<Out> {
+    /// Creates a UDP header and payload for replying to `self` according to `app`, or returns
+    /// `None` if the sender expects no reply.
+    pub(crate) fn create_reply(&self, app: &mut impl Application) -> Option<UdpDatagram<'a, Out>> {
+        self.src_port.map(|reply_dst| UdpDatagram {
             ip_pair: self.ip_pair.swapped(),
-            ports: self.ports.swapped(),
+            src_port: Some(self.dst_port),
+            dst_port: reply_dst,
             payload: app.handle_udp(self.payload.clone()),
-        }
+        })
     }
 }
 
 impl Encode<Out> for UdpDatagram<'_, Out> {
     fn write_into(&self, buf: &mut [u8]) -> TraceableResult {
-        // Source and destination ports
+        // Source and destination ports, with an unused source port written as zero
         buf.try_get_mut(..2)?
-            .copy_from_slice(&self.ports.src.to_be_bytes());
+            .copy_from_slice(&self.src_port.map_or_default(Port::to_be_bytes));
         buf.try_get_mut(2..4)?
-            .copy_from_slice(&self.ports.dst.to_be_bytes());
+            .copy_from_slice(&self.dst_port.to_be_bytes());
 
         let udp_len = self.proto_len()?;
         buf.try_get_mut(4..6)?
@@ -110,7 +122,17 @@ impl<D: Direction> PrettyProtocol for UdpDatagram<'_, D> {
 }
 
 impl<D: Direction> fmt::Display for UdpDatagram<'_, D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "UDP | {}", self.ports) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("UDP | ")?;
+
+        if let Some(src) = self.src_port {
+            fmt::Display::fmt(&src, f)
+        } else {
+            f.write_str("none")
+        }?;
+
+        write!(f, " -> {}", self.dst_port)
+    }
 }
 
 #[cfg(test)]
@@ -139,7 +161,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.ports, PortPair::new(1234, 53));
+        assert_eq!(dgram.src_port, Some(Port::comptime_new::<1234>()));
+        assert_eq!(dgram.dst_port, Port::comptime_new::<53>());
         assert_eq!(dgram.payload.as_ref(), b"Hello!!!");
 
         Ok(())
@@ -174,6 +197,22 @@ mod tests {
     }
 
     #[test]
+    fn parsing_fails_on_zero_destination_port() {
+        #[rustfmt::skip]
+        const DATA: [u8; 8] = [
+            0x04, 0xD2,              // Source port: 1234
+            0x00, 0x00,              // Dest port: 0 (reserved, never a valid destination)
+            0x00, 0x08,              // Length: 8 (header only, no payload)
+            0x00, 0x00,              // Checksum: all zeros means sender didn't compute one
+        ];
+
+        assert_matches!(
+            UdpDatagram::parse(&DATA, IP_PAIR_IN),
+            Err(e) if e.to_string().contains("destination port")
+        );
+    }
+
+    #[test]
     fn parsing_accepts_zero_checksum_as_not_computed() -> TraceableResult {
         #[rustfmt::skip]
         const DATA: [u8; 16] = [
@@ -187,7 +226,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.ports, PortPair::new(1234, 53));
+        assert_eq!(dgram.src_port, Some(Port::comptime_new::<1234>()));
+        assert_eq!(dgram.dst_port, Port::comptime_new::<53>());
         assert_eq!(dgram.payload.as_ref(), b"Hello!!!");
 
         Ok(())
@@ -205,7 +245,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.ports, PortPair::new(8080, 80));
+        assert_eq!(dgram.src_port, Some(Port::comptime_new::<8080>()));
+        assert_eq!(dgram.dst_port, Port::comptime_new::<80>());
         assert_eq!(dgram.payload.len(), 0);
 
         Ok(())
@@ -224,7 +265,8 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&DATA, IP_PAIR_IN)?;
 
-        assert_eq!(dgram.ports, PortPair::new(65535, 1));
+        assert_eq!(dgram.src_port, Some(Port::comptime_new::<65535>()));
+        assert_eq!(dgram.dst_port, Port::comptime_new::<1>());
 
         Ok(())
     }
@@ -237,7 +279,8 @@ mod tests {
 
         const DGRAM: UdpDatagram<Out> = UdpDatagram {
             ip_pair: IP_PAIR_OUT,
-            ports: PortPair::new(1234, 80),
+            src_port: Some(Port::comptime_new::<1234>()),
+            dst_port: Port::comptime_new::<80>(),
             payload: Cow::Borrowed(&[0xE6, 0xB5]),
         };
 
@@ -262,7 +305,7 @@ mod tests {
 
         let dgram = UdpDatagram::parse(&REQUEST, IP_PAIR_IN)?;
         let mut reply_buf = [0u8; ETHERNET_MTU];
-        let reply = dgram.create_reply(&mut TestApp);
+        let reply = dgram.create_reply(&mut TestApp).ok_or("expected a reply")?;
         reply.write_into(&mut reply_buf[20..])?;
 
         // IPs should be swapped
@@ -286,6 +329,26 @@ mod tests {
     }
 
     #[test]
+    fn no_reply_if_no_source_port() -> TraceableResult {
+        // A source port of zero means the sender expects no reply (RFC 768)
+
+        #[rustfmt::skip]
+        const REQUEST: [u8; 16] = [
+            0x00, 0x00,              // Source port: 0 (not used)
+            0x00, 0x35,              // Dest port: 53
+            0x00, 0x10,              // Length: 16
+            0x00, 0x00,              // Checksum: all zeros means sender didn't compute one
+            0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x21, 0x21, 0x21,  // Payload: "Hello!!!"
+        ];
+
+        let dgram = UdpDatagram::parse(&REQUEST, IP_PAIR_IN)?;
+
+        assert_eq!(dgram.create_reply(&mut TestApp), None);
+
+        Ok(())
+    }
+
+    #[test]
     fn reply_payload_is_what_the_application_returns_not_just_echo() -> TraceableResult {
         #[rustfmt::skip]
         const REQUEST: [u8; 16] = [
@@ -297,7 +360,9 @@ mod tests {
         ];
 
         let dgram = UdpDatagram::parse(&REQUEST, IP_PAIR_IN)?;
-        let reply = dgram.create_reply(&mut ShoutingTestApp);
+        let reply = dgram
+            .create_reply(&mut ShoutingTestApp)
+            .ok_or("expected a reply")?;
 
         assert_eq!(reply.payload.as_ref(), b"HELLO!!!");
 
