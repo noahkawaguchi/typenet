@@ -178,7 +178,7 @@ impl SendInfo {
 
     /// Common fallback cases among known connections, returning a reply if necessary and the next
     /// TCP state, or `None` if the connection should be removed.
-    #[expect(clippy::match_same_arms, reason = "Clearly express various challenge ACK scenarios")]
+    #[expect(clippy::match_same_arms, reason = "clearly express various challenge ACK scenarios")]
     fn known_conn_common_fallback(
         seg: &TcpSegment<In>,
         conn: &ConnData,

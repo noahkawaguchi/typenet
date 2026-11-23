@@ -18,7 +18,7 @@ fn first_interrupt_with_established_connection_sends_fin_ack_and_continues() -> 
         IMMEDIATE_GRACE_PERIOD,
     )?;
 
-    let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
+    let [write] = device.write_history() else { return Err("expected exactly one write".into()) };
 
     assert_eq!(TcpSegment::decode_test_pkt(write)?, TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE);
 
@@ -54,17 +54,17 @@ fn second_interrupt_while_draining_does_not_resend_or_exit() -> TraceableResult 
             ONE_YEAR_GRACE_PERIOD,
         ),
         Err(e) if e.to_string().contains(MESSAGE),
-        "The third, unrelated poll error should propagate, proving the loop didn't exit earlier"
+        "the third, unrelated poll error should propagate, proving the loop didn't exit earlier"
     );
 
-    assert_eq!(poll_calls.get(), 3, "All three poll calls should have been needed");
+    assert_eq!(poll_calls.get(), 3, "all three poll calls should have been needed");
 
-    let [write] = device.write_history() else { return Err("Expected exactly one write".into()) };
+    let [write] = device.write_history() else { return Err("expected exactly one write".into()) };
 
     assert_eq!(
         TcpSegment::decode_test_pkt(write)?,
         TcpSegment::SERVER_FIN_ACK_INITIATING_CLOSE,
-        "Should be the original FIN-ACK, not a resend of a different segment"
+        "should be the original FIN-ACK, not a resend of a different segment"
     );
 
     Ok(())
@@ -91,12 +91,12 @@ fn interrupt_with_no_established_connections_exits_immediately() -> TraceableRes
             IMMEDIATE_GRACE_PERIOD,
         ),
         Ok(()),
-        "Server should exit before hitting the error that would be propagated"
+        "server should exit before hitting the error that would be propagated"
     );
 
     assert!(
         device.write_history().is_empty(),
-        "No connections to close, nothing should be written"
+        "no connections to close, nothing should be written"
     );
 
     Ok(())
@@ -130,8 +130,8 @@ fn interrupt_unrelated_to_shutdown_is_ignored() -> TraceableResult {
         IMMEDIATE_GRACE_PERIOD,
     )?;
 
-    assert_eq!(poll_calls.get(), 2, "The first interrupt should not have ended the loop early");
-    assert!(device.write_history().is_empty(), "Nothing should have been written");
+    assert_eq!(poll_calls.get(), 2, "the first interrupt should not have ended the loop early");
+    assert!(device.write_history().is_empty(), "nothing should have been written");
 
     Ok(())
 }
@@ -154,7 +154,7 @@ fn read_interrupt_reaches_the_same_shutdown_handling_as_poll_interrupt() -> Trac
 
     assert!(
         device.write_history().is_empty(),
-        "No connections to close, nothing should be written"
+        "no connections to close, nothing should be written"
     );
 
     Ok(())

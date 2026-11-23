@@ -50,7 +50,7 @@ impl TryFrom<u8> for TcpFlags {
             RST_ACK => Ok(Self::RstAck),
 
             other => Err(format!(
-                "Invalid TCP flag combination: ACK={} RST={} SYN={} FIN={}",
+                "invalid TCP flag combination: ACK={} RST={} SYN={} FIN={}",
                 other & Self::ACK_BIT != 0,
                 other & Self::RST_BIT != 0,
                 other & Self::SYN_BIT != 0,
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn errors_on_invalid_combinations() {
-        assert_matches!(TcpFlags::try_from(0b_0000_0000), Err(_), "No flags");
+        assert_matches!(TcpFlags::try_from(0b_0000_0000), Err(_), "no flags");
         assert_matches!(TcpFlags::try_from(0b_0000_0001), Err(_), "FIN alone");
         assert_matches!(TcpFlags::try_from(0b_0000_0011), Err(_), "SYN + FIN");
     }

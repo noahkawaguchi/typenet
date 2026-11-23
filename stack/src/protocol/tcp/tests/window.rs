@@ -17,7 +17,7 @@ fn new_ack_adopts_window_from_segment() -> TraceableResult {
     assert_ne!(
         cloned_state.test_get_snd_wnd(),
         Some(NEW_WND),
-        "The initial send window must differ from the updated one for the test to be meaningful"
+        "the initial send window must differ from the updated one for the test to be meaningful"
     );
 
     // "Hello" data, ack=SERVER_ISN+1 == current SND.UNA, so not yet a "new" ack -> SND.NXT advances
@@ -33,7 +33,7 @@ fn new_ack_adopts_window_from_segment() -> TraceableResult {
     cloned_state.data.snd_nxt += HELLO_LEN_OUT;
     cloned_state.data.rcv_nxt += HELLO_LEN_IN;
 
-    assert_eq!(connections.try_get()?, &cloned_state, "State confirmation before window update");
+    assert_eq!(connections.try_get()?, &cloned_state, "state confirmation before window update");
 
     // Pure ACK of that echo, ack=SERVER_ISN+6 (now "new"), advertising a new window
     let window_update = TcpSegment {
@@ -89,7 +89,7 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Out-of-order data should still get a duplicate ACK reflecting RCV.NXT unchanged"
+        "out-of-order data should still get a duplicate ACK reflecting RCV.NXT unchanged"
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
@@ -102,7 +102,7 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
                     out_of_order
                         .payload
                         .clone()
-                        .ok_or("Expected segment to carry a payload")?,
+                        .ok_or("expected segment to carry a payload")?,
                 )],
                 None,
             ),
@@ -112,7 +112,7 @@ fn stale_segment_does_not_clobber_send_window() -> TraceableResult {
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "The out-of-order segment should still update the window despite its data being buffered"
+        "the out-of-order segment should still update the window despite its data being buffered"
     );
 
     // Lands inside the still-open gap (seq=CLIENT_ISN+6): in-window relative to
@@ -203,7 +203,7 @@ fn same_seq_but_fresher_ack_updates_window() -> TraceableResult {
         Established::test_empty(),
     ));
 
-    assert_eq!(connections.try_get()?, &cloned_state, "First window update should be adopted");
+    assert_eq!(connections.try_get()?, &cloned_state, "first window update should be adopted");
 
     // Second pure ACK with identical seq_num (no new data sent), but a strictly higher ack_num and
     // a different window
@@ -251,7 +251,7 @@ fn duplicate_ack_updates_window() -> TraceableResult {
     assert_ne!(
         cloned_state.test_get_snd_wnd(),
         Some(NEW_WND),
-        "The initial send window must differ from the updated one for the test to be meaningful"
+        "the initial send window must differ from the updated one for the test to be meaningful"
     );
 
     // "Hello" data, ack=SERVER_ISN+1 == current SND.UNA (not a "new" ACK) -> RCV.NXT advances to
@@ -267,7 +267,7 @@ fn duplicate_ack_updates_window() -> TraceableResult {
     cloned_state.data.snd_nxt += HELLO_LEN_OUT;
     cloned_state.data.rcv_nxt += HELLO_LEN_IN;
 
-    assert_eq!(connections.try_get()?, &cloned_state, "State confirmation before window update");
+    assert_eq!(connections.try_get()?, &cloned_state, "state confirmation before window update");
 
     // Duplicate ACK where ack_num=SERVER_ISN+1 still equals SND.UNA (nothing new acknowledged), but
     // seq_num=CLIENT_ISN+6 is fresher than the stored SND.WL1=CLIENT_ISN+1, so this must still

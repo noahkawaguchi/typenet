@@ -43,13 +43,13 @@ fn duplicate_syn_during_syn_received_resends_same_syn_ack() -> TraceableResult {
             flags: TcpFlags::SynAck,
             ..SERVER_REPLY
         }),
-        "Retransmitted SYN should get the same SYN-ACK resent, not a RST"
+        "retransmitted SYN should get the same SYN-ACK resent, not a RST"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "State should remain SYN-RECEIVED, not reset or advance"
+        "state should remain SYN-RECEIVED, not reset or advance"
     );
 
     Ok(())
@@ -106,7 +106,7 @@ fn handshake_ack_with_data_establishes_and_echoes() -> TraceableResult {
             payload: TcpPayload::from_test_str("Hello")?,
             ..SERVER_REPLY
         }),
-        "Handshake-completing ACK with data should establish the connection and echo the data"
+        "handshake-completing ACK with data should establish the connection and echo the data"
     );
 
     let window_state = WindowState::test_new(
@@ -150,7 +150,7 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Reply should still reflect RCV.NXT unchanged, since nothing was delivered"
+        "reply should still reflect RCV.NXT unchanged, since nothing was delivered"
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
@@ -162,7 +162,7 @@ fn handshake_ack_with_out_of_order_seq_and_no_data_still_completes_handshake() -
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "In-window, out-of-order SEG.SEQ with an acceptable ACK field should still complete the \
+        "in-window, out-of-order SEG.SEQ with an acceptable ACK field should still complete the \
          handshake"
     );
 
@@ -189,10 +189,10 @@ fn acceptable_seq_but_unacceptable_ack_in_syn_rcv_gets_rst() -> TraceableResult 
         assert_eq!(
             reply,
             Some(TcpSegment { seq_num: SERVER_ISN, flags: TcpFlags::Rst, ..SERVER_REPLY }),
-            "Acceptable SEG.SEQ with unacceptable SEG.ACK should get RST, not current state ACK"
+            "acceptable SEG.SEQ with unacceptable SEG.ACK should get RST, not current state ACK"
         );
 
-        assert_eq!(connections.try_get()?, &initial_state, "Connection must remain SYN-RECEIVED");
+        assert_eq!(connections.try_get()?, &initial_state, "connection must remain SYN-RECEIVED");
     }
 
     Ok(())
@@ -223,7 +223,7 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Reply should still reflect RCV.NXT unchanged, since the FIN can't be processed yet"
+        "reply should still reflect RCV.NXT unchanged, since the FIN can't be processed yet"
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
@@ -235,7 +235,7 @@ fn out_of_order_fin_ack_in_syn_rcv_still_completes_handshake_and_records_fin() -
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Handshake should complete despite the out-of-order SEG.SEQ, but then stay in \
+        "handshake should complete despite the out-of-order SEG.SEQ, but then stay in \
          ESTABLISHED, with the FIN's position remembered for once the gap closes"
     );
 
@@ -267,7 +267,7 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Reply should still reflect RCV.NXT unchanged since there is a hole in the data"
+        "reply should still reflect RCV.NXT unchanged since there is a hole in the data"
     );
 
     cloned_state.tcp_state = TcpState::Established(SyncedState::test_new(
@@ -280,7 +280,7 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
                     out_of_order
                         .payload
                         .clone()
-                        .ok_or("Expected segment to carry a payload")?,
+                        .ok_or("expected segment to carry a payload")?,
                 )],
                 None,
             ),
@@ -291,7 +291,7 @@ fn out_of_order_handshake_ack_with_data_still_completes_handshake_and_buffers_da
     assert_eq!(
         connections.try_get()?,
         &cloned_state,
-        "Handshake should complete despite the out-of-order SEG.SEQ, with the data buffered for \
+        "handshake should complete despite the out-of-order SEG.SEQ, with the data buffered for \
          later reassembly"
     );
 
@@ -322,7 +322,7 @@ fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Traceabl
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "Out-of-order handshake-completing ACK should get a duplicate ACK, not an echo, since \
+        "out-of-order handshake-completing ACK should get a duplicate ACK, not an echo, since \
          \"Hi\" can't be delivered yet"
     );
 
@@ -342,7 +342,7 @@ fn out_of_order_handshake_completing_ack_is_echoed_once_gap_closes() -> Traceabl
             payload: TcpPayload::from_test_str("HelloHi")?,
             ..SERVER_REPLY
         }),
-        "Both segments should be echoed together once the gap closes"
+        "both segments should be echoed together once the gap closes"
     );
 
     Ok(())

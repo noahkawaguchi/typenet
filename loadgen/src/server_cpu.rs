@@ -19,7 +19,7 @@ impl ServerCpuMeter {
     pub(crate) fn start() -> Option<Self> {
         find_server_pid()
             .and_then(|pid| cpu_time(pid).map(|start| Self { pid, start }))
-            .inspect_err(|e| eprintln!("Not measuring server CPU time: {e}"))
+            .inspect_err(|e| eprintln!("not measuring server CPU time: {e}"))
             .ok()
     }
 
@@ -28,9 +28,9 @@ impl ServerCpuMeter {
         cpu_time(self.pid)
             .and_then(|end| {
                 end.checked_sub(self.start)
-                    .ok_or_else(|| "Server CPU time decreased (did the server restart?)".into())
+                    .ok_or_else(|| "server CPU time decreased (did the server restart?)".into())
             })
-            .inspect_err(|e| eprintln!("Not measuring server CPU time: {e}"))
+            .inspect_err(|e| eprintln!("not measuring server CPU time: {e}"))
             .ok()
     }
 }
@@ -52,8 +52,8 @@ fn find_server_pid() -> TraceableResult<u32> {
 
     match (pids.next(), pids.next()) {
         (Some(pid), None) => Ok(pid),
-        (None, _) => Err(format!("No running {SERVER_COMM} process found").into()),
-        (Some(_), Some(_)) => Err(format!("Multiple running {SERVER_COMM} processes found").into()),
+        (None, _) => Err(format!("no running {SERVER_COMM} process found").into()),
+        (Some(_), Some(_)) => Err(format!("multiple running {SERVER_COMM} processes found").into()),
     }
 }
 
@@ -73,10 +73,10 @@ fn cpu_time(pid: u32) -> TraceableResult<Duration> {
                 fs::read_to_string(entry?.path().join("schedstat"))?
                     .split_ascii_whitespace()
                     .next()
-                    .ok_or("Empty schedstat file")?
+                    .ok_or("empty schedstat file")?
                     .parse::<u64>()
-                    .map_err(|e| format!("Failed to parse schedstat run time nanos: {e}"))?,
+                    .map_err(|e| format!("failed to parse schedstat run time nanos: {e}"))?,
             ))
-            .ok_or_else(|| "Server CPU time overflowed `Duration`".into())
+            .ok_or_else(|| "server CPU time overflowed `Duration`".into())
     })
 }

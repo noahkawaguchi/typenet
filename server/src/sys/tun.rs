@@ -81,10 +81,10 @@ pub fn attach(device_name: &str) -> TraceableResult<File> {
 ///   same type.
 /// - On platforms where C `char` is signed (e.g. `x86_64` Linux), values above 127 wrap to negative
 ///   numbers.
-#[expect(clippy::allow_attributes, reason = "No conditional compilation for C `char` signedness")]
+#[expect(clippy::allow_attributes, reason = "no conditional compilation for C `char` signedness")]
 #[allow(
     clippy::cast_possible_wrap,
-    reason = "Casting is the portable solution because `libc::c_char` may be `u8` or `i8`"
+    reason = "casting is the portable solution because `libc::c_char` may be `u8` or `i8`"
 )]
 const fn u8_to_c_char(b: u8) -> libc::c_char { b as libc::c_char }
 

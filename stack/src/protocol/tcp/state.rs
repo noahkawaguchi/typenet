@@ -103,7 +103,7 @@ impl PartialEq for ConnData {
 /// The SND.WND, SND.WL1, and SND.WL2 values of a connection.
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[cfg_attr(test, derive(Debug))]
-#[expect(clippy::struct_field_names, reason = "Match RFC terminology")]
+#[expect(clippy::struct_field_names, reason = "match RFC terminology")]
 pub(super) struct WindowState {
     /// SND.WND or send window. "This represents the sequence numbers that the remote (receiving)
     /// TCP endpoint is willing to receive" (RFC 9293, Section 4).
@@ -245,7 +245,7 @@ impl CloseWait {
 impl SynReceived {
     /// Enters ESTABLISHED, setting SND.WND, SND.WL1, and SND.WL2 (RFC 9293, Section 3.10.7.4,
     /// "Fifth, check the ACK field," "SYN-RECEIVED STATE").
-    #[expect(clippy::unused_self, reason = "Require an instance for state transition")]
+    #[expect(clippy::unused_self, reason = "require an instance for state transition")]
     pub(super) const fn establish(self, seg: &TcpSegment<In>) -> SyncedState<Established> {
         SyncedState {
             window_state: WindowState {
@@ -274,8 +274,8 @@ pub(super) struct SyncedState<T> {
 macro_rules! synced_state_transition_to_unit {
     ($from:ty => $fn_name:ident => $to:ident) => {
         impl SyncedState<$from> {
-            #[expect(clippy::allow_attributes, reason = "Only some macro expansions linted")]
-            #[allow(clippy::missing_const_for_fn, reason = "Some transitions deallocate")]
+            #[expect(clippy::allow_attributes, reason = "only some macro expansions linted")]
+            #[allow(clippy::missing_const_for_fn, reason = "some transitions deallocate")]
             pub(super) fn $fn_name(self) -> SyncedState<$to> {
                 SyncedState { window_state: self.window_state, inner: $to }
             }
@@ -324,7 +324,7 @@ impl<T> SyncedState<T> {
     ///
     /// Ignores ACKs that are old (before SND.UNA) or for data not yet sent (past SND.NXT). Ignores
     /// duplicate ACKs (SND.UNA == SEG.ACK) for updates to SND.UNA and the retransmission queue.
-    #[must_use = "Returns updated state as a new instance"]
+    #[must_use = "returns updated state as a new instance"]
     pub(super) fn incoming_ack_update(self, conn: &mut ConnData, seg: &TcpSegment<In>) -> Self {
         if conn.snd_una.precedes_or_eq(seg.ack_num) && seg.ack_num.precedes_or_eq(conn.snd_nxt) {
             // Exclude duplicate ACKs: SND.UNA < SEG.ACK <= SND.NXT
@@ -387,7 +387,7 @@ impl SendSideOpen for CloseWait {
     fn send_buf_mut(&mut self) -> &mut VecDeque<u8> { &mut self.send_buffer }
 }
 
-#[expect(private_bounds, reason = "Ensure only states allowed in this module can send data")]
+#[expect(private_bounds, reason = "ensure only states allowed in this module can send data")]
 impl<T: SendSideOpen> SyncedState<T> {
     /// Returns whether any bytes are queued to be sent.
     pub(super) fn has_unsent_data(&self) -> bool { !self.inner.send_buf().is_empty() }

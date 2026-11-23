@@ -92,7 +92,7 @@ mod tests {
     };
 
     fn test_payload(s: &str) -> TraceableResult<TcpPayload> {
-        TcpPayload::from_test_str(s)?.ok_or_else(|| "Test payload must not be empty".into())
+        TcpPayload::from_test_str(s)?.ok_or_else(|| "test payload must not be empty".into())
     }
 
     #[test]

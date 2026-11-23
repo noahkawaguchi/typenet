@@ -52,7 +52,7 @@ impl TcpPayload {
 
         u16::try_from(data.len())
             .map_err(|_| {
-                "Attempted to create a `TcpPayload` from an iterator longer than `u16::MAX`".into()
+                "attempted to create a `TcpPayload` from an iterator longer than `u16::MAX`".into()
             })
             .map(|maybe_zero_len| NonZeroU16::new(maybe_zero_len).map(|len| Self { data, len }))
     }

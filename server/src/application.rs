@@ -22,7 +22,7 @@ impl FromStr for ServerApp {
         match s.trim().to_lowercase().as_str() {
             "echo" => Ok(Self::Echo),
             "shout" => Ok(Self::Shout),
-            _ => Err(format!("Server app must be either `echo` or `shout`, got `{s}`").into()),
+            _ => Err(format!("server app must be either `echo` or `shout`, got `{s}`").into()),
         }
     }
 }
@@ -59,7 +59,7 @@ mod tests {
         // Check both `assert_eq` and `assert_matches` because borrowed and owned `Cow` are
         // considered equal for equal content
         assert_eq!(echo, PAYLOAD);
-        assert_matches!(echo, Cow::Borrowed(_), "Should not allocate for a trivial echo");
+        assert_matches!(echo, Cow::Borrowed(_), "should not allocate for a trivial echo");
     }
 
     #[test]
@@ -73,7 +73,7 @@ mod tests {
     fn shout_udp_capitalizes_and_allocates() {
         let shout = ServerApp::Shout.handle_udp(Cow::Borrowed(b"Hello!!!"));
         assert_eq!(shout, Vec::from(b"HELLO!!!"));
-        assert_matches!(shout, Cow::Owned(_), "Should allocate when transforming input");
+        assert_matches!(shout, Cow::Owned(_), "should allocate when transforming input");
     }
 
     #[test]

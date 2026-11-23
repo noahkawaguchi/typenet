@@ -46,7 +46,7 @@ fn simultaneous_close_transitions_through_closing_to_closed() -> TraceableResult
         None
     );
 
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed");
 
     Ok(())
 }

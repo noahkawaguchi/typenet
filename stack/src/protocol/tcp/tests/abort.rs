@@ -10,7 +10,7 @@ fn rst_in_established_at_rcv_nxt_cleans_up_connection_and_returns_none() -> Trac
 
     let mut connections = TcpConnections::default().after_handshake();
     assert_eq!(client_rst(CLIENT_ISN + SYN_BYTE_IN).create_test_reply(&mut connections)?, None);
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed after RST");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed after RST");
 
     Ok(())
 }
@@ -35,13 +35,13 @@ fn rst_in_established_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> T
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "In-window non-exact RST should get a challenge ACK, not a silent drop or reset"
+        "in-window non-exact RST should get a challenge ACK, not a silent drop or reset"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "Connection must not be torn down by a non-exact in-window RST"
+        "connection must not be torn down by a non-exact in-window RST"
     );
 
     Ok(())
@@ -61,13 +61,13 @@ fn rst_in_established_with_out_of_window_seq_is_silently_dropped() -> TraceableR
     assert_eq!(
         client_rst(CLIENT_ISN - SeqOffset::new(10)).create_test_reply(&mut connections)?,
         None,
-        "Out-of-window RST should be silently dropped"
+        "out-of-window RST should be silently dropped"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "Connection must not be torn down by an out-of-window RST"
+        "connection must not be torn down by an out-of-window RST"
     );
 
     Ok(())
@@ -78,7 +78,7 @@ fn rst_in_syn_received_at_rcv_nxt_cleans_up_connection_and_returns_none() -> Tra
     let mut connections = TcpConnections::default().with_syn_rcv();
 
     assert_eq!(client_rst(CLIENT_ISN + SYN_BYTE_IN).create_test_reply(&mut connections)?, None);
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed after RST");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed after RST");
 
     Ok(())
 }
@@ -97,13 +97,13 @@ fn rst_in_syn_received_with_out_of_window_seq_is_silently_dropped() -> Traceable
     assert_eq!(
         client_rst(CLIENT_ISN - SeqOffset::new(10)).create_test_reply(&mut connections)?,
         None,
-        "Out-of-window RST should be silently dropped"
+        "out-of-window RST should be silently dropped"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "Connection must not be torn down by an out-of-window RST"
+        "connection must not be torn down by an out-of-window RST"
     );
 
     Ok(())
@@ -130,13 +130,13 @@ fn rst_in_syn_received_within_window_but_not_at_rcv_nxt_gets_challenge_ack() -> 
             ack_num: CLIENT_ISN + SYN_BYTE_IN,
             ..SERVER_REPLY
         }),
-        "In-window non-exact RST should get a challenge ACK, not a silent drop or reset"
+        "in-window non-exact RST should get a challenge ACK, not a silent drop or reset"
     );
 
     assert_eq!(
         connections.try_get()?,
         &initial_state,
-        "Connection must not be torn down by a non-exact in-window RST"
+        "connection must not be torn down by a non-exact in-window RST"
     );
 
     Ok(())
@@ -149,10 +149,10 @@ fn rst_for_unknown_connection_is_silently_dropped() -> TraceableResult {
     assert_eq!(
         client_rst(CLIENT_ISN + SYN_BYTE_IN).create_test_reply(&mut connections)?,
         None,
-        "Unknown RST should be silently dropped"
+        "unknown RST should be silently dropped"
     );
 
-    assert_matches!(connections.try_get(), Err(_), "Connection should still not exist after RST");
+    assert_matches!(connections.try_get(), Err(_), "connection should still not exist after RST");
 
     Ok(())
 }

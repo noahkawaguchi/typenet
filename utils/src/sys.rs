@@ -50,14 +50,14 @@ where
         Err(env::VarError::NotPresent) => Ok(None),
 
         Err(env::VarError::NotUnicode(_)) => {
-            Err(format!("Environment variable {key} present but not valid Unicode").into())
+            Err(format!("environment variable {key} present but not valid Unicode").into())
         }
 
         Ok(val) => val
             .parse()
             .map_err(|e| {
                 format!(
-                    "Environment variable {key} present but could not be parsed as {}: {e}",
+                    "environment variable {key} present but could not be parsed as {}: {e}",
                     type_name::<T>()
                 )
                 .into()
@@ -84,7 +84,7 @@ mod tests {
 
     /// Sets the environment variable `key` to `val`. Each test should use a unique `key` to avoid
     /// interfering with other tests.
-    #[expect(unsafe_code, reason = "Setting environment variables to test `parse_env`")]
+    #[expect(unsafe_code, reason = "setting environment variables to test `parse_env`")]
     fn set_env(key: &str, val: impl AsRef<OsStr>) {
         // SAFETY: These test threads only access the environment through `std::env::var`, which
         // synchronizes reads and writes internally.

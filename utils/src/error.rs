@@ -46,7 +46,7 @@ impl fmt::Debug for TraceableError {
 
         match self.backtrace.status() {
             BacktraceStatus::Captured => {
-                writeln!(f, "Stack backtrace (trimmed):")?;
+                writeln!(f, "stack backtrace (trimmed):")?;
 
                 self.backtrace
                     .to_string()
@@ -57,12 +57,12 @@ impl fmt::Debug for TraceableError {
             }
 
             BacktraceStatus::Disabled => f.write_str(
-                "Set `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1` to display a backtrace",
+                "set `RUST_BACKTRACE=1` or `RUST_LIB_BACKTRACE=1` to display a backtrace",
             ),
 
             BacktraceStatus::Unsupported => f.write_str("(Backtrace unsupported)"),
 
-            _ => f.write_str("Unexpected backtrace status"),
+            _ => f.write_str("unexpected backtrace status"),
         }
     }
 }
@@ -131,8 +131,8 @@ impl fmt::Debug for TraceableErrorKind {
             Self::Static(s) => s.fmt(f),
             Self::Dynamic(s) => s.fmt(f),
             Self::Io(e) => write!(f, "I/O error: {e:?}"),
-            Self::TryFromInt(e) => write!(f, "Integer conversion error: {e:?}"),
-            Self::Fmt(e) => write!(f, "Formatting error: {e:?}"),
+            Self::TryFromInt(e) => write!(f, "integer conversion error: {e:?}"),
+            Self::Fmt(e) => write!(f, "formatting error: {e:?}"),
         }
     }
 }
@@ -143,8 +143,8 @@ impl fmt::Display for TraceableErrorKind {
             Self::Static(s) => s.fmt(f),
             Self::Dynamic(s) => s.fmt(f),
             Self::Io(e) => write!(f, "I/O error: {e}"),
-            Self::TryFromInt(e) => write!(f, "Integer conversion error: {e}"),
-            Self::Fmt(e) => write!(f, "Formatting error: {e}"),
+            Self::TryFromInt(e) => write!(f, "integer conversion error: {e}"),
+            Self::Fmt(e) => write!(f, "formatting error: {e}"),
         }
     }
 }

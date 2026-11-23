@@ -7,9 +7,9 @@ fn close_call_in_established_sends_fin_ack_and_transitions_to_fin_wait_1() -> Tr
     let mut cloned_state = connections.try_get()?.clone();
 
     let mut replies = connections.close_all();
-    let reply = replies.pop().ok_or("Expected one reply")?;
+    let reply = replies.pop().ok_or("expected one reply")?;
 
-    assert!(replies.is_empty(), "Expected exactly one reply");
+    assert!(replies.is_empty(), "expected exactly one reply");
     assert_eq!(
         reply,
         TcpSegment {
@@ -98,7 +98,7 @@ fn fin_wait_2_closes_on_fin_ack_from_peer() -> TraceableResult {
         })
     );
 
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed");
 
     Ok(())
 }
@@ -130,7 +130,7 @@ fn fin_wait_1_closes_immediately_if_peers_fin_also_acks_ours() -> TraceableResul
         })
     );
 
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed");
 
     Ok(())
 }
@@ -160,11 +160,11 @@ fn data_after_our_fin_in_fin_wait_1_is_acked_without_echo() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             ..SERVER_REPLY
         }),
-        "Data arriving after our FIN should be ACKed without being echoed, not RST"
+        "data arriving after our FIN should be ACKed without being echoed, not RST"
     );
 
     cloned_state.data.rcv_nxt += HELLO_LEN_IN;
-    assert_eq!(connections.try_get()?, &cloned_state, "State should remain FIN-WAIT-1");
+    assert_eq!(connections.try_get()?, &cloned_state, "state should remain FIN-WAIT-1");
 
     Ok(())
 }
@@ -207,11 +207,11 @@ fn data_after_our_fin_in_fin_wait_2_is_acked_without_echo() -> TraceableResult {
             ack_num: CLIENT_ISN + SYN_BYTE_IN + HELLO_LEN_IN,
             ..SERVER_REPLY
         }),
-        "Data arriving after our FIN should be ACKed without being echoed, not RST"
+        "data arriving after our FIN should be ACKed without being echoed, not RST"
     );
 
     cloned_state.data.rcv_nxt += HELLO_LEN_IN;
-    assert_eq!(connections.try_get()?, &cloned_state, "State should remain FIN-WAIT-2");
+    assert_eq!(connections.try_get()?, &cloned_state, "state should remain FIN-WAIT-2");
 
     Ok(())
 }
@@ -245,7 +245,7 @@ fn fin_ack_with_data_in_fin_wait_1_acking_our_fin_closes_immediately() -> Tracea
         "ACK should reflect RCV.NXT advanced past both the data and the FIN, not just the FIN"
     );
 
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed");
 
     Ok(())
 }
@@ -289,7 +289,7 @@ fn fin_ack_with_data_in_fin_wait_2_advances_rcv_nxt_past_data_and_fin() -> Trace
         "ACK should reflect RCV.NXT advanced past both the data and the FIN, not just the FIN"
     );
 
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed");
 
     Ok(())
 }

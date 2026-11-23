@@ -29,7 +29,7 @@ impl Report {
     /// Returns `Err` if computing a latency percentile fails (which should never happen).
     #[expect(
         clippy::cast_precision_loss,
-        reason = "Throughput reporting only needs approximate precision"
+        reason = "throughput reporting only needs approximate precision"
     )]
     pub(crate) fn summarize(
         outcomes: &[TraceableResult<ConnectionOutcome>],
@@ -109,14 +109,14 @@ fn percentile(sorted: &[Duration], pct: usize) -> TraceableResult<Duration> {
     let last_index = sorted
         .len()
         .checked_sub(1)
-        .ok_or("Cannot compute a percentile of an empty latency set")?;
+        .ok_or("cannot compute a percentile of an empty latency set")?;
 
     let index = last_index.saturating_mul(pct) / 100;
 
     sorted
         .get(index)
         .copied()
-        .ok_or_else(|| format!("Index {index} out of range for {} latencies", sorted.len()).into())
+        .ok_or_else(|| format!("index {index} out of range for {} latencies", sorted.len()).into())
 }
 
 impl fmt::Display for Report {

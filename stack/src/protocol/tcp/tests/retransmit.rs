@@ -10,9 +10,9 @@ fn syn_ack_is_resent_while_due() -> TraceableResult {
     let isn = connections.try_get()?.data.snd_una;
 
     let mut resent = connections.make_retransmissions();
-    let reply = resent.pop().ok_or("Expected one retransmitted segment")?;
+    let reply = resent.pop().ok_or("expected one retransmitted segment")?;
 
-    assert!(resent.is_empty(), "Expected exactly one retransmitted segment");
+    assert!(resent.is_empty(), "expected exactly one retransmitted segment");
     assert_eq!(
         reply,
         TcpSegment {
@@ -42,7 +42,7 @@ fn pending_segment_is_cleared_once_acked() -> TraceableResult {
 
     assert!(
         connections.make_retransmissions().is_empty(),
-        "Acked segment should not be retransmitted"
+        "acked segment should not be retransmitted"
     );
 
     Ok(())
@@ -61,9 +61,9 @@ fn data_echo_is_resent_unchanged() -> TraceableResult {
     .create_test_reply(&mut connections)?;
 
     let mut resent = connections.make_retransmissions();
-    let reply = resent.pop().ok_or("Expected one retransmitted segment")?;
+    let reply = resent.pop().ok_or("expected one retransmitted segment")?;
 
-    assert!(resent.is_empty(), "Expected exactly one retransmitted segment");
+    assert!(resent.is_empty(), "expected exactly one retransmitted segment");
     assert_eq!(
         reply,
         TcpSegment {
@@ -83,9 +83,9 @@ fn fin_ack_is_resent_unchanged() -> TraceableResult {
     connections.close_all();
 
     let mut resent = connections.make_retransmissions();
-    let reply = resent.pop().ok_or("Expected one retransmitted segment")?;
+    let reply = resent.pop().ok_or("expected one retransmitted segment")?;
 
-    assert!(resent.is_empty(), "Expected exactly one retransmitted segment");
+    assert!(resent.is_empty(), "expected exactly one retransmitted segment");
     assert_eq!(
         reply,
         TcpSegment {
@@ -129,7 +129,7 @@ fn multiple_unacked_segments_are_all_retransmitted() -> TraceableResult {
     let [hello, hi] = connections
         .make_retransmissions()
         .try_into()
-        .map_err(|_| "Expected exactly two retransmitted segments")?;
+        .map_err(|_| "expected exactly two retransmitted segments")?;
 
     assert_eq!(
         hello,
@@ -166,15 +166,15 @@ fn gives_up_after_max_retransmits() -> TraceableResult {
     for _ in 0..MAX_RETRIES {
         let resent = connections.make_retransmissions();
 
-        assert_eq!(resent.len(), 1, "Should still be retried");
+        assert_eq!(resent.len(), 1, "should still be retried");
         assert_eq!(connections.try_get()?.tcp_state, TcpState::SynReceived(SynReceived));
     }
 
     // Exceeds MAX_RETRIES -> give up
     let resent = connections.make_retransmissions();
 
-    assert!(resent.is_empty(), "Should give up instead of retransmitting again");
-    assert_matches!(connections.try_get(), Err(_), "Connection should be removed");
+    assert!(resent.is_empty(), "should give up instead of retransmitting again");
+    assert_matches!(connections.try_get(), Err(_), "connection should be removed");
 
     Ok(())
 }
@@ -191,24 +191,24 @@ fn retransmissions_back_off_exponentially() -> TraceableResult {
     }
     .create_test_reply(&mut connections)?;
 
-    assert!(connections.make_retransmissions().is_empty(), "Before first timeout");
+    assert!(connections.make_retransmissions().is_empty(), "before first timeout");
 
     thread::sleep(Duration::from_millis(10));
-    assert_eq!(connections.make_retransmissions().len(), 1, "Retransmit 1 after 10ms timeout");
+    assert_eq!(connections.make_retransmissions().len(), 1, "retransmit 1 after 10ms timeout");
 
     thread::sleep(Duration::from_millis(10));
     assert!(connections.make_retransmissions().is_empty(), "10ms into 20ms timeout");
 
     thread::sleep(Duration::from_millis(10));
-    assert_eq!(connections.make_retransmissions().len(), 1, "Retransmit 2 after 20ms timeout");
+    assert_eq!(connections.make_retransmissions().len(), 1, "retransmit 2 after 20ms timeout");
 
     thread::sleep(Duration::from_millis(20));
     assert!(connections.make_retransmissions().is_empty(), "20ms into 40ms timeout");
 
     thread::sleep(Duration::from_millis(20));
-    assert_eq!(connections.make_retransmissions().len(), 1, "Retransmit 3 after 40ms timeout");
+    assert_eq!(connections.make_retransmissions().len(), 1, "retransmit 3 after 40ms timeout");
 
-    assert!(connections.make_retransmissions().is_empty(), "Give up after 3 retransmissions");
+    assert!(connections.make_retransmissions().is_empty(), "give up after 3 retransmissions");
 
     Ok(())
 }

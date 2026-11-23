@@ -26,7 +26,7 @@ pub fn calculate(data: &[u8]) -> u16 {
         #[cfg(test)]
         const _: () = assert!(fold(fold(fold(fold(fold(fold(fold(fold(u128::MAX)))))))) == 0xFFFF);
 
-        #[expect(clippy::cast_possible_truncation, reason = "Truncation desired after folding")]
+        #[expect(clippy::cast_possible_truncation, reason = "truncation desired after folding")]
         if x > 0xFFFF { fold_and_flip(fold(x)) } else { !x as u16 }
     }
 
@@ -108,7 +108,7 @@ pub fn naive_wrapping_cksum(data: &[u8]) -> u16 {
         },
     );
 
-    #[expect(clippy::cast_possible_truncation, reason = "Truncation desired after folding")]
+    #[expect(clippy::cast_possible_truncation, reason = "truncation desired after folding")]
     !(one_carry_fold(one_carry_fold(sum)) as u16)
 }
 
@@ -142,7 +142,7 @@ pub fn range_checked_cksum(data: &[u8]) -> u16 {
         },
     );
 
-    #[expect(clippy::cast_possible_truncation, reason = "Truncation desired after folding")]
+    #[expect(clippy::cast_possible_truncation, reason = "truncation desired after folding")]
     !(one_carry_fold(one_carry_fold(sum)) as u16)
 }
 
